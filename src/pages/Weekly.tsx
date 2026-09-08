@@ -6,6 +6,7 @@ import {
   Link2,
   ExternalLink,
   AlertTriangle,
+  Search,
 } from 'lucide-react'
 import type { Task, WeeklyRecord } from '../../shared/types'
 import { api, json } from '../api'
@@ -37,27 +38,58 @@ const statusTone: Record<string, string> = {
   done: 'green',
   not_done: 'red',
 }
-export default function Weekly({ data, refresh, notify }: PageProps) {
+export default function Weekly({ data, refresh, notify, intent }: PageProps) {
   const manager = data.user.role === 'manager'
-  const [week, setWeek] = useState(monday()),
-    [owner, setOwner] = useState(manager ? '' : data.user.id),
-    [filter, setFilter] = useState('all')
-  const [modal, setModal] = useState(''),
+  const initialWeek = intent?.weekStart || monday()
+  const initialRecord = data.weeklyRecords.find(
+    (record) =>
+      (record.taskId === intent?.id || record.id === intent?.id) &&
+      record.weekStart === initialWeek,
+  )
+  const initialTask = data.tasks.find((task) => task.id === intent?.id)
+  const initialOwner = manager
+    ? ''
+    : intent?.id
+      ? initialRecord?.ownerId || initialTask?.ownerId || data.user.id
+      : intent?.action !== 'create' && (intent?.weekStart || intent?.status)
+        ? ''
+        : data.user.id
+  const [week, setWeek] = useState(initialWeek),
+    [owner, setOwner] = useState(initialOwner),
+    [filter, setFilter] = useState(intent?.status || 'all'),
+    [search, setSearch] = useState(intent?.query || '')
+  const [modal, setModal] = useState(
+      intent?.action === 'create' ? 'create' : '',
+    ),
     [selected, setSelected] = useState<WeeklyRecord | null>(null)
+  const [creationTask, setCreationTask] = useState<Task | undefined>(
+    intent?.action === 'create' ? initialTask : undefined,
+  )
+  function openCreate(temporary: boolean, task?: Task) {
+    setCreationTask(task)
+    setModal(temporary ? 'temporary' : 'create')
+  }
   const action = useAction(refresh, notify)
   const weekRecords = data.weeklyRecords.filter(
     (record) =>
       record.weekStart === week && (!owner || record.ownerId === owner),
   )
-  const records = weekRecords.filter((record) =>
-    filter === 'all' || filter === 'draft'
-      ? filter !== 'draft' || !record.submitted
-      : record.status === filter,
-  )
+  const records = weekRecords
+    .filter((record) =>
+      `${record.commitment} ${data.tasks.find((task) => task.id === record.taskId)?.title || ''} ${nameOf(data, record.ownerId)}`
+        .toLocaleLowerCase()
+        .includes(search.toLocaleLowerCase()),
+    )
+    .filter((record) =>
+      filter === 'all' || filter === 'draft'
+        ? filter !== 'draft' || !record.submitted
+        : record.submitted && record.status === filter,
+    )
   const official = weekRecords.filter((record) => record.submitted)
   const close = () => {
     setModal('')
     setSelected(null)
+    setCreationTask(undefined)
   }
   const saved = async (message: string) => {
     await refresh()
@@ -75,14 +107,14 @@ export default function Weekly({ data, refresh, notify }: PageProps) {
           <>
             <button
               className="button secondary"
-              onClick={() => setModal('temporary')}
+              onClick={() => openCreate(true)}
             >
               <AlertTriangle size={16} />
               记录临时工作
             </button>
             <button
               className="button primary"
-              onClick={() => setModal('create')}
+              onClick={() => openCreate(false)}
             >
               <Plus size={17} />
               安排周任务
@@ -139,6 +171,26 @@ export default function Weekly({ data, refresh, notify }: PageProps) {
           </label>
         )}
       </div>
+      {!manager && owner !== data.user.id && (
+        <div className="navigation-context">
+          <span>
+            {owner
+              ? `正在查看${nameOf(data, owner)}的协作记录`
+              : '正在查看当前账号可访问的全部协作记录'}
+            ，可更新自己负责的任务。
+          </span>
+          <button
+            className="text-button"
+            onClick={() => {
+              setOwner(data.user.id)
+              setSearch('')
+              setFilter('all')
+            }}
+          >
+            回到我的周计划
+          </button>
+        </div>
+      )}
       <div className="weekly-summary">
         <span>
           已提交 <strong>{official.length}</strong> 项
@@ -182,6 +234,30 @@ export default function Weekly({ data, refresh, notify }: PageProps) {
           </button>
         ))}
       </div>
+      <div className="toolbar">
+        <label className="search-input">
+          <Search size={17} />
+          <input
+            aria-label="搜索周任务"
+            placeholder="搜索任务、承诺或负责人"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </label>
+      </div>
+      {initialTask && !initialRecord && (
+        <div className="navigation-context">
+          <span>找到任务「{initialTask.title}」，该周尚未安排执行记录。</span>
+          {(manager || initialTask.ownerId === data.user.id) && (
+            <button
+              className="text-button"
+              onClick={() => openCreate(initialTask.isTemporary, initialTask)}
+            >
+              为此任务安排本周
+            </button>
+          )}
+        </div>
+      )}
       {action.error && (
         <div className="error" role="alert">
           {action.error}
@@ -197,7 +273,7 @@ export default function Weekly({ data, refresh, notify }: PageProps) {
               canEdit = manager || record.ownerId === data.user.id
             return (
               <article
-                className={`weekly-card ${record.status === 'blocked' ? 'has-blocker' : ''}`}
+                className={`weekly-card ${record.status === 'blocked' ? 'has-blocker' : ''} ${record.id === initialRecord?.id ? 'navigation-highlight' : ''}`}
                 key={record.id}
               >
                 <div className="weekly-card-top">
@@ -334,7 +410,7 @@ export default function Weekly({ data, refresh, notify }: PageProps) {
             action={
               <button
                 className="button secondary"
-                onClick={() => setModal('create')}
+                onClick={() => openCreate(false)}
               >
                 <Plus size={16} />
                 安排第一项周任务
@@ -348,6 +424,7 @@ export default function Weekly({ data, refresh, notify }: PageProps) {
           data={data}
           week={week}
           temporary={modal === 'temporary'}
+          initialTask={creationTask}
           onClose={close}
           onSaved={saved}
         />
@@ -534,18 +611,26 @@ function WeeklyCreate({
   data,
   week,
   temporary,
+  initialTask,
   onClose,
   onSaved,
 }: {
   data: PageProps['data']
   week: string
   temporary: boolean
+  initialTask?: Task
   onClose: () => void
   onSaved: (message: string) => Promise<void>
 }) {
-  const [taskId, setTaskId] = useState(''),
-    [planId, setPlanId] = useState(''),
-    [ownerId, setOwnerId] = useState(data.user.id),
+  const accessibleTask =
+    initialTask &&
+    initialTask.isTemporary === temporary &&
+    (data.user.role === 'manager' || initialTask.ownerId === data.user.id)
+      ? initialTask
+      : undefined
+  const [taskId, setTaskId] = useState(accessibleTask?.id || ''),
+    [planId, setPlanId] = useState(accessibleTask?.monthlyPlanId || ''),
+    [ownerId, setOwnerId] = useState(accessibleTask?.ownerId || data.user.id),
     [createdTask, setCreatedTask] = useState<Task | null>(null)
   const plans = data.plans.filter(
     (plan) =>

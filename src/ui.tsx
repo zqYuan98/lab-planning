@@ -7,11 +7,13 @@ import {
 } from 'react'
 import { X, Inbox, LoaderCircle } from 'lucide-react'
 import type { Bootstrap } from '../shared/types'
+import type { NavigationIntent } from './navigation'
 
 export interface PageProps {
   data: Bootstrap
   refresh: () => Promise<void>
   notify: (message: string) => void
+  intent?: NavigationIntent
 }
 export function Modal({
   title,

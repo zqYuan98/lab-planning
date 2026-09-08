@@ -34,12 +34,14 @@ import {
   weeklyStatusLabels,
 } from '../../server/report-metrics'
 import '../reports.css'
+import type { NavigationIntent } from '../navigation'
 
 type Props = {
   data: Bootstrap
   refresh: () => Promise<void>
   notify: (message: string) => void
   onDirtyChange?: (dirty: boolean) => void
+  intent?: NavigationIntent
 }
 const dateTime = (date: string) =>
   new Date(date).toLocaleString('zh-CN', {
@@ -52,6 +54,7 @@ export default function Reports({
   refresh,
   notify,
   onDirtyChange,
+  intent,
 }: Props) {
   const [selectedId, setSelectedId] = useState(''),
     [selected, setSelected] = useState<Report | null>(null)
@@ -94,8 +97,19 @@ export default function Reports({
     setError('')
   }
   useEffect(() => {
-    if (!selectedId && history[0]) choose(history[0])
-  }, [history, selectedId])
+    if (selectedId) return
+    if (intent?.action === 'write-weekly') {
+      const draft = history.find(
+        (report) =>
+          report.type === 'weekly' &&
+          report.period === monday() &&
+          report.status === 'draft',
+      )
+      if (draft) choose(draft)
+      return
+    }
+    if (history[0]) choose(history[0])
+  }, [history, selectedId, intent?.action])
   useEffect(() => {
     if (!unsaved) return
     const handler = (event: BeforeUnloadEvent) => {
@@ -198,6 +212,13 @@ export default function Reports({
           </button>
         }
       />
+      {intent?.action === 'write-weekly' && !selected && (
+        <div className="navigation-context">
+          <span>
+            本周尚无可编辑草稿，点击下方「生成汇报草稿」开始撰写。原有定稿将保留。
+          </span>
+        </div>
+      )}
       <section className="report-generator" aria-label="生成管理者汇报">
         <div>
           <FileText size={22} />

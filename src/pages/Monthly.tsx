@@ -47,13 +47,31 @@ const tones: Record<string, string> = {
   published: 'green',
   merged: 'neutral',
 }
-export default function Monthly({ data, refresh, notify }: PageProps) {
+export default function Monthly({ data, refresh, notify, intent }: PageProps) {
   const manager = data.user.role === 'manager'
-  const [month, setMonth] = useState(currentMonth()),
-    [filter, setFilter] = useState('all'),
-    [search, setSearch] = useState('')
-  const [modal, setModal] = useState(''),
-    [selected, setSelected] = useState<MonthlyPlan | null>(null),
+  const initialMonth = intent?.month || currentMonth()
+  const initialPlan = data.plans.find((plan) => plan.id === intent?.id)
+  const readyToPublish =
+    manager &&
+    intent?.action === 'publish' &&
+    data.plans.some(
+      (plan) => plan.month === initialMonth && plan.status === 'approved',
+    )
+  const [month, setMonth] = useState(initialPlan?.month || initialMonth),
+    [filter, setFilter] = useState(
+      intent?.action === 'review' ? 'submitted' : intent?.status || 'all',
+    ),
+    [search, setSearch] = useState(intent?.query || '')
+  const [modal, setModal] = useState(
+      initialPlan
+        ? 'detail'
+        : intent?.action === 'create'
+          ? 'create'
+          : readyToPublish
+            ? 'publish'
+            : '',
+    ),
+    [selected, setSelected] = useState<MonthlyPlan | null>(initialPlan || null),
     [history, setHistory] = useState<AuditEvent[] | null>(null)
   const action = useAction(refresh, notify)
   const monthPlans = data.plans.filter((plan) => plan.month === month)

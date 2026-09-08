@@ -230,7 +230,7 @@ button {
   margin-top: 7px;
 }
 .workspace-label {
-  font-size: 10px;
+  font-size: 12px;
   color: #839d8e;
   letter-spacing: 2px;
   margin: 48px 14px 17px;
@@ -275,7 +275,7 @@ button {
 .sidebar-note {
   margin-top: auto;
   padding: 25px 12px 26px;
-  font-size: 10px;
+  font-size: 12px;
   color: #afc0b2;
   line-height: 1.8;
 }
@@ -289,7 +289,7 @@ button {
 }
 .sidebar-note p {
   color: #748e7d;
-  font-size: 10px;
+  font-size: 12px;
   margin: 6px 0 0 12px;
 }
 .profile {
@@ -319,7 +319,7 @@ button {
 .profile small {
   color: #99af9f;
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   margin-top: 3px;
 }
 .profile .icon-button {
@@ -340,7 +340,7 @@ button {
   justify-content: space-between;
   padding: 0 42px;
   border-bottom: 1px solid var(--border);
-  font-size: 11px;
+  font-size: 12px;
   background: #fafaf5;
 }
 .topbar > div {
@@ -357,7 +357,7 @@ button {
 }
 .topbar time {
   color: #83907f;
-  font-size: 11px;
+  font-size: 12px;
 }
 main {
   padding: 37px 42px 54px;
@@ -369,13 +369,13 @@ main {
 .workspace-footer {
   padding: 0 42px 25px;
   color: #9ba594;
-  font-size: 9px;
+  font-size: 12px;
   letter-spacing: 1.5px;
   margin-top: auto;
 }
 .workspace-footer span {
   margin-left: 18px;
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 1px;
 }
 .page-header {
@@ -457,7 +457,7 @@ main {
 .hero-mark small {
   display: block;
   letter-spacing: 1.5px;
-  font-size: 9px;
+  font-size: 12px;
   margin-top: 10px;
 }
 .metrics {
@@ -477,7 +477,7 @@ main {
   border: 0;
 }
 .metrics span {
-  font-size: 11px;
+  font-size: 12px;
   color: #71836e;
   display: block;
 }
@@ -489,13 +489,13 @@ main {
   margin: 9px 0;
 }
 .metrics strong small {
-  font-size: 10px;
+  font-size: 12px;
   color: #95a18a;
   margin-left: 8px;
   font-weight: 400;
 }
 .metrics p {
-  font-size: 10px;
+  font-size: 12px;
   color: #95a18b;
   margin: 0;
 }
@@ -564,7 +564,7 @@ main {
   margin-left: 9px;
 }
 .attention-list p {
-  font-size: 11px;
+  font-size: 12px;
   color: #8f8977;
   margin: 9px 0 0;
 }
@@ -591,7 +591,7 @@ main {
 .queue-row small {
   display: block;
   color: #94a089;
-  font-size: 10px;
+  font-size: 12px;
   margin-top: 7px;
 }
 .queue-row strong {
@@ -606,7 +606,7 @@ main {
   align-items: flex-start;
   gap: 10px;
   padding: 16px 20px;
-  font-size: 11px;
+  font-size: 12px;
   color: #8b916e;
   line-height: 1.8;
   background: #f6f6eb;
@@ -627,7 +627,7 @@ main {
   margin-left: 10px;
 }
 .missing-members p {
-  font-size: 11px;
+  font-size: 12px;
   color: #8a957f;
   margin: 0;
 }
@@ -635,7 +635,7 @@ main {
   display: inline-flex;
   align-items: center;
   padding: 4px 8px;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.4;
   border-radius: 4px;
   color: #7e8975;
@@ -667,7 +667,7 @@ main {
   border-top: 1px solid #dce3d4;
   border-bottom: 1px solid #dce3d4;
   color: #697f60;
-  font-size: 11px;
+  font-size: 12px;
   margin-bottom: 26px;
   gap: 12px;
   background: #eff2e9;
@@ -693,7 +693,7 @@ main {
   margin: 0;
 }
 .toolbar .field > span {
-  font-size: 10px;
+  font-size: 12px;
   color: #8a967c;
   margin-bottom: 6px;
 }
@@ -750,7 +750,7 @@ main {
   background: #3b6750;
 }
 .tabs span {
-  font-size: 10px;
+  font-size: 12px;
   background: #e9ede1;
   border-radius: 4px;
   padding: 1px 5px;
@@ -773,7 +773,7 @@ table {
 }
 th {
   font-weight: 400;
-  font-size: 10px;
+  font-size: 12px;
   color: #8b987f;
   white-space: nowrap;
   background: #fafaf4;
@@ -815,7 +815,7 @@ tbody tr:hover {
   text-decoration: underline;
 }
 .cell-description {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.7;
   color: #8b977f;
   margin: 7px 0;
@@ -825,7 +825,7 @@ tbody tr:hover {
 }
 .cell-date {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   color: #99a28d;
   margin-top: 6px;
 }
@@ -835,7 +835,7 @@ tbody tr:hover {
   align-items: center;
   flex-wrap: wrap;
   color: #a1aa96;
-  font-size: 10px;
+  font-size: 12px;
   margin-top: 11px;
 }
 .row-meta > span:not(.badge) {
@@ -849,7 +849,7 @@ tbody tr:hover {
   max-width: 210px;
 }
 .row-actions button {
-  font-size: 11px;
+  font-size: 12px;
   color: #52714d;
   padding: 2px 0;
   white-space: nowrap;
@@ -859,7 +859,7 @@ tbody tr:hover {
 }
 .review-comment {
   max-width: 150px;
-  font-size: 10px;
+  font-size: 12px;
 }
 .inline-field {
   display: flex;
@@ -877,7 +877,7 @@ tbody tr:hover {
   max-width: 115px;
 }
 .subtle-note {
-  font-size: 11px;
+  font-size: 12px;
   color: #939c82;
   margin: 0;
 }
@@ -904,7 +904,7 @@ tbody tr:hover {
   margin-right: 5px;
 }
 .team-intro p {
-  font-size: 11px;
+  font-size: 12px;
   color: #8c997e;
   margin: 0 0 0 auto;
 }
@@ -917,7 +917,7 @@ tbody tr:hover {
 .avatar.light {
   background: #e9eedf;
   color: #6d855e;
-  font-size: 10px;
+  font-size: 12px;
 }
 .project-icon {
   width: 37px;
@@ -959,7 +959,7 @@ tbody tr:hover {
   border: 1px solid #e0e5d7;
   border-radius: 6px;
   padding: 19px 23px;
-  font-size: 11px;
+  font-size: 12px;
   color: #798d6d;
   flex-wrap: wrap;
 }
@@ -971,7 +971,7 @@ tbody tr:hover {
 }
 .weekly-summary small {
   margin-left: auto;
-  font-size: 10px;
+  font-size: 12px;
   color: #9ba68f;
 }
 .weekly-list {
@@ -1001,12 +1001,12 @@ tbody tr:hover {
   margin: 0;
 }
 .task-code {
-  font-size: 9px;
+  font-size: 12px;
   letter-spacing: 1px;
   font-family: 'DM Sans', monospace;
 }
 .owner-chip {
-  font-size: 11px;
+  font-size: 12px;
   color: #7c906e;
   white-space: nowrap;
 }
@@ -1020,7 +1020,7 @@ tbody tr:hover {
   display: flex;
   gap: 6px;
   align-items: center;
-  font-size: 10px;
+  font-size: 12px;
   color: #8c9d7e;
   line-height: 1.8;
   flex-wrap: wrap;
@@ -1039,18 +1039,18 @@ tbody tr:hover {
   flex: 1;
 }
 .weekly-facts > div > span {
-  font-size: 10px;
+  font-size: 12px;
   color: #9aa68c;
 }
 .weekly-facts p {
   margin: 7px 0 0;
-  font-size: 11px;
+  font-size: 12px;
   color: #6d8164;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 .weekly-facts small {
-  font-size: 10px;
+  font-size: 12px;
   display: block;
   margin-top: 8px;
   color: #9aa38e;
@@ -1059,7 +1059,7 @@ tbody tr:hover {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 10px;
+  font-size: 12px;
   margin: 0 0 18px;
   text-decoration: none;
   color: #527b64;
@@ -1076,7 +1076,7 @@ tbody tr:hover {
   padding-top: 16px;
 }
 .weekly-card-footer > small {
-  font-size: 9px;
+  font-size: 12px;
   color: #a6af99;
 }
 .weekly-card-footer .row-actions {
@@ -1084,7 +1084,7 @@ tbody tr:hover {
   gap: 8px 12px;
 }
 .weekly-card-footer .row-actions button {
-  font-size: 10px;
+  font-size: 12px;
 }
 .goal-list {
   display: flex;
@@ -1124,7 +1124,7 @@ tbody tr:hover {
   padding: 26px 0 0 74px;
 }
 .label-text {
-  font-size: 10px;
+  font-size: 12px;
   color: #9ca58d;
 }
 .goal-body p {
@@ -1134,7 +1134,7 @@ tbody tr:hover {
   white-space: pre-wrap;
 }
 .goal-body small {
-  font-size: 10px;
+  font-size: 12px;
   color: #8f9d7f;
 }
 .goal-progress {
@@ -1151,7 +1151,7 @@ tbody tr:hover {
   margin-left: 6px;
 }
 .goal-progress > span {
-  font-size: 10px;
+  font-size: 12px;
   color: #a0a991;
 }
 .progress-track {
@@ -1229,7 +1229,7 @@ tbody tr:hover {
   color: #617651;
 }
 .field small {
-  font-size: 10px;
+  font-size: 12px;
   color: #99a48a;
   margin: 6px 0 0;
   line-height: 1.8;
@@ -1259,7 +1259,7 @@ tbody tr:hover {
   gap: 10px;
 }
 .form-hint {
-  font-size: 10px;
+  font-size: 12px;
   color: #9ca58d;
   line-height: 1.8;
   margin: 15px 0;
@@ -1268,13 +1268,13 @@ tbody tr:hover {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 11px;
+  font-size: 12px;
   color: #7e906f;
   line-height: 1.8;
   cursor: pointer;
 }
 .checkbox-label small {
-  font-size: 9px;
+  font-size: 12px;
   color: #a8b096;
 }
 .check-grid {
@@ -1299,11 +1299,11 @@ tbody tr:hover {
   font-weight: 500;
 }
 .context-box p {
-  font-size: 11px;
+  font-size: 12px;
   margin: 8px 0;
 }
 .context-box small {
-  font-size: 10px;
+  font-size: 12px;
   color: #98a187;
 }
 .context-box h3 {
@@ -1356,7 +1356,7 @@ tbody tr:hover {
   gap: 11px;
   align-items: center;
   padding: 12px;
-  font-size: 11px;
+  font-size: 12px;
   border-bottom: 1px solid var(--border);
 }
 .compact-list > div:last-child {
@@ -1398,7 +1398,7 @@ tbody tr:hover {
 }
 .timeline p,
 .timeline li {
-  font-size: 10px;
+  font-size: 12px;
   color: #8f9e7b;
   line-height: 1.9;
 }
@@ -1415,7 +1415,7 @@ tbody tr:hover {
   display: grid;
   grid-template-columns: 80px 1fr;
   gap: 6px;
-  font-size: 11px;
+  font-size: 12px;
   padding: 7px 0;
   border-bottom: 1px solid #e9eddf;
   line-height: 1.8;
@@ -1443,7 +1443,7 @@ tbody tr:hover {
   gap: 25px;
 }
 .detail-grid span {
-  font-size: 10px;
+  font-size: 12px;
   color: #9ba78d;
 }
 .detail-grid p {
@@ -1509,7 +1509,7 @@ tbody tr:hover {
 }
 .auth-copy .eyebrow {
   color: #a4b991;
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 3px;
 }
 .auth-copy h1 {
@@ -1531,14 +1531,14 @@ tbody tr:hover {
   gap: 12px;
   margin-top: 44px;
   color: #b5c99d;
-  font-size: 10px;
+  font-size: 12px;
 }
 .auth-steps svg {
   color: #637f59;
 }
 .auth-story > small {
   color: #789771;
-  font-size: 9px;
+  font-size: 12px;
   letter-spacing: 1.5px;
 }
 .auth-form {
@@ -1573,7 +1573,7 @@ tbody tr:hover {
   min-height: 46px;
 }
 .auth-form .eyebrow {
-  font-size: 10px;
+  font-size: 12px;
   color: #95a381;
 }
 @keyframes spin {
@@ -1652,7 +1652,7 @@ tbody tr:hover {
     padding: 0 16px;
   }
   .metrics p {
-    font-size: 9px;
+    font-size: 12px;
   }
   .hero-mark > span {
     font-size: 90px;
@@ -1665,7 +1665,7 @@ tbody tr:hover {
   }
   .workflow-strip {
     padding: 17px 16px;
-    font-size: 10px;
+    font-size: 12px;
   }
   .tabs {
     gap: 18px;
@@ -1693,14 +1693,14 @@ tbody tr:hover {
     padding-right: 12px;
   }
   .brand {
-    font-size: 11px;
+    font-size: 12px;
     gap: 7px;
   }
   .brand svg {
     width: 24px;
   }
   .brand small {
-    font-size: 8px;
+    font-size: 12px;
     letter-spacing: 1.8px;
   }
   .main-workspace {
@@ -1713,7 +1713,7 @@ tbody tr:hover {
     gap: 10px;
   }
   .sidebar-note {
-    font-size: 8px;
+    font-size: 12px;
   }
   .profile {
     gap: 7px;
@@ -1721,10 +1721,10 @@ tbody tr:hover {
   .profile .avatar {
     width: 29px;
     height: 29px;
-    font-size: 10px;
+    font-size: 12px;
   }
   .profile strong {
-    font-size: 11px;
+    font-size: 12px;
   }
   .page-header {
     flex-direction: column;
@@ -1755,14 +1755,14 @@ tbody tr:hover {
     font-size: 75px;
   }
   .hero-mark small {
-    font-size: 8px;
+    font-size: 12px;
     letter-spacing: 0;
   }
   .overview-hero h2 {
     font-size: 22px;
   }
   .overview-hero p {
-    font-size: 10px;
+    font-size: 12px;
   }
   .workflow-strip {
     overflow: auto;
@@ -1795,7 +1795,7 @@ tbody tr:hover {
   }
   .auth-steps {
     gap: 8px;
-    font-size: 9px;
+    font-size: 12px;
   }
   .auth-form {
     width: 310px;
@@ -1819,14 +1819,14 @@ tbody tr:hover {
     font-size: 15px;
   }
   .sidebar .brand small {
-    font-size: 10px;
+    font-size: 12px;
   }
   .nav-item {
     font-size: 13px;
     padding: 13px 15px;
   }
   .sidebar-note {
-    font-size: 10px;
+    font-size: 12px;
   }
   .profile strong {
     font-size: 12px;
@@ -1860,7 +1860,7 @@ tbody tr:hover {
     z-index: 70;
   }
   .breadcrumb {
-    font-size: 10px;
+    font-size: 12px;
   }
   .breadcrumb span {
     margin: 0 8px;
@@ -1877,17 +1877,17 @@ tbody tr:hover {
     margin-bottom: 8px;
   }
   .page-header p {
-    font-size: 11px;
+    font-size: 12px;
   }
   .eyebrow {
-    font-size: 9px;
+    font-size: 12px;
     letter-spacing: 1.7px;
   }
   .header-actions {
     gap: 8px;
   }
   .button {
-    font-size: 11px;
+    font-size: 12px;
     padding: 10px 13px;
     min-height: 39px;
   }
@@ -1901,7 +1901,7 @@ tbody tr:hover {
   }
   .overview-hero p {
     max-width: 240px;
-    font-size: 10px;
+    font-size: 12px;
   }
   .hero-mark {
     position: absolute;
@@ -1923,10 +1923,10 @@ tbody tr:hover {
     margin: 8px 0;
   }
   .metrics span {
-    font-size: 10px;
+    font-size: 12px;
   }
   .metrics p {
-    font-size: 9px;
+    font-size: 12px;
   }
   .overview-grid {
     gap: 17px;
@@ -1944,7 +1944,7 @@ tbody tr:hover {
     font-size: 14px;
   }
   .empty p {
-    font-size: 11px;
+    font-size: 12px;
   }
   .toolbar {
     margin: 19px 0;
@@ -1959,21 +1959,21 @@ tbody tr:hover {
   }
   .toolbar .field input {
     width: 100%;
-    font-size: 11px;
+    font-size: 12px;
   }
   .search-input {
     min-width: 0;
     flex: 1;
   }
   .search-input input {
-    font-size: 11px;
+    font-size: 12px;
   }
   .tabs {
     gap: 19px;
     margin-bottom: 18px;
   }
   .tabs button {
-    font-size: 11px;
+    font-size: 12px;
   }
   .table-scroll {
     overflow-x: auto;
@@ -1982,7 +1982,7 @@ tbody tr:hover {
     min-width: 620px;
   }
   th {
-    font-size: 9px;
+    font-size: 12px;
   }
   td,
   th {
@@ -1995,7 +1995,7 @@ tbody tr:hover {
     gap: 6px;
     flex-wrap: wrap;
     width: 100%;
-    font-size: 11px;
+    font-size: 12px;
   }
   .week-switcher label {
     max-width: 140px;
@@ -2004,12 +2004,12 @@ tbody tr:hover {
     width: 28px;
   }
   .week-switcher input {
-    font-size: 11px;
+    font-size: 12px;
   }
   .weekly-summary {
     padding: 16px;
     gap: 11px;
-    font-size: 10px;
+    font-size: 12px;
     justify-content: space-between;
   }
   .weekly-summary strong {
@@ -2017,7 +2017,7 @@ tbody tr:hover {
     margin: 0 3px;
   }
   .weekly-summary small {
-    font-size: 9px;
+    font-size: 12px;
   }
   .weekly-card {
     padding: 19px;
@@ -2039,7 +2039,7 @@ tbody tr:hover {
     gap: 18px;
   }
   .weekly-card-footer .row-actions button {
-    font-size: 11px;
+    font-size: 12px;
   }
   .linked-plan > span {
     width: 100%;
@@ -2062,7 +2062,7 @@ tbody tr:hover {
   .goal-heading .button {
     padding: 7px 10px;
     min-height: 32px;
-    font-size: 10px;
+    font-size: 12px;
   }
   .goal-body {
     grid-template-columns: 1fr;
@@ -2075,13 +2075,13 @@ tbody tr:hover {
     font-size: 34px;
   }
   .goal-body p {
-    font-size: 11px;
+    font-size: 12px;
   }
   .team-intro {
     padding: 16px;
   }
   .team-intro p {
-    font-size: 10px;
+    font-size: 12px;
   }
   .modal-backdrop {
     padding: 15px;
@@ -2107,7 +2107,7 @@ tbody tr:hover {
     gap: 16px;
   }
   .modal-intro {
-    font-size: 11px;
+    font-size: 12px;
   }
   .context-box {
     padding: 14px;
@@ -2136,7 +2136,7 @@ tbody tr:hover {
     margin: 15px 0;
   }
   .auth-copy .eyebrow {
-    font-size: 9px;
+    font-size: 12px;
   }
   .auth-copy p,
   .auth-steps,
@@ -2152,19 +2152,19 @@ tbody tr:hover {
     font-size: 23px;
   }
   .auth-form > p {
-    font-size: 11px;
+    font-size: 12px;
     margin-bottom: 26px;
   }
   .workspace-footer {
     padding: 0 18px 20px;
-    font-size: 8px;
+    font-size: 12px;
   }
   .workspace-footer span {
-    font-size: 9px;
+    font-size: 12px;
   }
   .toast {
     bottom: 18px;
-    font-size: 11px;
+    font-size: 12px;
     width: max-content;
     padding: 12px 15px;
   }
@@ -2202,12 +2202,12 @@ tbody tr:hover {
 }
 .merge-option small {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   color: #92a084;
   margin-top: 6px;
 }
 .merge-option p {
-  font-size: 11px;
+  font-size: 12px;
   color: #788a6b;
   margin: 8px 0 0;
 }

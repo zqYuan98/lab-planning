@@ -5,7 +5,6 @@ import {
   ChartNoAxesCombined,
   Check,
   ClipboardList,
-  FlaskConical,
   FolderKanban,
   Goal,
   LogOut,
@@ -13,10 +12,15 @@ import {
   Users,
   FileText,
   LoaderCircle,
+  UserRound,
+  ShieldCheck,
+  X,
 } from 'lucide-react'
 import type { Bootstrap } from '../shared/types'
+import type { Navigate, NavigationIntent, PageId } from './navigation'
 import { api, json, ApiError } from './api'
-import { Field, Form, Modal } from './ui'
+import { Field, Form, Modal, currentMonth, monday, localDate } from './ui'
+import WorkspaceSearch from './components/WorkspaceSearch'
 import Overview from './pages/Overview'
 import Monthly from './pages/Monthly'
 import Weekly from './pages/Weekly'
@@ -24,48 +28,114 @@ import Projects from './pages/Projects'
 import Goals from './pages/Goals'
 import Team from './pages/Team'
 import Reports from './pages/Reports'
+import labIcon from './assets/lab-icon.png'
+import labWordmark from './assets/lab-wordmark.png'
+import './shell.css'
 
 const navigation = [
-  { id: 'overview', label: '部门概览', icon: ChartNoAxesCombined },
-  { id: 'monthly', label: '月度计划', icon: CalendarDays },
-  { id: 'weekly', label: '每周执行', icon: ClipboardList },
-  { id: 'projects', label: '项目档案', icon: FolderKanban },
-  { id: 'goals', label: '年度目标', icon: Goal },
-  { id: 'reports', label: '报告中心', icon: FileText, manager: true },
-  { id: 'team', label: '团队成员', icon: Users, manager: true },
+  {
+    id: 'overview' as const,
+    label: '部门概览',
+    group: '规划',
+    icon: ChartNoAxesCombined,
+  },
+  {
+    id: 'monthly' as const,
+    label: '月度计划',
+    group: '规划',
+    icon: CalendarDays,
+  },
+  {
+    id: 'weekly' as const,
+    label: '每周执行',
+    group: '规划',
+    icon: ClipboardList,
+  },
+  { id: 'goals' as const, label: '年度目标', group: '规划', icon: Goal },
+  {
+    id: 'projects' as const,
+    label: '项目档案',
+    group: '资产',
+    icon: FolderKanban,
+  },
+  {
+    id: 'reports' as const,
+    label: '报告中心',
+    group: '资产',
+    icon: FileText,
+    manager: true,
+  },
+  {
+    id: 'team' as const,
+    label: '成员管理',
+    group: '团队',
+    icon: Users,
+    manager: true,
+  },
 ]
+function Brand({ wordmark = false }: { wordmark?: boolean }) {
+  if (wordmark)
+    return (
+      <div className="brand-wordmark">
+        <img src={labWordmark} alt="天枢实验室 TIANSHU LAB" />
+        <span>人工智能实验室 · 部门工作空间</span>
+      </div>
+    )
+  return (
+    <div className="brand">
+      <span className="brand-icon">
+        <img src={labIcon} alt="" />
+      </span>
+      <span>
+        天枢实验室<small>人工智能实验室</small>
+      </span>
+    </div>
+  )
+}
 export default function App() {
   const [data, setData] = useState<Bootstrap | null>(null),
     [loading, setLoading] = useState(true),
     [initialized, setInitialized] = useState(true)
-  const [page, setPage] = useState('overview'),
-    [toast, setToast] = useState(''),
+  const [page, setPage] = useState<PageId>('overview'),
+    [intent, setIntent] = useState<NavigationIntent>(),
+    [navigationKey, setNavigationKey] = useState(0)
+  const [toast, setToast] = useState(''),
     [fatal, setFatal] = useState(''),
     [mobileOpen, setMobileOpen] = useState(false)
   const [reportDirty, setReportDirty] = useState(false)
   const [pendingLeave, setPendingLeave] = useState<
-    { page: string } | 'logout' | null
+    { page: PageId; intent?: NavigationIntent } | 'logout' | null
   >(null)
   const refresh = useCallback(async () => {
     setData(await api<Bootstrap>('/bootstrap'))
   }, [])
-  function navigate(next: string) {
-    if (next === page) {
+  function applyNavigation(next: PageId, nextIntent?: NavigationIntent) {
+    setPage(next)
+    setIntent(nextIntent)
+    setNavigationKey((value) => value + 1)
+    setMobileOpen(false)
+  }
+  const navigate: Navigate = (next, nextIntent) => {
+    if (data?.user.role !== 'manager' && ['reports', 'team'].includes(next)) {
+      setToast('当前账号没有访问此页面的权限。')
+      return
+    }
+    if (next === page && !nextIntent) {
       setMobileOpen(false)
       return
     }
     if (reportDirty) {
-      setPendingLeave({ page: next })
+      setPendingLeave({ page: next, intent: nextIntent })
       return
     }
-    setPage(next)
-    setMobileOpen(false)
+    applyNavigation(next, nextIntent)
   }
   async function logout() {
     try {
       await api('/auth/logout', { method: 'POST' })
       setData(null)
       setPage('overview')
+      setIntent(undefined)
       setReportDirty(false)
       setMobileOpen(false)
     } catch (e) {
@@ -78,8 +148,7 @@ export default function App() {
     if (target === 'logout') await logout()
     else if (target) {
       setReportDirty(false)
-      setPage(target.page)
-      setMobileOpen(false)
+      applyNavigation(target.page, target.intent)
     }
   }
   async function start() {
@@ -111,17 +180,26 @@ export default function App() {
     const timer = window.setTimeout(() => setToast(''), 4500)
     return () => clearTimeout(timer)
   }, [toast])
+  useEffect(() => {
+    if (!mobileOpen) return
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileOpen(false)
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [mobileOpen])
   if (loading)
     return (
-      <div className="app-loading">
-        <FlaskConical size={34} />
+      <div className="shell-light app-loading">
+        <Brand />
         <LoaderCircle className="spin" size={22} />
         <p>正在读取工作空间</p>
       </div>
     )
   if (fatal)
     return (
-      <div className="app-loading">
+      <div className="shell-light app-loading">
+        <Brand />
         <h2>暂时无法连接工作空间</h2>
         <p role="alert">{fatal}</p>
         <button className="button primary" onClick={() => void start()}>
@@ -131,48 +209,60 @@ export default function App() {
     )
   if (!data)
     return (
-      <div className="auth-page">
+      <div className="shell-light auth-page">
         <section className="auth-story">
-          <div className="brand">
-            <FlaskConical />
-            <span>
-              人工智能实验室<small>LAB / PLANNING</small>
-            </span>
-          </div>
+          <Brand wordmark />
           <div className="auth-copy">
-            <div className="eyebrow">从方向到每周的进展</div>
+            <span className="auth-kicker">
+              <span />
+              一起把计划，变成成果
+            </span>
             <h1>
-              让每一份努力，
+              有方向的计划，
               <br />
-              成为看得见的成果。
+              有记录的每一步。
             </h1>
             <p>
-              成员提报月计划，负责人审核发布。
+              从月度共识到每周推进，
               <br />
-              每周记录进展，以真实成果形成部门汇报。
+              让每一次协作都有清晰的目标和真实的反馈。
             </p>
             <div className="auth-steps">
-              <span>01 月度承诺</span>
-              <ArrowRight size={16} />
-              <span>02 每周执行</span>
-              <ArrowRight size={16} />
-              <span>03 成果汇报</span>
+              <span>
+                <CalendarDays size={19} />
+                月度计划<small>明确承诺</small>
+              </span>
+              <ArrowRight size={15} />
+              <span>
+                <ClipboardList size={19} />
+                每周执行<small>记录进展</small>
+              </span>
+              <ArrowRight size={15} />
+              <span>
+                <FileText size={19} />
+                成果汇报<small>沉淀价值</small>
+              </span>
             </div>
           </div>
-          <small>人工智能实验室 · 部门计划协作平台</small>
+          <small className="auth-story-footer">
+            TIANSHU LAB <span>让团队的工作，连贯而有序。</span>
+          </small>
         </section>
         <section className="auth-form">
+          <span className="auth-form-icon">
+            <ShieldCheck size={24} />
+          </span>
           <div className="eyebrow">
-            {initialized ? 'WELCOME BACK' : '建立你的工作空间'}
+            {initialized ? 'WELCOME BACK' : 'LET’S GET STARTED'}
           </div>
-          <h2>{initialized ? '登录工作空间' : '设置首位管理员'}</h2>
+          <h2>{initialized ? '欢迎回到工作空间' : '设置首位管理员'}</h2>
           <p>
             {initialized
-              ? '继续推进团队本周的工作。'
+              ? '登录后，继续推进团队的计划与成果。'
               : '创建管理员后，可以添加成员开始提报月计划。'}
           </p>
           <Form
-            submitLabel={initialized ? '登录' : '创建工作空间'}
+            submitLabel={initialized ? '登录工作空间' : '创建工作空间'}
             onSubmit={async (event) => {
               const values = Object.fromEntries(
                 new FormData(event.currentTarget),
@@ -190,6 +280,7 @@ export default function App() {
                 <input
                   name="name"
                   autoComplete="name"
+                  defaultValue="袁中群"
                   required
                   maxLength={80}
                 />
@@ -221,11 +312,15 @@ export default function App() {
               />
             </Field>
           </Form>
+          <p className="auth-form-note">每一次计划，都从清晰的责任开始。</p>
         </section>
       </div>
     )
   const manager = data.user.role === 'manager'
-  const props = { data, refresh, notify: setToast }
+  const props = { data, refresh, notify: setToast, intent }
+  const visibleNavigation = navigation.filter(
+    (item) => !item.manager || manager,
+  )
   const route = {
     overview: <Overview {...props} navigate={navigate} />,
     monthly: <Monthly {...props} />,
@@ -238,44 +333,60 @@ export default function App() {
     team: manager ? <Team {...props} /> : null,
   }[page] || <Overview {...props} navigate={navigate} />
   return (
-    <div className="app-shell">
+    <div className="shell-light app-shell">
       <aside className={`sidebar ${mobileOpen ? 'open' : ''}`}>
-        <div className="brand">
-          <FlaskConical size={29} />
-          <span>
-            人工智能实验室<small>LAB / PLANNING</small>
-          </span>
+        <div className="sidebar-brand-row">
+          <Brand />
+          <button
+            type="button"
+            className="icon-button sidebar-close"
+            aria-label="关闭导航"
+            onClick={() => setMobileOpen(false)}
+          >
+            <X size={18} />
+          </button>
         </div>
-        <div className="workspace-label">部门工作空间</div>
         <nav aria-label="主导航">
-          {navigation
-            .filter((item) => !item.manager || manager)
-            .map((item) => (
-              <button
-                key={item.id}
-                className={`nav-item ${page === item.id ? 'active' : ''}`}
-                onClick={() => navigate(item.id)}
-              >
-                <item.icon size={19} />
-                <span>
-                  {!manager && item.id === 'overview'
-                    ? '我的工作台'
-                    : !manager && item.id === 'monthly'
-                      ? '我的月计划'
-                      : !manager && item.id === 'weekly'
-                        ? '我的周计划'
-                        : item.label}
-                </span>
-                {page === item.id && <span className="nav-dot" />}
-              </button>
-            ))}
+          {['规划', '资产', '团队'].map((group) => {
+            const items = visibleNavigation.filter(
+              (item) => item.group === group,
+            )
+            if (!items.length) return null
+            return (
+              <div className="nav-group" key={group}>
+                <div className="nav-group-label">{group}</div>
+                {items.map((item) => (
+                  <button
+                    key={item.id}
+                    aria-current={page === item.id ? 'page' : undefined}
+                    className={`nav-item ${page === item.id ? 'active' : ''}`}
+                    onClick={() => navigate(item.id)}
+                  >
+                    <item.icon size={18} />
+                    <span>
+                      {!manager && item.id === 'overview'
+                        ? '我的工作台'
+                        : !manager && item.id === 'monthly'
+                          ? '我的月计划'
+                          : !manager && item.id === 'weekly'
+                            ? '我的周计划'
+                            : item.label}
+                    </span>
+                    {page === item.id && <span className="nav-dot" />}
+                  </button>
+                ))}
+              </div>
+            )
+          })}
         </nav>
         <div className="sidebar-note">
           <span className="status-dot" />
-          以真实进展，沉淀部门成果<p>计划有来源 · 调整有记录</p>
+          计划有来源，协作有记录
         </div>
         <div className="profile">
-          <div className="avatar">{data.user.name.slice(-2)}</div>
+          <span className="profile-mark">
+            <UserRound size={20} />
+          </span>
           <div>
             <strong>{data.user.name}</strong>
             <small>
@@ -290,7 +401,7 @@ export default function App() {
               else void logout()
             }}
           >
-            <LogOut size={17} />
+            <LogOut size={16} />
           </button>
         </div>
       </aside>
@@ -303,31 +414,47 @@ export default function App() {
       )}
       <div className="main-workspace">
         <div className="topbar">
-          <div>
+          <div className="topbar-search-area">
             <button
               className="icon-button mobile-menu"
               aria-label="打开导航"
               onClick={() => setMobileOpen(!mobileOpen)}
             >
-              <Menu size={22} />
+              <Menu size={21} />
             </button>
-            <span className="breadcrumb">
-              工作空间 <span>/</span>{' '}
-              {navigation.find((item) => item.id === page)?.label}
-            </span>
+            <WorkspaceSearch data={data} navigate={navigate} />
           </div>
-          <time>
-            {new Date().toLocaleDateString('zh-CN', {
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric',
-              weekday: 'long',
-            })}
-          </time>
+          <div className="topbar-actions">
+            <time dateTime={localDate()}>
+              {new Date().toLocaleDateString('zh-CN', {
+                month: 'long',
+                day: 'numeric',
+                weekday: 'short',
+              })}
+            </time>
+            <button
+              className="button primary topbar-primary"
+              onClick={() =>
+                navigate(
+                  manager ? 'monthly' : 'weekly',
+                  manager
+                    ? {
+                        action: 'review',
+                        month: currentMonth(),
+                        status: 'submitted',
+                      }
+                    : { action: 'create', weekStart: monday() },
+                )
+              }
+            >
+              {manager ? <Check size={16} /> : <CalendarDays size={16} />}
+              <span>{manager ? '审核月度计划' : '安排本周工作'}</span>
+            </button>
+          </div>
         </div>
-        <main key={page}>{route}</main>
+        <main key={`${page}-${navigationKey}`}>{route}</main>
         <footer className="workspace-footer">
-          LAB PLANNING <span>计划连贯，协作有序。</span>
+          TIANSHU LAB <span>计划清晰，协作有序。</span>
         </footer>
       </div>
       {pendingLeave && (

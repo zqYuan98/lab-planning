@@ -12,11 +12,19 @@ import {
   nameOf,
   type PageProps,
 } from '../ui'
-export default function Projects({ data, refresh, notify }: PageProps) {
-  const [editing, setEditing] = useState<Project | 'new' | null>(null),
+export default function Projects({ data, refresh, notify, intent }: PageProps) {
+  const [editing, setEditing] = useState<Project | 'new' | null>(
+      intent?.action === 'create' && data.user.role === 'manager'
+        ? 'new'
+        : null,
+    ),
     [archive, setArchive] = useState<Project | null>(null),
-    [search, setSearch] = useState(''),
-    [showArchived, setShowArchived] = useState(false)
+    [search, setSearch] = useState(intent?.query || ''),
+    [showArchived, setShowArchived] = useState(
+      data.projects.some(
+        (project) => project.id === intent?.id && project.status === 'archived',
+      ),
+    )
   const manager = data.user.role === 'manager',
     project = editing && editing !== 'new' ? editing : null
   const projects = data.projects.filter(
@@ -76,7 +84,14 @@ export default function Projects({ data, refresh, notify }: PageProps) {
               </thead>
               <tbody>
                 {projects.map((item) => (
-                  <tr key={item.id}>
+                  <tr
+                    key={item.id}
+                    className={
+                      item.id === intent?.id
+                        ? 'navigation-highlight'
+                        : undefined
+                    }
+                  >
                     <td>
                       <div className="project-title">
                         <div className="project-icon">

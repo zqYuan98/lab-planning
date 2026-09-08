@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, Users } from 'lucide-react'
+import { Plus, Users, Search } from 'lucide-react'
 import type { User } from '../../shared/types'
 import { api, json } from '../api'
 import {
@@ -11,7 +11,13 @@ import {
   PageHeader,
   type PageProps,
 } from '../ui'
-export default function Team({ data, refresh, notify }: PageProps) {
+export default function Team({ data, refresh, notify, intent }: PageProps) {
+  const [search, setSearch] = useState(intent?.query || '')
+  const members = data.users.filter((item) =>
+    `${item.name} ${item.email} ${item.position}`
+      .toLocaleLowerCase()
+      .includes(search.toLocaleLowerCase()),
+  )
   const [editing, setEditing] = useState<User | 'new' | null>(null),
     user = editing && editing !== 'new' ? editing : null
   return (
@@ -27,6 +33,17 @@ export default function Team({ data, refresh, notify }: PageProps) {
           </button>
         }
       />
+      <div className="toolbar">
+        <label className="search-input">
+          <Search size={17} />
+          <input
+            aria-label="搜索成员"
+            placeholder="搜索姓名、岗位或邮箱"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </label>
+      </div>
       <div className="team-intro">
         <Users size={22} />
         <span>
@@ -35,7 +52,7 @@ export default function Team({ data, refresh, notify }: PageProps) {
         </span>
         <p>管理员审核发布与验收；成员维护本人计划、任务及进展。</p>
       </div>
-      {data.users.length ? (
+      {members.length ? (
         <div className="panel">
           <div className="table-scroll">
             <table>
@@ -50,8 +67,15 @@ export default function Team({ data, refresh, notify }: PageProps) {
                 </tr>
               </thead>
               <tbody>
-                {data.users.map((item) => (
-                  <tr key={item.id}>
+                {members.map((item) => (
+                  <tr
+                    key={item.id}
+                    className={
+                      item.id === intent?.id
+                        ? 'navigation-highlight'
+                        : undefined
+                    }
+                  >
                     <td>
                       <div className="person-cell">
                         <span className="avatar light">
@@ -84,7 +108,10 @@ export default function Team({ data, refresh, notify }: PageProps) {
           </div>
         </div>
       ) : (
-        <Empty title="暂无成员" />
+        <Empty
+          title={search ? '没有匹配的成员' : '暂无成员'}
+          description={search ? '尝试其他姓名、岗位或邮箱关键词。' : undefined}
+        />
       )}
       {editing && (
         <Modal
