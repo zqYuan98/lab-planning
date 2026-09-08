@@ -2,6 +2,8 @@
 
 访问地址默认为 **http://192.168.0.37:4310**。浏览器直接连接应用，无需 Nginx、域名或证书。服务器需要 Docker Engine 和 Compose 插件；前端、API、Word 导出与定时草稿由一个 Node 服务提供，SQLite 保存在命名卷中。
 
+2026-09-08 已完成37服务器部署、账号迁移及每日备份配置，实际位置和验证结果见[本次部署记录](deployment-37-2026-09-08.md)。
+
 这套配置只用于可信内网 HTTP。首次启动与管理员初始化应在受控网络内完成；不要把该端口映射到公网。HTTP 不加密浏览器与服务器之间的传输，需要 HTTPS 时使用[原部署手册](deployment.md)。
 
 ## 启动
@@ -62,5 +64,13 @@ docker compose --env-file .env.intranet -f current/compose.intranet.yaml ps
 如果使用预先导入的镜像，上一步改用 `up -d --no-build --force-recreate`，确保容器使用刚导入的版本。保留旧代码包以及旧版本镜像的明确标签，便于回退。
 
 更新会重建应用容器，指定的数据卷继续保留。重启后检查登录、计划、报告与导出。恢复时停应用，用已验证备份建立新卷，再修改 `DATA_VOLUME_NAME` 切换；保留故障前的卷，不覆盖唯一副本，不使用 `down -v`。备份还应复制到其他受控存储。
+
+仓库的 `scripts/backup-intranet.sh` 可执行在线备份并复制到部署根 `backups/`，支持指定部署目录、并发锁和不覆盖既有文件。37服务器的安装副本位于 `ops/backup-intranet.sh`，已由 `yzq` 的 crontab 在每天03:10（Asia/Shanghai）运行，保留了原有定时任务。手动运行：
+
+```sh
+/usr/bin/bash /home/yzq/apps/lab-planning/ops/backup-intranet.sh
+```
+
+备份运行日志为 `backups/backup-cron.log`。当前不自动删除备份，也没有配置持续异机复制；运维需按数据量安排异机存储、容量监控和保留周期。
 
 Docker 需随服务器开机启动。配置包含异常退出重启、持久卷、健康检查和日志轮转；健康检查失败本身不会重启仍存活的进程。定时草稿默认关闭，需管理者在报告中心启用；停机跨过触发日不会补跑，恢复后手动生成。AI 仅在配置后手动点击润色时调用。
