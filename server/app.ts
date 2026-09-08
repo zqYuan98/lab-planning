@@ -1,0 +1,94 @@
+import express, { type ErrorRequestHandler, type RequestHandler } from 'express'
+import { existsSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import type { User } from '../shared/types.ts'
+import { clearSession, createSession, originGuard, requireAuth, type StoredUser } from './auth.ts'
+import { Domain } from './domain.ts'
+import { HttpError, Store } from './store.ts'
+import { createReportRouter } from './report-routes.ts'
+
+interface AppOptions { store?: Store; dbPath?: string; enableScheduler?: boolean }
+export function createApp(options: AppOptions = {}) {
+  const store = options.store ?? new Store(options.dbPath ?? process.env.DATABASE_PATH ?? resolve('data/lab-planning.sqlite'))
+  const domain = new Domain(store)
+  const app = express()
+  app.locals.store = store
+  app.disable('x-powered-by')
+  app.use((_req, res, next) => {
+    res.set({ 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'same-origin' })
+    if (process.env.NODE_ENV === 'production') res.set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+    next()
+  })
+  app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next() }, originGuard, express.json({ limit: '256kb' }))
+  app.use('/api', (req, _res, next) => {
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && (!req.body || typeof req.body !== 'object' || Array.isArray(req.body))) return next(new HttpError(400, '请求内容必须是 JSON 对象'))
+    next()
+  })
+
+  // Small local deployment: bound credential attempts without storing passwords or account names.
+  const attempts = new Map<string, { count: number; resetAt: number }>()
+  const loginLimit: RequestHandler = (req, _res, next) => {
+    const key = req.ip ?? 'local'
+    const now = Date.now()
+    for (const [id, state] of attempts) if (state.resetAt < now) attempts.delete(id)
+    const state = attempts.get(key) ?? { count: 0, resetAt: now + 15 * 60 * 1000 }
+    if (state.count >= 20) return next(new HttpError(429, '尝试次数过多，请稍后再试'))
+    state.count++
+    attempts.set(key, state)
+    next()
+  }
+  app.get('/api/auth/status', (_req, res) => res.json({ initialized: store.list('users').length > 0 }))
+  const authenticate = (action: 'setup' | 'login'): RequestHandler => (req, res) => {
+    const user = domain[action](req.body)
+    clearSession(store, req.headers.cookie, res, false)
+    createSession(store, store.get<StoredUser>('users', user.id)!, res)
+    attempts.delete(req.ip ?? 'local')
+    res.status(action === 'setup' ? 201 : 200).json(user)
+  }
+  app.post('/api/auth/setup', loginLimit, authenticate('setup'))
+  app.post('/api/auth/login', loginLimit, authenticate('login'))
+  app.use('/api', requireAuth(store))
+  app.get('/api/auth/me', (req, res) => res.json(req.user))
+  app.post('/api/auth/logout', (req, res) => { clearSession(store, req.headers.cookie, res); res.json({ ok: true }) })
+  app.get('/api/bootstrap', (req, res) => res.json(domain.bootstrap(req.user)))
+
+  const create = (handler: (actor: User, input: Record<string, unknown>) => unknown): RequestHandler => (req, res) => { res.status(201).json(handler(req.user, req.body)) }
+  const mutate = (handler: (actor: User, id: string, input: Record<string, unknown>) => unknown): RequestHandler => (req, res) => { res.json(handler(req.user, String(req.params.id), req.body)) }
+  app.post('/api/users', create(domain.createUser))
+  app.patch('/api/users/:id', mutate(domain.updateUser))
+  app.post('/api/projects', create(domain.createProject))
+  app.patch('/api/projects/:id', mutate(domain.updateProject))
+  app.post('/api/annual-goals', create(domain.createAnnualGoal))
+  app.patch('/api/annual-goals/:id', mutate(domain.updateAnnualGoal))
+  app.post('/api/plans', create(domain.createPlan))
+  app.post('/api/plans/merge', create(domain.mergePlans))
+  app.patch('/api/plans/:id', mutate(domain.updatePlan))
+  app.post('/api/plans/:id/submit', mutate(domain.submitPlan))
+  app.post('/api/plans/:id/review', mutate(domain.reviewPlan))
+  app.post('/api/months/:month/publish', (req, res) => res.json(domain.publishMonth(req.user, String(req.params.month), req.body)))
+  app.post('/api/plans/:id/result', mutate(domain.planResult))
+  app.get('/api/plans/:id/history', (req, res) => res.json(domain.planHistory(req.user, String(req.params.id))))
+  app.post('/api/plans/:id/carry', mutate(domain.carryPlan))
+  app.post('/api/tasks', create(domain.createTask))
+  app.patch('/api/tasks/:id', mutate(domain.updateTask))
+  app.post('/api/tasks/:id/relink', mutate(domain.relinkTask))
+  app.post('/api/weekly-records', create(domain.createWeeklyRecord))
+  app.patch('/api/weekly-records/:id', mutate(domain.updateWeeklyRecord))
+  app.post('/api/weekly-records/:id/carry', mutate(domain.carryWeeklyRecord))
+  app.use('/api', createReportRouter(store))
+  app.use('/api', (_req, _res, next) => next(new HttpError(404, '接口不存在')))
+
+  const dist = resolve(dirname(fileURLToPath(import.meta.url)), '../dist')
+  if (existsSync(resolve(dist, 'index.html'))) {
+    app.use(express.static(dist, { index: false, maxAge: 0 }))
+    app.use((req, res, next) => req.method === 'GET' && req.accepts('html') ? res.sendFile(resolve(dist, 'index.html')) : next())
+  }
+  const errors: ErrorRequestHandler = (error, _req, res, _next) => {
+    const status = Number.isInteger(error?.status) && error.status >= 400 && error.status < 600 ? error.status : 500
+    if (status === 500) console.error('API error:', error instanceof Error ? error.message : 'unknown error')
+    res.status(status).json({ error: status === 500 ? '服务暂时无法处理请求，请稍后重试' : error.message ?? '请求失败' })
+  }
+  app.use(errors)
+  return app
+}

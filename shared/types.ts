@@ -3,13 +3,14 @@ export interface Entity { id: string; version: number; createdAt: string; update
 export interface User extends Entity { name: string; email: string; role: Role; position: string; active: boolean }
 export interface Project extends Entity { name: string; code: string; description: string; ownerId: string; status: 'active' | 'archived' }
 export interface AnnualGoal extends Entity { title: string; year: number; target: string; progress: number; description: string; ownerId: string; status: 'active' | 'completed' }
-export type PlanStatus = 'draft' | 'submitted' | 'returned' | 'approved' | 'published'
+export type PlanStatus = 'draft' | 'submitted' | 'returned' | 'approved' | 'published' | 'merged'
 export interface MonthlyPlan extends Entity {
   month: string; title: string; projectId: string | null; category: string; ownerId: string;
   collaboratorIds: string[]; expectedOutcome: string; acceptanceCriteria: string; dueDate: string;
   priority: 'high' | 'medium' | 'low'; status: PlanStatus; reviewComment: string;
   publishedVersion: number | null; sourcePlanId: string | null; actualOutcome: string;
   acceptanceStatus: 'pending' | 'submitted' | 'accepted' | 'not_completed'; acceptanceNote: string;
+  mergedFromIds?: string[]; mergedIntoId?: string;
 }
 export interface Task extends Entity { title: string; monthlyPlanId: string | null; ownerId: string; description: string; dueDate: string; status: 'todo' | 'doing' | 'blocked' | 'done'; isTemporary: boolean; temporaryReason: string }
 export type WeeklyStatus = 'planned' | 'doing' | 'blocked' | 'done' | 'not_done'
