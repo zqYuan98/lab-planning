@@ -30,6 +30,8 @@ jobs:
         run: docker compose config --quiet
       - name: Build production image
         run: docker build -t lab-planning-ci .
+      - name: Validate direct intranet Compose configuration
+        run: docker compose --env-file deploy/intranet.env.example -f compose.intranet.yaml config --quiet
       - name: Start isolated production service
         run: >-
           docker run -d --name lab-planning-ci
