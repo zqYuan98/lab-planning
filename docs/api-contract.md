@@ -1,0 +1,32 @@
+# API contract
+
+Shared types in shared/types.ts are authoritative. JSON responses return the object/array directly, errors return {error:string}. Authentication uses HttpOnly same-origin cookie. All mutations (except login/setup) require authenticated identity and application/json. Entity update requires version; mismatches return 409. Use strings for IDs, ISO timestamps, YYYY-MM months and YYYY-MM-DD dates. No automatic company data import.
+
+- GET /api/auth/status -> {initialized:boolean}; POST /api/auth/setup {name,email,password} -> User first manager; POST /api/auth/login {email,password}->User; POST /api/auth/logout; GET /api/auth/me -> User.
+- GET /api/bootstrap -> Bootstrap; member views only own/collaborating relevant plans/tasks/weekly records. Manager sees all. users returns safe User objects, never password hashes.
+- POST /api/users {name,email,password,position,role}; PATCH /api/users/:id {version,name?,position?,active?,role?,password?} manager only. Cannot remove/demote last active manager.
+- POST /api/projects {name,code,description,ownerId}; PATCH /api/projects/:id {version,...}. Manager only; archive instead of delete.
+- POST /api/annual-goals {title,year,target,progress,description,ownerId}; PATCH /api/annual-goals/:id {version,...}. Manager only. Independent of monthly.
+- POST /api/plans {month,title,projectId?,category,ownerId?,collaboratorIds?,expectedOutcome,acceptanceCriteria,dueDate,priority?,sourcePlanId?} -> MonthlyPlan; creates draft. Member owner=self.
+- PATCH /api/plans/:id {version,...editable fields} -> MonthlyPlan. Member can edit own draft/returned. Manager may edit submitted/approved; published changes require nonempty reason and create new publication snapshot. Preserve audit before/after; do not overwrite original submissions. Published owner/collaborator changes cannot orphan assigned tasks.
+- POST /api/plans/:id/submit {version}; POST /api/plans/:id/review {version,decision:'approve'|'return',comment}; POST /api/months/:month/publish {planIds:string[],reason?}. Manager publishes approved items, revision snapshot contains all published month plans. Publication does not accept results.
+- POST /api/plans/:id/result {version,actualOutcome,acceptanceStatus:'submitted'|'accepted'|'not_completed',acceptanceNote?}. Owner submits actual results, manager confirms accepted/not_completed; accepted requires outcome.
+- GET /api/plans/:id/history -> AuditEvent[]. Authorized member/manager.
+- POST /api/plans/:id/carry {month,dueDate,reason} -> MonthlyPlan draft linked to source. Old month unchanged.
+- POST /api/tasks {title,monthlyPlanId?,ownerId?,description,dueDate,isTemporary?,temporaryReason?} -> Task. Bound plan must be own/collaborating. Temporary needs reason; formal task requires monthly plan. Weekly draft allowed before plan publication, submission gate below.
+- PATCH /api/tasks/:id {version,title?,description?,dueDate?,status?}. Owner/manager.
+- POST /api/tasks/:id/relink {version,monthlyPlanId,reason} -> Task. Manager only, target published; preserves task identity and prior weekly monthlyPlanId snapshots.
+- POST /api/weekly-records {taskId,weekStart,commitment,actualOutcome?,evidenceUrl?,blocker?,nextAction?,status?,submitted?} -> WeeklyRecord. Unique (taskId,weekStart); owner=task owner; normalize Monday. submitted=true requires published monthly link or explicit temporary task. done requires actualOutcome; blocked/not_done require blocker. Evidence URL http/https only.
+- PATCH /api/weekly-records/:id {version,...content/status/submitted fields}; cannot change task/week/owner. Completed week does not auto-accept month.
+- POST /api/weekly-records/:id/carry {weekStart,commitment?} -> WeeklyRecord. Same task, next week new planned/draft record; no inherited outcome/status. Record original monthly link, unless task was relinked.
+- GET /api/reports; POST /api/reports {type,period} -> Report. Manager only. Weekly period is Monday date; monthly period YYYY-MM. Full immutable source snapshot, metrics independent of narrative/TOP picks; repeated generation creates revision.
+- PATCH /api/reports/:id {version,narrative,title?}; POST /api/reports/:id/finalize {version}; POST /api/reports/:id/polish {version}; GET /api/reports/:id/export?format=docx|md. Manager only. Polish only when configured, never fabricate facts, no stats mutation; finalized immutable.
+- GET /api/report-schedule; PUT /api/report-schedule {version,enabled,weeklyDay,weeklyTime,monthlyDay,monthlyTime}. weeklyDay 1..7; monthlyDay 0=last day else 1..28. Default disabled. Asia/Shanghai; durable per-period idempotency for scheduled draft generation, no external notifications.
+
+## Backend integration
+
+server/store.ts exports Store: constructor(path:string), get<T>(collection,id):T|undefined, list<T>(collection):T[], insert<T extends Entity>(collection,input:Omit<T,keyof Entity>&Partial<Entity>):T, update<T extends Entity>(collection,id,expectedVersion:number,patch:Partial<T>):T, transaction<T>(fn:()=>T):T, close(). New entity ID/time/version are assigned by store; revision starts 1. Store throws with status 404/409. Store collections: users (internal passwordHash extra, sanitize outputs), sessions, projects, annualGoals, plans, tasks, weeklyRecords, events, publications, reports, settings, scheduleRuns. No network I/O inside transaction.
+
+server/auth.ts exports requireAuth(store):RequestHandler attaching req.user:User; requireManager middleware; safeUser strips secrets. server/domain.ts exports Domain(store) containing business logic used by router and tests. server/app.ts exports createApp({store?,dbPath?,enableScheduler?}={}): Express. Root agent implements server/reports.ts and server/report-routes.ts exporting createReportRouter(store):Router, mounted behind requireAuth at /api; server/scheduler.ts exports startScheduler(store):()=>void. API/domain agent integrates those imports only after files exist. Route bootstrap may import report methods only if needed; store.list('reports') manager only.
+
+Frontend src/api.ts exports api<T>(path,options?) using /api prefix, credentials same-origin and error handling. App consumes bootstrap, displays create/review/publish weekly operations and reports, refreshes bootstrap after successful mutation. Root owns src/pages/Reports.tsx and server report modules; frontend agent owns remaining src and styling. Reports page exported default with props {data:Bootstrap,refresh:()=>Promise<void>,notify:(message:string)=>void}; use api and src/ui.tsx shared helpers if available.

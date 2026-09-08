@@ -1,0 +1,22 @@
+export type Role = 'manager' | 'member'
+export interface Entity { id: string; version: number; createdAt: string; updatedAt: string }
+export interface User extends Entity { name: string; email: string; role: Role; position: string; active: boolean }
+export interface Project extends Entity { name: string; code: string; description: string; ownerId: string; status: 'active' | 'archived' }
+export interface AnnualGoal extends Entity { title: string; year: number; target: string; progress: number; description: string; ownerId: string; status: 'active' | 'completed' }
+export type PlanStatus = 'draft' | 'submitted' | 'returned' | 'approved' | 'published'
+export interface MonthlyPlan extends Entity {
+  month: string; title: string; projectId: string | null; category: string; ownerId: string;
+  collaboratorIds: string[]; expectedOutcome: string; acceptanceCriteria: string; dueDate: string;
+  priority: 'high' | 'medium' | 'low'; status: PlanStatus; reviewComment: string;
+  publishedVersion: number | null; sourcePlanId: string | null; actualOutcome: string;
+  acceptanceStatus: 'pending' | 'submitted' | 'accepted' | 'not_completed'; acceptanceNote: string;
+}
+export interface Task extends Entity { title: string; monthlyPlanId: string | null; ownerId: string; description: string; dueDate: string; status: 'todo' | 'doing' | 'blocked' | 'done'; isTemporary: boolean; temporaryReason: string }
+export type WeeklyStatus = 'planned' | 'doing' | 'blocked' | 'done' | 'not_done'
+export interface WeeklyRecord extends Entity { taskId: string; monthlyPlanId: string | null; ownerId: string; weekStart: string; commitment: string; actualOutcome: string; evidenceUrl: string; blocker: string; nextAction: string; status: WeeklyStatus; submitted: boolean }
+export interface AuditEvent extends Entity { entityType: string; entityId: string; actorId: string; action: string; reason: string; before: unknown; after: unknown }
+export interface Publication extends Entity { month: string; revision: number; actorId: string; reason: string; plans: MonthlyPlan[] }
+export interface ReportSnapshot { plans: MonthlyPlan[]; weeklyRecords: WeeklyRecord[]; tasks: Task[]; projects: Project[]; users: User[]; annualGoals: AnnualGoal[]; nextPlans: MonthlyPlan[]; nextWeeklyRecords: WeeklyRecord[]; publications: Publication[]; changes: AuditEvent[] }
+export interface Report extends Entity { type: 'weekly' | 'monthly'; period: string; title: string; status: 'draft' | 'finalized'; revision: number; narrative: string; snapshot: ReportSnapshot; authorId: string; finalizedAt: string | null }
+export interface ReportSchedule extends Entity { enabled: boolean; weeklyDay: number; weeklyTime: string; monthlyDay: number; monthlyTime: string; timezone: 'Asia/Shanghai' }
+export interface Bootstrap { user: User; users: User[]; projects: Project[]; plans: MonthlyPlan[]; tasks: Task[]; weeklyRecords: WeeklyRecord[]; annualGoals: AnnualGoal[]; publications: Publication[]; reports: Report[]; aiConfigured: boolean }
