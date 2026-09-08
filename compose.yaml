@@ -1,0 +1,37 @@
+name: lab-planning
+services:
+  app:
+    image: lab-planning:local
+    build: .
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 15s
+    ports:
+      - "127.0.0.1:4310:4310"
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "4310"
+      DATABASE_PATH: ${DATABASE_PATH:-/app/data/lab-planning.sqlite}
+      APP_ORIGIN: ${APP_ORIGIN:?Set APP_ORIGIN in .env before starting}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      AI_BASE_URL: ${AI_BASE_URL:-}
+      AI_MODEL: ${AI_MODEL:-}
+      AI_API_KEY: ${AI_API_KEY:-}
+    volumes:
+      - lab-data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4310/api/auth/status',{signal:AbortSignal.timeout(4000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+volumes:
+  lab-data:
+    name: ${DATA_VOLUME_NAME:-lab-planning-data}

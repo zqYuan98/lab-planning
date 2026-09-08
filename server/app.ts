@@ -2,48 +2,81 @@ import express, { type ErrorRequestHandler, type RequestHandler } from 'express'
 import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isIP } from 'node:net'
 import type { User } from '../shared/types.ts'
-import { clearSession, createSession, originGuard, requireAuth, type StoredUser } from './auth.ts'
+import { appOrigin, clearSession, createSession, createOriginGuard, requireAuth, setSessionCookie, type StoredUser } from './auth.ts'
 import { Domain } from './domain.ts'
 import { HttpError, Store } from './store.ts'
 import { createReportRouter } from './report-routes.ts'
 
 interface AppOptions { store?: Store; dbPath?: string; enableScheduler?: boolean }
+/** Trust named loopback or explicit proxy addresses, never a caller-supplied hop count. */
+function trustedProxies(value = process.env.TRUST_PROXY): false | string[] {
+  if (!value || value === 'false') return false
+  const entries = value.split(',').map(entry => entry.trim())
+  const valid = entries.every(entry => {
+    if (entry === 'loopback') return true
+    const [address, prefix, extra] = entry.split('/')
+    const family = isIP(address)
+    return family !== 0 && extra === undefined && (prefix === undefined || /^\d+$/.test(prefix) && Number(prefix) > 0 && Number(prefix) <= (family === 4 ? 32 : 128))
+  })
+  if (!valid) throw new Error('TRUST_PROXY 仅接受 loopback 或逗号分隔的代理 IP/CIDR 白名单，禁止全网信任或跳数')
+  return entries
+}
 export function createApp(options: AppOptions = {}) {
+  const canonical = appOrigin()
+  const proxies = trustedProxies()
   const store = options.store ?? new Store(options.dbPath ?? process.env.DATABASE_PATH ?? resolve('data/lab-planning.sqlite'))
   const domain = new Domain(store)
   const app = express()
   app.locals.store = store
   app.disable('x-powered-by')
+  app.set('trust proxy', proxies)
   app.use((_req, res, next) => {
     res.set({ 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'same-origin' })
     if (process.env.NODE_ENV === 'production') res.set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
     next()
   })
-  app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next() }, originGuard, express.json({ limit: '256kb' }))
+  app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next() }, createOriginGuard(canonical), express.json({ limit: '256kb' }))
   app.use('/api', (req, _res, next) => {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && (!req.body || typeof req.body !== 'object' || Array.isArray(req.body))) return next(new HttpError(400, '请求内容必须是 JSON 对象'))
     next()
   })
 
-  // Small local deployment: bound credential attempts without storing passwords or account names.
+  // Only failed credentials consume the budget; a valid login cannot erase prior failures.
   const attempts = new Map<string, { count: number; resetAt: number }>()
-  const loginLimit: RequestHandler = (req, _res, next) => {
+  const loginLimit: RequestHandler = (req, res, next) => {
     const key = req.ip ?? 'local'
     const now = Date.now()
-    for (const [id, state] of attempts) if (state.resetAt < now) attempts.delete(id)
-    const state = attempts.get(key) ?? { count: 0, resetAt: now + 15 * 60 * 1000 }
-    if (state.count >= 20) return next(new HttpError(429, '尝试次数过多，请稍后再试'))
-    state.count++
-    attempts.set(key, state)
+    for (const [id, state] of attempts) if (state.resetAt <= now) attempts.delete(id)
+    const state = attempts.get(key)
+    if (state && state.count >= 20) {
+      res.set('Retry-After', String(Math.ceil((state.resetAt - now) / 1000)))
+      return next(new HttpError(429, '尝试次数过多，请稍后再试'))
+    }
     next()
   }
   app.get('/api/auth/status', (_req, res) => res.json({ initialized: store.list('users').length > 0 }))
   const authenticate = (action: 'setup' | 'login'): RequestHandler => (req, res) => {
-    const user = domain[action](req.body)
-    clearSession(store, req.headers.cookie, res, false)
-    createSession(store, store.get<StoredUser>('users', user.id)!, res)
-    attempts.delete(req.ip ?? 'local')
+    let authenticated: { user: User; token: string }
+    try {
+      authenticated = store.transaction(() => {
+        const user = domain[action](req.body)
+        clearSession(store, req.headers.cookie, res, false)
+        const token = createSession(store, store.get<StoredUser>('users', user.id)!)
+        return { user, token }
+      })
+    } catch (error) {
+      if (error instanceof HttpError && [400, 401, 409].includes(error.status)) {
+        const key = req.ip ?? 'local'
+        const state = attempts.get(key) ?? { count: 0, resetAt: Date.now() + 15 * 60 * 1000 }
+        state.count++
+        attempts.set(key, state)
+      }
+      throw error
+    }
+    const { user, token } = authenticated
+    setSessionCookie(res, token)
     res.status(action === 'setup' ? 201 : 200).json(user)
   }
   app.post('/api/auth/setup', loginLimit, authenticate('setup'))
@@ -84,10 +117,13 @@ export function createApp(options: AppOptions = {}) {
     app.use(express.static(dist, { index: false, maxAge: 0 }))
     app.use((req, res, next) => req.method === 'GET' && req.accepts('html') ? res.sendFile(resolve(dist, 'index.html')) : next())
   }
-  const errors: ErrorRequestHandler = (error, _req, res, _next) => {
+  const errors: ErrorRequestHandler = (error, _req, res, next) => {
+    if (res.headersSent) return next(error)
     const status = Number.isInteger(error?.status) && error.status >= 400 && error.status < 600 ? error.status : 500
     if (status === 500) console.error('API error:', error instanceof Error ? error.message : 'unknown error')
-    res.status(status).json({ error: status === 500 ? '服务暂时无法处理请求，请稍后重试' : error.message ?? '请求失败' })
+    if (status === 503) res.set('Retry-After', '1')
+    const message = error?.type === 'entity.parse.failed' ? 'JSON 格式无效，请检查请求内容' : error?.type === 'entity.too.large' ? '请求内容超过大小限制' : status === 500 ? '服务暂时无法处理请求，请稍后重试' : error.message ?? '请求失败'
+    res.status(status).json({ error: message })
   }
   app.use(errors)
   return app

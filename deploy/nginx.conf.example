@@ -1,0 +1,29 @@
+# Host Nginx, one trusted proxy, application exposed only on 127.0.0.1:4310.
+# Replace planning.example.com and certificate paths before loading this file.
+server {
+    listen 80;
+    server_name planning.example.com;
+    return 301 https://planning.example.com$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name planning.example.com;
+    ssl_certificate /etc/letsencrypt/live/planning.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/planning.example.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    client_max_body_size 256k;
+
+    location / {
+        proxy_pass http://127.0.0.1:4310;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # Overwrite untrusted inbound forwarding headers at this sole edge proxy.
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 90s;
+        proxy_send_timeout 90s;
+    }
+}

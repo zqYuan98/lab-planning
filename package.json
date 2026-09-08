@@ -11,7 +11,8 @@
     "build": "tsc --noEmit && vite build",
     "start": "tsx server/index.ts",
     "test": "tsx --test tests/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "backup": "tsx scripts/backup.ts"
   },
   "dependencies": {
     "docx": "^9.5.1",

@@ -139,7 +139,7 @@ export function buildOverview(data: Bootstrap, today = shanghaiToday()) {
   const pending = plans.filter((plan) => plan.status === "submitted"),
     approved = plans.filter((plan) => plan.status === "approved");
   const reviewScope = plans.filter((plan) =>
-    ["submitted", "approved", "published"].includes(plan.status),
+    ["submitted", "returned", "approved", "published"].includes(plan.status),
   );
   const blocked = submitted.filter((record) => record.status === "blocked"),
     notDone = submitted.filter((record) => record.status === "not_done");

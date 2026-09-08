@@ -3,10 +3,13 @@ import { HttpError } from './store.ts'
 import { DomainBase, choice, date, manager, month, own, participates, text, type Input } from './domain-common.ts'
 
 export class MonthlyService extends DomainBase {
-  private collaborators(value: unknown, ownerId: string): string[] {
+  private collaborators(value: unknown, ownerId: string, existingParticipants: string[] = []): string[] {
     if (value === undefined) return []
     if (!Array.isArray(value) || value.length > 100 || value.some(item => typeof item !== 'string')) throw new HttpError(400, '协作者格式不正确')
-    return [...new Set(value as string[])].filter(id => id !== ownerId).map(id => this.activeUser(id).id)
+    return [...new Set(value as string[])].filter(id => id !== ownerId).map(id => {
+      // Retaining an existing responsibility is not assigning new work to a disabled account.
+      return existingParticipants.includes(id) ? this.need<User>('users', id).id : this.activeUser(id).id
+    })
   }
   private revision(period: string) {
     return Math.max(0, ...this.store.list<Publication>('publications').filter(item => item.month === period).map(item => item.revision)) + 1
@@ -26,7 +29,8 @@ export class MonthlyService extends DomainBase {
       const sourcePlanId = input.sourcePlanId ? text(input.sourcePlanId, '来源计划') : null
       if (sourcePlanId) {
         const source = this.need<MonthlyPlan>('plans', sourcePlanId)
-        this.visible(actor, source)
+        own(actor, source.ownerId)
+        if (source.status === 'merged') throw new HttpError(400, '请从合并后的月计划发起跨月承接')
         if (period <= source.month) throw new HttpError(400, '承接月份必须晚于来源月份')
         if (source.acceptanceStatus === 'accepted') throw new HttpError(400, '已验收成果不能作为未完成事项承接')
       }
@@ -65,7 +69,7 @@ export class MonthlyService extends DomainBase {
         patch.ownerId = this.activeUser(input.ownerId).id
       }
       const ownerId = patch.ownerId ?? before.ownerId
-      if (input.collaboratorIds !== undefined) patch.collaboratorIds = this.collaborators(input.collaboratorIds, ownerId)
+      if (input.collaboratorIds !== undefined) patch.collaboratorIds = this.collaborators(input.collaboratorIds, ownerId, [before.ownerId, ...before.collaboratorIds])
       else if (patch.ownerId) patch.collaboratorIds = before.collaboratorIds.filter(item => item !== ownerId)
       if (input.expectedOutcome !== undefined) patch.expectedOutcome = text(input.expectedOutcome, '预期成果')
       if (input.acceptanceCriteria !== undefined) patch.acceptanceCriteria = text(input.acceptanceCriteria, '验收标准')

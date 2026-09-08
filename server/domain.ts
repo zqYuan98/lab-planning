@@ -1,4 +1,4 @@
-import type { AnnualGoal, Bootstrap, MonthlyPlan, Project, Publication, Report, Task, User, WeeklyRecord } from '../shared/types.ts'
+import type { AnnualGoal, AuditEvent, Bootstrap, MonthlyPlan, Project, Publication, Report, Task, User, WeeklyRecord } from '../shared/types.ts'
 import { safeUser } from './auth.ts'
 import { AdminService } from './domain-admin.ts'
 import { DomainBase, participates } from './domain-common.ts'
@@ -48,6 +48,23 @@ export class Domain extends DomainBase {
     const currentPlanIds = new Set(plans.filter(plan => participates(plan, actor.id)).map(plan => plan.id))
     const tasks = this.store.list<Task>('tasks').filter(task => isManager || task.ownerId === actor.id || (task.monthlyPlanId && currentPlanIds.has(task.monthlyPlanId)))
     const weeklyRecords = this.store.list<WeeklyRecord>('weeklyRecords').filter(record => isManager || record.ownerId === actor.id || (record.monthlyPlanId && currentPlanIds.has(record.monthlyPlanId)))
+    // A task can move to a new month that an old collaborator cannot access. Keep the
+    // old weekly records readable using an authorized task snapshot, never its new contents.
+    const visibleTaskIds = new Set(tasks.map(task => task.id))
+    const missingTaskIds = new Set(weeklyRecords.filter(record => !visibleTaskIds.has(record.taskId)).map(record => record.taskId))
+    if (missingTaskIds.size) {
+      const taskEvents = this.store.list<AuditEvent>('events').filter(event => event.entityType === 'task').reverse()
+      for (const taskId of missingTaskIds) {
+        const relevantPlanIds = new Set(weeklyRecords.filter(record => record.taskId === taskId && record.monthlyPlanId && currentPlanIds.has(record.monthlyPlanId)).map(record => record.monthlyPlanId))
+        const historical = taskEvents.filter(event => event.entityId === taskId)
+          .flatMap(event => [event.after, event.before])
+          .find(snapshot => {
+            const task = snapshot as Task | null
+            return task?.id === taskId && task.monthlyPlanId !== null && relevantPlanIds.has(task.monthlyPlanId)
+          }) as Task | undefined
+        if (historical) tasks.push(historical)
+      }
+    }
     const publications = this.store.list<Publication>('publications').map(item => isManager ? item : { ...item, plans: item.plans.filter(plan => participates(plan, actor.id)) }).filter(item => item.plans.length)
     return { user: safeUser(actor), users: this.store.list<User>('users').map(safeUser), projects: this.store.list<Project>('projects'), annualGoals: this.store.list<AnnualGoal>('annualGoals'), plans, tasks, weeklyRecords, publications, reports: isManager ? this.store.list<Report>('reports') : [], aiConfigured: aiConfigured() }
   }

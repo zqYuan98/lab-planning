@@ -1,4 +1,4 @@
-import type { MonthlyPlan, Task, User, WeeklyRecord } from '../shared/types.ts'
+import type { AuditEvent, MonthlyPlan, Task, User, WeeklyRecord } from '../shared/types.ts'
 import { HttpError } from './store.ts'
 import { DomainBase, bool, choice, date, manager, monday, own, participates, text, type Input } from './domain-common.ts'
 
@@ -59,9 +59,13 @@ export class WorkService extends DomainBase {
       const task = this.store.update<Task>('tasks', id, before.version, { monthlyPlanId, isTemporary: false })
       this.audit(actor, 'task', id, 'relink', before, task, reason)
       // Legacy/provisional future drafts may have been created before a new month's plan existed.
-      // Explicit manager relinking repairs only matching unsubmitted drafts; formal history stays frozen.
+      // Withdrawing a submitted record does not make its original month provisional again.
+      const submittedRecordIds = new Set(this.store.list<AuditEvent>('events')
+        .filter(event => event.entityType === 'weeklyRecord' && [event.before, event.after].some(snapshot =>
+          !!snapshot && typeof snapshot === 'object' && (snapshot as Partial<WeeklyRecord>).submitted === true))
+        .map(event => event.entityId))
       for (const record of this.store.list<WeeklyRecord>('weeklyRecords')) {
-        if (record.taskId !== id || record.submitted || record.monthlyPlanId === monthlyPlanId || !this.overlapsMonth(record.weekStart, target.month)) continue
+        if (record.taskId !== id || record.submitted || submittedRecordIds.has(record.id) || record.monthlyPlanId === monthlyPlanId || !this.overlapsMonth(record.weekStart, target.month)) continue
         const updated = this.store.update<WeeklyRecord>('weeklyRecords', record.id, record.version, { monthlyPlanId })
         this.audit(actor, 'weeklyRecord', record.id, 'relink_draft', record, updated, reason)
       }

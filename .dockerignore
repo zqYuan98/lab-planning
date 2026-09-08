@@ -9,3 +9,7 @@ output
 .tools
 test-results
 playwright-report
+*.sqlite*
+*.db*
+**/*.sqlite*
+**/*.db*

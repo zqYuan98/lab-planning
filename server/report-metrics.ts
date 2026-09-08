@@ -1,4 +1,4 @@
-import type { Report, ReportSnapshot, WeeklyRecord } from '../shared/types.ts'
+import type { MonthlyPlan, Report, ReportSnapshot, WeeklyRecord } from '../shared/types.ts'
 
 /** Pure snapshot calculations, shared by the browser and all export formats. */
 export function reportMetrics(snapshot: ReportSnapshot) {
@@ -17,11 +17,28 @@ export function reportMetrics(snapshot: ReportSnapshot) {
 }
 
 export function rateLabel(value: number | null) { return value === null ? '暂无统计口径' : `${value}%` }
+/** Follow frozen source proposals, including carryovers that were subsequently merged. */
+export function planOriginLabel(snapshot: ReportSnapshot, plan: MonthlyPlan): string {
+  const plans = new Map([...snapshot.plans, ...snapshot.nextPlans, ...(snapshot.contextPlans || [])].map(p => [p.id, p]))
+  const describe = (current: MonthlyPlan, path: Set<string>): string => {
+    if (path.has(current.id)) return '来源链存在重复，待核对'
+    const nextPath = new Set(path).add(current.id)
+    const label = (id: string): string => {
+      const source = plans.get(id)
+      if (!source) return '原始计划未收录于该快照'
+      const ancestry = describe(source, nextPath)
+      return `${source.month} · ${source.title}${ancestry ? `（${ancestry}）` : ''}`
+    }
+    return [current.sourcePlanId ? `承接：${label(current.sourcePlanId)}` : '',
+      current.mergedFromIds?.length ? `合并：${current.mergedFromIds.map(label).join('、')}` : ''].filter(Boolean).join('；')
+  }
+  return describe(plan, new Set())
+}
 /** Historical record attribution never changes when the stable task is later relinked. */
 export function weeklyAssociationLabel(snapshot: ReportSnapshot, record: WeeklyRecord): string {
   const task = snapshot.tasks.find(t => t.id === record.taskId)
   const planName = (id: string) => {
-    const plan = [...snapshot.plans, ...snapshot.nextPlans].find(p => p.id === id)
+    const plan = [...snapshot.plans, ...snapshot.nextPlans, ...(snapshot.contextPlans || [])].find(p => p.id === id)
     return plan ? `${plan.month} · ${plan.title}` : id
   }
   if (record.monthlyPlanId) return `当期月计划：${planName(record.monthlyPlanId)}`

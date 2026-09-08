@@ -25,6 +25,11 @@ export default function MergeProposals({
     (plan) =>
       plan.month === month &&
       ['submitted', 'approved'].includes(plan.status) &&
+      (!plan.projectId ||
+        data.projects.some(
+          (project) =>
+            project.id === plan.projectId && project.status === 'active',
+        )) &&
       !data.tasks.some((task) => task.monthlyPlanId === plan.id),
   )
   return (

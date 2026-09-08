@@ -288,9 +288,10 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
                     ) : (
                       <Badge>草稿 · 未提交</Badge>
                     )}
-                    {task?.isTemporary && (
+                    {!record.monthlyPlanId && (
                       <Badge tone="amber">
-                        临时工作{!record.monthlyPlanId ? ' · 待关联' : ''}
+                        临时工作
+                        {task?.monthlyPlanId ? ' · 原周记录' : ' · 待关联'}
                       </Badge>
                     )}
                   </div>
@@ -303,8 +304,10 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
                   <Link2 size={14} />
                   {plan
                     ? `${plan.month} · ${plan.title}`
-                    : '临时事项，尚未关联月计划'}
-                  {task && <span>截止 {task.dueDate}</span>}
+                    : task?.monthlyPlanId
+                      ? '本周按临时工作记录，任务后续已关联月计划'
+                      : '临时事项，尚未关联月计划'}
+                  {task && <span>任务当前截止 {task.dueDate}</span>}
                 </div>
                 <div className="weekly-facts">
                   <div>
@@ -588,6 +591,12 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
                   .filter(
                     (plan) =>
                       plan.status === 'published' &&
+                      (!plan.projectId ||
+                        data.projects.some(
+                          (project) =>
+                            project.id === plan.projectId &&
+                            project.status === 'active',
+                        )) &&
                       (plan.ownerId === selectedTask.ownerId ||
                         plan.collaboratorIds.includes(selectedTask.ownerId)),
                   )
@@ -634,6 +643,11 @@ function WeeklyCreate({
     [createdTask, setCreatedTask] = useState<Task | null>(null)
   const plans = data.plans.filter(
     (plan) =>
+      (!plan.projectId ||
+        data.projects.some(
+          (project) =>
+            project.id === plan.projectId && project.status === 'active',
+        )) &&
       (plan.ownerId === ownerId || plan.collaboratorIds.includes(ownerId)) &&
       (plan.status === 'published' ||
         ['draft', 'returned', 'submitted', 'approved'].includes(plan.status)),
@@ -641,6 +655,8 @@ function WeeklyCreate({
   const existing = data.tasks.filter(
     (task) =>
       task.ownerId === ownerId &&
+      (!task.monthlyPlanId ||
+        plans.some((plan) => plan.id === task.monthlyPlanId)) &&
       (temporary ? task.isTemporary : !task.isTemporary),
   )
   const plan = plans.find((plan) => plan.id === planId)

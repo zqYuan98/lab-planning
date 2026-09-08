@@ -4,7 +4,7 @@
 
 ## 开始使用
 
-需要 Node.js 24.14 或更高版本。
+建议使用 Node.js 24.20.0 LTS（`.nvmrc` 与容器镜像已固定；最低兼容24.14）。
 
 ```sh
 npm ci
@@ -36,23 +36,24 @@ npm run dev
 ## 正式运行
 
 ```sh
-npm ci
+npm ci --include=dev
 npm run build
 npm start
 ```
 
-打开 http://127.0.0.1:4310 。生产运行由一个服务提供网页和 API。复制 `.env.example` 为 `.env` 可设置监听地址、端口、数据路径及可选 AI；真实 `.env` 和数据库已加入 Git 忽略。
+打开 http://127.0.0.1:4310 。生产运行由一个服务提供网页和 API。裸机可复制 `.env.example` 为 `.env`，将其中的 `NODE_ENV` 改为 `production`，再设置监听地址、端口、数据路径及可选 AI；真实 `.env` 和数据库已加入 Git 忽略。
 
 外网部署时使用 HTTPS 反向代理，配置 `APP_ORIGIN` 为实际站点地址、`COOKIE_SECURE=true`，数据目录必须挂载持久卷。仅在受控首次初始化时开放创建管理员页面，完成初始化后再开放给成员。
 
-可选容器运行：
+正式服务器建议使用仓库提供的 Compose 配置，完整初始化、HTTPS、可信代理、备份和迁移步骤见 [部署手册](docs/deployment.md)。
 
 ```sh
-docker build -t lab-planning .
-docker run --name lab-planning -p 127.0.0.1:4310:4310 -v lab-planning-data:/app/data --env-file .env lab-planning
+cp deploy/production.env.example .env
+docker compose config --quiet
+docker compose up -d --build
 ```
 
-容器内需要 `HOST=0.0.0.0`；如 `.env` 使用本地默认值，运行容器时用 `-e HOST=0.0.0.0` 覆盖。当前架构适合单实例的小型部门应用；多副本部署前需迁移存储和共享会话方案。
+Compose 固定容器内 `HOST=0.0.0.0` 与生产模式，服务器只映射 `127.0.0.1:4310`，初始化通过受控SSH隧道进行。正式使用前需按手册切换HTTPS。当前架构适合单实例的小型部门应用；多副本部署前需迁移存储和共享会话方案。
 
 ## 汇报自动生成与 AI
 
@@ -65,7 +66,7 @@ docker run --name lab-planning -p 127.0.0.1:4310:4310 -v lab-planning-data:/app/
 ## 备份与恢复
 
 ```sh
-npx tsx scripts/backup.ts
+npm run backup
 ```
 
 脚本使用 SQLite 在线备份接口，并检查备份完整性；可在命令后指定新的输出文件路径。备份包含账号、业务数据、历史和报告，应与数据库一样妥善保管。
@@ -79,6 +80,6 @@ npm test
 npm run build
 ```
 
-测试使用隔离数据库，覆盖权限、计划发布、版本冲突、跨期承接、报告统计和快照。验收结果见 [验证记录](docs/validation.md)。
+测试使用隔离数据库，覆盖权限、计划发布、版本冲突、跨期承接、报告统计和快照。验收结果见 [验证记录](docs/validation.md)，本轮问题与运行边界见 [2026-09-08 系统审查](docs/system-audit-2026-09-08.md)。
 
 技术栈：React、TypeScript、Vite、Express、SQLite。业务方案见 `docs/superpowers/specs/`，接口约定见 `docs/api-contract.md`。

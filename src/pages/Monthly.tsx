@@ -49,14 +49,20 @@ const tones: Record<string, string> = {
 }
 export default function Monthly({ data, refresh, notify, intent }: PageProps) {
   const manager = data.user.role === 'manager'
+  const archivedProjectIds = new Set(
+    data.projects
+      .filter((project) => project.status === 'archived')
+      .map((project) => project.id),
+  )
+  const canPublish = (plan: MonthlyPlan) =>
+    plan.status === 'approved' &&
+    (!plan.projectId || !archivedProjectIds.has(plan.projectId))
   const initialMonth = intent?.month || currentMonth()
   const initialPlan = data.plans.find((plan) => plan.id === intent?.id)
   const readyToPublish =
     manager &&
     intent?.action === 'publish' &&
-    data.plans.some(
-      (plan) => plan.month === initialMonth && plan.status === 'approved',
-    )
+    data.plans.some((plan) => plan.month === initialMonth && canPublish(plan))
   const [month, setMonth] = useState(initialPlan?.month || initialMonth),
     [filter, setFilter] = useState(
       intent?.action === 'review' ? 'submitted' : intent?.status || 'all',
@@ -82,7 +88,7 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
         search,
       ),
   )
-  const approved = monthPlans.filter((plan) => plan.status === 'approved')
+  const approved = monthPlans.filter(canPublish)
   const publications = data.publications
     .filter((value) => value.month === month)
     .sort((a, b) => b.revision - a.revision)
@@ -243,6 +249,10 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
                               <Badge tone="amber">高优先级</Badge>
                             )}
                             {plan.sourcePlanId && <Badge>跨月承接</Badge>}
+                            {plan.projectId &&
+                              archivedProjectIds.has(plan.projectId) && (
+                                <Badge>项目已归档</Badge>
+                              )}
                             {plan.publishedVersion && (
                               <span>发布 V{plan.publishedVersion}</span>
                             )}
@@ -296,6 +306,8 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
                                 </button>
                               )}
                             {['draft', 'returned'].includes(plan.status) &&
+                              (!plan.projectId ||
+                                !archivedProjectIds.has(plan.projectId)) &&
                               (manager || plan.ownerId === data.user.id) && (
                                 <button
                                   disabled={action.busy}
@@ -328,6 +340,8 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
                               )}
                             {plan.status === 'published' &&
                               plan.acceptanceStatus !== 'accepted' &&
+                              (!plan.projectId ||
+                                !archivedProjectIds.has(plan.projectId)) &&
                               (manager || plan.ownerId === data.user.id) && (
                                 <button onClick={() => open('carry', plan)}>
                                   跨月承接
@@ -399,7 +413,7 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
       {modal === 'publish' && (
         <Modal title="发布部门月计划" onClose={close}>
           <p className="modal-intro">
-            将 {month} 已审核通过的 {approved.length}{' '}
+            将 {month} 有效项目及部门工作中已审核通过的 {approved.length}{' '}
             项成果发布为部门承诺。成员可据此提交正式周计划。
           </p>
           <div className="compact-list">
@@ -859,7 +873,12 @@ function PlanEditor({
           <span>协作成员</span>
           <div className="check-grid">
             {data.users
-              .filter((user) => user.active)
+              .filter(
+                (user) =>
+                  user.active ||
+                  plan?.collaboratorIds.includes(user.id) ||
+                  plan?.ownerId === user.id,
+              )
               .map((user) => (
                 <label className="checkbox-label" key={user.id}>
                   <input
@@ -869,6 +888,7 @@ function PlanEditor({
                     defaultChecked={plan?.collaboratorIds.includes(user.id)}
                   />
                   {user.name}
+                  {!user.active && <small>已停用 · 保留已有责任</small>}
                   <small>{user.position}</small>
                 </label>
               ))}

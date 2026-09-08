@@ -1,6 +1,6 @@
 import type { AnnualGoal, AuditEvent, MonthlyPlan, Project, Publication, Report, ReportSnapshot, Task, User, WeeklyRecord } from '../shared/types.ts'
 import type { Store } from './store.ts'
-import { acceptanceLabels, rateLabel, reportMetrics, snapshotWarnings, weeklyAssociationLabel, weeklyStatusLabels } from './report-metrics.ts'
+import { acceptanceLabels, planOriginLabel, rateLabel, reportMetrics, snapshotWarnings, weeklyAssociationLabel, weeklyStatusLabels } from './report-metrics.ts'
 import { markdownToWord } from './report-word.ts'
 
 function fail(message: string, status = 400): never { throw Object.assign(new Error(message), { status }) }
@@ -37,15 +37,27 @@ export function buildReportSnapshot(store: Store, type: Report['type'], period: 
   const linkedIds = new Set(weeklyRecords.map(r => r.monthlyPlanId).filter(Boolean))
   const plans = allPlans.filter(p => (p.month >= firstMonth && p.month <= lastMonth) || (type === 'weekly' && linkedIds.has(p.id)))
   const nextMonth = shiftMonth(lastMonth, 1)
+  const nextPlans = allPlans.filter(p => p.month === nextMonth && p.status !== 'merged')
   const nextWeeklyRecords = type === 'weekly' ? store.list<WeeklyRecord>('weeklyRecords').filter(r => r.weekStart === addDays(period, 7)) : []
   const recordTaskIds = new Set([...weeklyRecords, ...nextWeeklyRecords].map(r => r.taskId))
   const tasks = store.list<Task>('tasks').filter(task => recordTaskIds.has(task.id) || plans.some(p => p.id === task.monthlyPlanId))
+  // References outside the reporting months are context only. Including them in
+  // plans would change the monthly denominator of a cross-month weekly record.
+  const contextPlanIds = new Set([...weeklyRecords, ...nextWeeklyRecords].map(r => r.monthlyPlanId).concat(tasks.map(t => t.monthlyPlanId)).filter(Boolean))
+  for (const plan of [...plans, ...nextPlans]) contextPlanIds.add(plan.id)
+  const byId = new Map(allPlans.map(plan => [plan.id, plan]))
+  for (const id of contextPlanIds) {
+    const plan = id ? byId.get(id) : undefined
+    if (plan?.sourcePlanId) contextPlanIds.add(plan.sourcePlanId)
+    for (const sourceId of plan?.mergedFromIds || []) contextPlanIds.add(sourceId)
+  }
+  const contextPlans = allPlans.filter(p => contextPlanIds.has(p.id) && ![...plans, ...nextPlans].some(current => current.id === p.id))
   const relevantPlanIds = new Set(plans.map(p => p.id))
   const publications = store.list<Publication>('publications').filter(p => p.month >= firstMonth && p.month <= lastMonth).sort((a, b) => a.revision - b.revision)
   const changes = store.list<AuditEvent>('events').filter(e => ['plan', 'plans', 'monthlyPlan'].includes(e.entityType) && relevantPlanIds.has(e.entityId)).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-  return structuredClone({ plans, weeklyRecords, tasks, projects: store.list<Project>('projects'),
+  return structuredClone({ plans, contextPlans, weeklyRecords, tasks, projects: store.list<Project>('projects'),
     users: store.list<User>('users').map(publicUser), annualGoals: store.list<AnnualGoal>('annualGoals').filter(g => g.year === Number(period.slice(0, 4))),
-    nextPlans: allPlans.filter(p => p.month === nextMonth && p.status !== 'merged'), nextWeeklyRecords, publications, changes })
+    nextPlans, nextWeeklyRecords, publications, changes })
 }
 
 function name(snapshot: ReportSnapshot, id: string) { return snapshot.users.find(u => u.id === id)?.name || '未找到负责人' }
@@ -77,7 +89,7 @@ export function generateNarrative(type: Report['type'], snapshot: ReportSnapshot
     for (const r of snapshot.nextWeeklyRecords) lines.push(`- ${taskName(snapshot, r.taskId)}｜${name(snapshot, r.ownerId)}｜${r.submitted ? '已提交' : '未提交草稿'}：${fallback(r.commitment)}`)
     if (!snapshot.nextWeeklyRecords.length) lines.push('下周尚未填写计划，待成员提报。')
   } else {
-    for (const p of snapshot.nextPlans) lines.push(`- ${p.title}｜${name(snapshot, p.ownerId)}｜${p.status === 'published' ? '已发布承诺' : '未发布草案，待审核发布'}；预期成果：${fallback(p.expectedOutcome)}；验收标准：${fallback(p.acceptanceCriteria)}；截止：${p.dueDate}`)
+    for (const p of snapshot.nextPlans) lines.push(`- ${p.title}｜${name(snapshot, p.ownerId)}｜${p.status === 'published' ? '已发布承诺' : '未发布草案，待审核发布'}；预期成果：${fallback(p.expectedOutcome)}；验收标准：${fallback(p.acceptanceCriteria)}；截止：${p.dueDate}${planOriginLabel(snapshot, p) ? `；来源：${planOriginLabel(snapshot, p)}` : ''}`)
     if (!snapshot.nextPlans.length) lines.push('下月暂无计划，待成员提报、管理者审核发布。')
   }
   return lines.join('\n')
@@ -143,6 +155,8 @@ export function exportMarkdown(report: Report): string {
   for (const publication of s.publications) for (const p of publication.plans) if (!originals.has(p.id)) originals.set(p.id, p)
   if (originals.size) lines.push(table(['月计划', '首次发布预期成果 / 截止', '当前预期成果 / 截止'], s.plans.filter(p => originals.has(p.id)).map(p => [p.title, `${originals.get(p.id)!.expectedOutcome} / ${originals.get(p.id)!.dueDate}`, `${p.expectedOutcome} / ${p.dueDate}`])))
   for (const event of s.changes.filter(e => e.reason)) lines.push(`- ${reportDate(event.createdAt)} · ${s.plans.find(p => p.id === event.entityId)?.title || '相关月计划'}：${changeLabels[event.action] || '计划变更'}；原因：${event.reason}`)
+  const sourcedPlans = [...s.plans, ...s.nextPlans].filter(p => p.status !== 'merged' && planOriginLabel(s, p))
+  if (sourcedPlans.length) lines.push('', '## 月计划承接与合并来源', table(['月计划', '承接或合并来源'], sourcedPlans.map(p => [`${p.month} · ${p.title}`, planOriginLabel(s, p)])))
   lines.push('', '## 管理者汇报正文（可编辑内容）', '', report.narrative, '', '## 完整月计划事实明细')
   if (s.plans.length) lines.push(table(['事项', '负责人', '发布状态', '预期成果 / 验收标准', '实际成果', '验收状态'], s.plans.map(p => [p.title, name(s, p.ownerId), p.status === 'published' ? `已发布 V${p.publishedVersion || 1}` : p.status === 'merged' ? '已合并，不计入正式统计' : '未发布，不计入正式统计', `${p.expectedOutcome}；验收：${p.acceptanceCriteria}；截止：${p.dueDate}`, fallback(p.actualOutcome), acceptanceLabels[p.acceptanceStatus]])))
   else lines.push('暂无月计划。')
@@ -182,6 +196,6 @@ export async function polishReport(store: Store, id: string, version: number, ac
   let body: { choices?: { message?: { content?: string } }[] }
   try { body = await response.json() as typeof body } catch { fail('AI 返回格式无效，原报告未改变。', 502) }
   const narrative = body.choices?.[0]?.message?.content
-  if (!narrative || typeof narrative !== 'string') fail('AI 未返回正文，原报告未改变。', 502)
+  if (typeof narrative !== 'string' || !narrative.trim()) fail('AI 未返回正文，原报告未改变。', 502)
   return editReport(store, id, version, actorId, narrative)
 }

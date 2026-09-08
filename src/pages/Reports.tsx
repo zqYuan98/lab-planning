@@ -22,11 +22,11 @@ import {
   Field,
   Modal,
   PageHeader,
-  currentMonth,
-  monday,
 } from '../ui'
+import { shanghaiToday, weekMonday } from '../overview-data'
 import {
   acceptanceLabels,
+  planOriginLabel,
   rateLabel,
   reportMetrics,
   snapshotWarnings,
@@ -56,10 +56,11 @@ export default function Reports({
   onDirtyChange,
   intent,
 }: Props) {
+  const entryWeek = weekMonday(intent?.action === 'write-weekly' && intent.weekStart ? intent.weekStart : shanghaiToday())
   const [selectedId, setSelectedId] = useState(''),
     [selected, setSelected] = useState<Report | null>(null)
   const [type, setType] = useState<Report['type']>('weekly'),
-    [period, setPeriod] = useState(monday())
+    [period, setPeriod] = useState(entryWeek)
   const [title, setTitle] = useState(''),
     [narrative, setNarrative] = useState(''),
     [view, setView] = useState<'editor' | 'source'>('editor')
@@ -102,14 +103,14 @@ export default function Reports({
       const draft = history.find(
         (report) =>
           report.type === 'weekly' &&
-          report.period === monday() &&
+          report.period === entryWeek &&
           report.status === 'draft',
       )
       if (draft) choose(draft)
       return
     }
     if (history[0]) choose(history[0])
-  }, [history, selectedId, intent?.action])
+  }, [history, selectedId, intent?.action, entryWeek])
   useEffect(() => {
     if (!unsaved) return
     const handler = (event: BeforeUnloadEvent) => {
@@ -234,7 +235,7 @@ export default function Reports({
             onChange={(e) => {
               const next = e.target.value as Report['type']
               setType(next)
-              setPeriod(next === 'weekly' ? monday() : currentMonth())
+              setPeriod(next === 'weekly' ? weekMonday(shanghaiToday()) : shanghaiToday().slice(0, 7))
             }}
           >
             <option value="weekly">部门周报</option>
@@ -574,6 +575,7 @@ export default function Reports({
       </div>
       {finalizeOpen && selected && (
         <Modal title="确认本期汇报定稿" onClose={() => setFinalizeOpen(false)}>
+          {error && <p className="error" role="alert">{error}</p>}
           <p className="report-modal-copy">
             将「{selected.title}」第 {selected.revision}{' '}
             版保存为正式汇报。正文和引用数据会锁定；后续调整通过生成新版本保留历史。
@@ -618,6 +620,7 @@ export default function Reports({
           title="自动生成待确认草稿"
           onClose={() => setScheduleOpen(false)}
         >
+          {error && <p className="error" role="alert">{error}</p>}
           <form
             onSubmit={(e) => {
               e.preventDefault()
@@ -855,6 +858,7 @@ function SourceFacts({ report }: { report: Report }) {
                       <small>
                         {person(p.ownerId)} · {p.month}
                       </small>
+                      {planOriginLabel(s, p) && <small>来源：{planOriginLabel(s, p)}</small>}
                       <Badge
                         tone={p.status === 'published' ? 'green' : 'amber'}
                       >
@@ -957,7 +961,7 @@ function SourceFacts({ report }: { report: Report }) {
               <tbody>
                 {s.nextPlans.map((p) => (
                   <tr key={p.id}>
-                    <td>{p.title}</td>
+                    <td>{p.title}{planOriginLabel(s, p) && <small>来源：{planOriginLabel(s, p)}</small>}</td>
                     <td>{p.expectedOutcome}</td>
                     <td>
                       {person(p.ownerId)}

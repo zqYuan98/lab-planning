@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import type { Bootstrap } from '../../shared/types'
 import type { Navigate, NavigationIntent, PageId } from '../navigation'
-import { monday } from '../ui'
+import { shanghaiToday, weekMonday } from '../overview-data'
 
 type SearchCategory = '月度计划' | '个人任务' | '项目' | '团队成员'
 interface SearchResult {
@@ -21,6 +21,8 @@ interface SearchResult {
   keywords: string
   page: PageId
   intent: NavigationIntent
+  taskKeywords?: string
+  taskWeeks?: { weekStart: string; commitment: string }[]
 }
 const icons = {
   月度计划: CalendarDays,
@@ -35,20 +37,7 @@ const categories: SearchCategory[] = [
   '团队成员',
 ]
 
-export default function WorkspaceSearch({
-  data,
-  navigate,
-}: {
-  data: Bootstrap
-  navigate: Navigate
-}) {
-  const [query, setQuery] = useState(''),
-    [open, setOpen] = useState(false),
-    [active, setActive] = useState(0)
-  const root = useRef<HTMLDivElement>(null),
-    input = useRef<HTMLInputElement>(null)
-  const id = useId()
-  const index = useMemo(() => {
+export function buildWorkspaceSearchIndex(data: Bootstrap, currentWeek = weekMonday(shanghaiToday())): SearchResult[] {
     const people = new Map(data.users.map((user) => [user.id, user.name]))
     const projects = new Map(
       data.projects.map((project) => [project.id, project.name]),
@@ -71,25 +60,24 @@ export default function WorkspaceSearch({
     for (const task of data.tasks) {
       const records = data.weeklyRecords.filter(
         (record) => record.taskId === task.id,
-      )
-      const record =
-        records.find((item) => item.weekStart === monday()) ||
-        records.sort((a, b) => b.weekStart.localeCompare(a.weekStart))[0]
+      ).sort((a, b) => Number(b.weekStart === currentWeek) - Number(a.weekStart === currentWeek) || b.weekStart.localeCompare(a.weekStart))
+      const record = records[0]
+      const taskKeywords = [task.title, task.description, people.get(task.ownerId)].join(' ')
       entries.push({
         key: `task-${task.id}`,
         category: '个人任务',
         title: task.title,
         description: `${people.get(task.ownerId) || '未指定负责人'} · ${record ? `所属周 ${record.weekStart}` : '尚未安排周记录'}${task.isTemporary ? ' · 临时工作' : ''}`,
         keywords: [
-          task.title,
-          task.description,
-          people.get(task.ownerId),
+          taskKeywords,
           ...records.map((item) => item.commitment),
         ].join(' '),
+        taskKeywords,
+        taskWeeks: records.map(item => ({ weekStart: item.weekStart, commitment: item.commitment })),
         page: 'weekly',
         intent: {
           id: task.id,
-          weekStart: record?.weekStart || monday(),
+          weekStart: record?.weekStart || currentWeek,
           query: task.title,
         },
       })
@@ -121,17 +109,35 @@ export default function WorkspaceSearch({
           intent: { id: user.id, query: user.name },
         })
     return entries
-  }, [data])
-  const results = useMemo(() => {
+}
+
+export function filterWorkspaceSearch(index: SearchResult[], query: string): SearchResult[] {
     const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean)
     if (!words.length) return []
-    const matches = index.filter((item) =>
-      words.every((word) => item.keywords.toLocaleLowerCase().includes(word)),
-    )
+    const matchesWords = (text: string) => words.every(word => text.toLocaleLowerCase().includes(word))
+    const matches = index.filter(item => matchesWords(item.keywords)).flatMap(item => {
+      if (!item.taskWeeks || matchesWords(item.taskKeywords || '')) return [item]
+      // A historical commitment must lead to the week that actually matched.
+      // Do not combine unrelated words from different weeks into a false match.
+      const matchedWeek = item.taskWeeks.find(week => matchesWords(`${item.taskKeywords} ${week.commitment}`))
+      return matchedWeek ? [{ ...item,
+        description: `${item.description.replace(/所属周 \d{4}-\d{2}-\d{2}/, `所属周 ${matchedWeek.weekStart}`)} · ${matchedWeek.commitment}`,
+        intent: { ...item.intent, weekStart: matchedWeek.weekStart },
+      }] : []
+    })
     return categories.flatMap((category) =>
       matches.filter((item) => item.category === category).slice(0, 5),
     )
-  }, [index, query])
+}
+
+export default function WorkspaceSearch({ data, navigate }: { data: Bootstrap; navigate: Navigate }) {
+  const [query, setQuery] = useState(''),
+    [open, setOpen] = useState(false),
+    [active, setActive] = useState(0)
+  const root = useRef<HTMLDivElement>(null), input = useRef<HTMLInputElement>(null)
+  const id = useId()
+  const index = useMemo(() => buildWorkspaceSearchIndex(data), [data])
+  const results = useMemo(() => filterWorkspaceSearch(index, query), [index, query])
   useEffect(() => {
     setActive(0)
   }, [query])
@@ -204,6 +210,7 @@ export default function WorkspaceSearch({
           setOpen(true)
         }}
         onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing) return
           if (event.key === 'Escape') {
             event.preventDefault()
             setOpen(false)

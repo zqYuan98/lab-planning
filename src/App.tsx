@@ -86,9 +86,7 @@ function Brand({ wordmark = false }: { wordmark?: boolean }) {
       <span className="brand-icon">
         <img src={labIcon} alt="" />
       </span>
-      <span>
-        天枢实验室<small>人工智能实验室</small>
-      </span>
+      <span>天枢实验室</span>
     </div>
   )
 }
