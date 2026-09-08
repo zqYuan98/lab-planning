@@ -1,6 +1,6 @@
 # 验证记录
 
-验证日期：2026-09-08（Asia/Shanghai）。本记录列出已执行的命令、自动断言、代码审查和本机浏览器验收。
+验证日期：2026-09-08（Asia/Shanghai）。下文保留首版验收记录；最新一轮系统审查共50项测试通过，Node.js 24.20.0 生产构建、Linux容器运行、在线备份与重启持久化均已通过。完整问题和边界见 [系统审查记录](system-audit-2026-09-08.md)，执行证据见 [GitHub Actions](https://github.com/zqYuan98/lab-planning/actions/runs/34230218993)。
 
 ## 自动测试与构建
 

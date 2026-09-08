@@ -78,7 +78,7 @@ function Brand({ wordmark = false }: { wordmark?: boolean }) {
     return (
       <div className="brand-wordmark">
         <img src={labWordmark} alt="天枢实验室 TIANSHU LAB" />
-        <span>人工智能实验室 · 部门工作空间</span>
+        <span>部门工作空间</span>
       </div>
     )
   return (

@@ -126,6 +126,6 @@ npm start
 - 已备份且做过恢复演练；确认数据盘容量和应用日志。
 - 检查定时草稿启用状态、触发时间和停机补报方式。
 
-CI包含Linux环境的测试/构建、Compose配置解析、生产镜像构建、真实容器静态页面/API/Word验证、在线备份与重启持久化验证。本机未安装Docker，容器运行证据由CI提供；Nginx模板需在实际域名与证书环境执行 `nginx -t` 和HTTPS验收。
+[本轮 CI](https://github.com/zqYuan98/lab-planning/actions/runs/34230218993) 已通过Linux环境的测试/构建、Compose配置解析、生产镜像构建、真实容器静态页面/API/Word验证、在线备份与重启持久化验证。本机未安装Docker，容器运行证据由CI提供；Nginx模板需在实际域名与证书环境执行 `nginx -t` 和HTTPS验收。
 
 参考：[Docker单机生产部署](https://docs.docker.com/compose/how-tos/production/)、[Nginx反向代理模块](https://nginx.org/en/docs/http/ngx_http_proxy_module.html)、[Node.js 24.20.0 LTS](https://nodejs.org/en/blog/release/v24.20.0)。
