@@ -116,7 +116,7 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
       <PageHeader
         eyebrow="PLANNING / MONTHLY"
         title={manager ? '月度计划' : '我的月计划'}
-        description="先明确预期成果，再审核发布；调整保留原因和原始承诺。"
+        description="已有计划可直接导入生效；新计划按提报、审核和发布流程推进，调整保留来源与原因。"
         actions={
           <>
             {manager && (
@@ -145,7 +145,7 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
         }
       />
       <div className="workflow-strip">
-        <span>01 成员提报</span>
+        <span>新增计划：01 成员提报</span>
         <i>→</i>
         <span>02 审核整理</span>
         <i>→</i>
@@ -241,10 +241,19 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
                             {plan.title}
                           </button>
                           <p className="cell-description">
-                            {plan.expectedOutcome}
+                            {plan.expectedOutcome ||
+                              (plan.importSource ? '预期成果：原表未注明' : '')}
                           </p>
                           <div className="row-meta">
                             <span>{plan.category}</span>
+                            {plan.importSource && (
+                              <Badge tone="blue">已有计划导入</Badge>
+                            )}
+                            {plan.importSource?.sourceStatus && (
+                              <span>
+                                原文：{plan.importSource.sourceStatus}
+                              </span>
+                            )}
                             {plan.priority === 'high' && (
                               <Badge tone="amber">高优先级</Badge>
                             )}
@@ -260,7 +269,10 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
                         </td>
                         <td>
                           <strong>{nameOf(data, plan.ownerId)}</strong>
-                          <small className="cell-date">{plan.dueDate}</small>
+                          <small className="cell-date">
+                            {plan.dueDate ||
+                              (plan.importSource ? '截止日期：原表未注明' : '')}
+                          </small>
                           {plan.collaboratorIds.length > 0 && (
                             <small className="cell-date">
                               协作：
@@ -272,7 +284,9 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
                         </td>
                         <td>
                           <Badge tone={tones[plan.status]}>
-                            {statuses[plan.status]}
+                            {plan.importSource && plan.status === 'published'
+                              ? '已生效'
+                              : statuses[plan.status]}
                           </Badge>
                           {plan.reviewComment && (
                             <p className="cell-description review-comment">
@@ -506,7 +520,11 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
         >
           <div className="context-box">
             <strong>{selected.title}</strong>
-            <p>验收标准：{selected.acceptanceCriteria}</p>
+            <p>
+              验收标准：
+              {selected.acceptanceCriteria ||
+                (selected.importSource ? '原表未注明' : '')}
+            </p>
           </div>
           <Form
             onCancel={close}
@@ -668,14 +686,27 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
       )}
       {modal === 'detail' && selected && (
         <Modal title={selected.title} onClose={close} wide>
+          {selected.importSource && (
+            <p className="modal-intro">
+              已有计划已导入生效，无需重新提报。原文状态：
+              {selected.importSource.sourceStatus || '原表未注明'}
+              ；原有成果已保留，验收结论单独记录。
+            </p>
+          )}
           <div className="detail-grid">
             <div>
               <span>预期成果</span>
-              <p>{selected.expectedOutcome}</p>
+              <p>
+                {selected.expectedOutcome ||
+                  (selected.importSource ? '原表未注明' : '暂无')}
+              </p>
             </div>
             <div>
               <span>验收标准</span>
-              <p>{selected.acceptanceCriteria}</p>
+              <p>
+                {selected.acceptanceCriteria ||
+                  (selected.importSource ? '原表未注明' : '暂无')}
+              </p>
             </div>
             <div>
               <span>负责人 / 协作者</span>
@@ -689,18 +720,29 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
             <div>
               <span>截止日期 / 状态</span>
               <p>
-                {selected.dueDate} · {statuses[selected.status]}
+                {selected.dueDate ||
+                  (selected.importSource ? '原表未注明' : '暂无')}{' '}
+                ·{' '}
+                {selected.importSource && selected.status === 'published'
+                  ? '已生效'
+                  : statuses[selected.status]}
               </p>
             </div>
             <div>
               <span>实际成果</span>
-              <p>{selected.actualOutcome || '尚未提交成果'}</p>
+              <p>
+                {selected.actualOutcome ||
+                  (selected.importSource ? '原表未注明' : '尚未提交成果')}
+              </p>
             </div>
             <div>
               <span>验收结论</span>
               <p>
                 {results[selected.acceptanceStatus]} ·{' '}
-                {selected.acceptanceNote || '尚无验收说明'}
+                {selected.acceptanceNote ||
+                  (selected.importSource
+                    ? '原表未记录验收说明'
+                    : '尚无验收说明')}
               </p>
             </div>
           </div>
@@ -723,6 +765,19 @@ function PlanEditor({
   onSaved: (message: string) => Promise<void>
 }) {
   const manager = data.user.role === 'manager'
+  const imported = !!plan?.importSource
+  const categories = [
+    '项目研发',
+    '产品设计',
+    '算法研究',
+    '测试验证',
+    '硬件研发',
+    '运维保障',
+    '培训分享',
+    '申报管理',
+    '部门管理',
+    '其他工作',
+  ]
   return (
     <Modal
       title={
@@ -772,19 +827,15 @@ function PlanEditor({
             />
           </Field>
           <Field label="工作类别">
-            <select name="category" defaultValue={plan?.category || '项目研发'}>
-              {[
-                '项目研发',
-                '产品设计',
-                '算法研究',
-                '测试验证',
-                '硬件研发',
-                '运维保障',
-                '培训分享',
-                '申报管理',
-                '部门管理',
-                '其他工作',
-              ].map((value) => (
+            <select
+              name="category"
+              defaultValue={plan ? plan.category : '项目研发'}
+            >
+              {imported && <option value="">原表未注明</option>}
+              {plan?.category && !categories.includes(plan.category) && (
+                <option value={plan.category}>{plan.category}</option>
+              )}
+              {categories.map((value) => (
                 <option key={value}>{value}</option>
               ))}
             </select>
@@ -834,12 +885,17 @@ function PlanEditor({
             </select>
           </Field>
         </div>
+        {imported && (
+          <p className="modal-intro">
+            这条已有计划已生效。原表未注明的预期成果、验收标准和截止日期可继续留空；修订保留原因和历史版本。
+          </p>
+        )}
         <Field label="预期交付成果">
           <textarea
             name="expectedOutcome"
             defaultValue={plan?.expectedOutcome}
             rows={3}
-            required
+            required={!imported}
             placeholder="写清这个月结束时，将交付什么可核验的结果"
           />
         </Field>
@@ -848,7 +904,7 @@ function PlanEditor({
             name="acceptanceCriteria"
             defaultValue={plan?.acceptanceCriteria}
             rows={3}
-            required
+            required={!imported}
             placeholder="用质量标准、范围、指标或评审要求界定完成"
           />
         </Field>
@@ -858,7 +914,7 @@ function PlanEditor({
               name="dueDate"
               type="date"
               defaultValue={plan?.dueDate}
-              required
+              required={!imported}
             />
           </Field>
           <Field label="优先级">

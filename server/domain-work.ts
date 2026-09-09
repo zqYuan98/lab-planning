@@ -40,8 +40,8 @@ export class WorkService extends DomainBase {
       }
       const patch: Partial<Task> = {}
       if (input.title !== undefined) patch.title = text(input.title, '任务标题', true, 300)
-      if (input.description !== undefined) patch.description = text(input.description, '任务说明', false)
-      if (input.dueDate !== undefined) patch.dueDate = date(input.dueDate, '任务截止日期')
+      if (input.description !== undefined) patch.description = text(input.description, '任务说明', false, before.importSource ? 20000 : 12000)
+      if (input.dueDate !== undefined) patch.dueDate = before.importSource && text(input.dueDate, '任务截止日期', false, 10) === '' ? '' : date(input.dueDate, '任务截止日期')
       if (input.status !== undefined) patch.status = choice(input.status, ['todo', 'doing', 'blocked', 'done'], '任务状态')
       const task = this.store.update<Task>('tasks', id, before.version, patch)
       this.audit(actor, 'task', id, 'update', before, task)
@@ -74,7 +74,7 @@ export class WorkService extends DomainBase {
   }
   private fields(input: Input, before?: WeeklyRecord): Pick<WeeklyRecord, 'commitment' | 'actualOutcome' | 'evidenceUrl' | 'blocker' | 'nextAction' | 'status' | 'submitted'> {
     const result = {
-      commitment: text(input.commitment ?? before?.commitment, '本周承诺'),
+      commitment: text(input.commitment ?? before?.commitment, '本周承诺', !before?.importSource),
       actualOutcome: text(input.actualOutcome ?? before?.actualOutcome, '实际成果', false),
       evidenceUrl: text(input.evidenceUrl ?? before?.evidenceUrl, '证据链接', false, 2000),
       blocker: text(input.blocker ?? before?.blocker, '阻塞或未完成原因', false),
@@ -82,8 +82,8 @@ export class WorkService extends DomainBase {
       status: choice(input.status ?? before?.status ?? 'planned', ['planned', 'doing', 'blocked', 'done', 'not_done'], '周记录状态'),
       submitted: bool(input.submitted ?? before?.submitted ?? false, '提交状态'),
     }
-    if (result.status === 'done' && !result.actualOutcome) throw new HttpError(400, '标记完成时需要填写实际成果')
-    if (['blocked', 'not_done'].includes(result.status) && !result.blocker) throw new HttpError(400, '阻塞或未完成时需要填写原因')
+    if (result.status === 'done' && !result.actualOutcome && !before?.importSource) throw new HttpError(400, '标记完成时需要填写实际成果')
+    if (['blocked', 'not_done'].includes(result.status) && !result.blocker && !before?.importSource) throw new HttpError(400, '阻塞或未完成时需要填写原因')
     if (result.evidenceUrl) {
       try { if (!['http:', 'https:'].includes(new URL(result.evidenceUrl).protocol)) throw new Error() }
       catch { throw new HttpError(400, '证据链接仅支持完整的 http 或 https 地址') }

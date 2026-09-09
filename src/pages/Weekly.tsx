@@ -283,15 +283,29 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
                     </span>
                     {record.submitted ? (
                       <Badge tone={statusTone[record.status]}>
-                        {statusLabels[record.status]}
+                        {record.importSource && record.status === 'done'
+                          ? '已完成'
+                          : statusLabels[record.status]}
                       </Badge>
                     ) : (
                       <Badge>草稿 · 未提交</Badge>
                     )}
+                    {record.importSource && (
+                      <Badge tone="blue">已有计划导入</Badge>
+                    )}
+                    {record.importSource?.sourceStatus && (
+                      <span>原文：{record.importSource.sourceStatus}</span>
+                    )}
                     {!record.monthlyPlanId && (
                       <Badge tone="amber">
-                        临时工作
-                        {task?.monthlyPlanId ? ' · 原周记录' : ' · 待关联'}
+                        {record.importSource ? (
+                          '未关联月计划'
+                        ) : (
+                          <>
+                            临时工作
+                            {task?.monthlyPlanId ? ' · 原周记录' : ' · 待关联'}
+                          </>
+                        )}
                       </Badge>
                     )}
                   </div>
@@ -299,27 +313,44 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
                     {nameOf(data, record.ownerId)}
                   </span>
                 </div>
-                <h2>{record.commitment}</h2>
+                <h2>{record.commitment || task?.title || '已有周工作记录'}</h2>
+                {record.importSource && !record.commitment && (
+                  <p className="cell-description">本周承诺：原表未注明</p>
+                )}
                 <div className="linked-plan">
                   <Link2 size={14} />
                   {plan
                     ? `${plan.month} · ${plan.title}`
-                    : task?.monthlyPlanId
-                      ? '本周按临时工作记录，任务后续已关联月计划'
-                      : '临时事项，尚未关联月计划'}
-                  {task && <span>任务当前截止 {task.dueDate}</span>}
+                    : record.importSource
+                      ? '未关联月计划，保留原资料归属'
+                      : task?.monthlyPlanId
+                        ? '本周按临时工作记录，任务后续已关联月计划'
+                        : '临时事项，尚未关联月计划'}
+                  {task && (
+                    <span>
+                      任务当前截止{' '}
+                      {task.dueDate || (task.importSource ? '原表未注明' : '')}
+                    </span>
+                  )}
                 </div>
                 <div className="weekly-facts">
                   <div>
                     <span>实际成果</span>
-                    <p>{record.actualOutcome || '尚未填写实际进展'}</p>
+                    <p>
+                      {record.actualOutcome ||
+                        (record.importSource
+                          ? '原表未注明'
+                          : '尚未填写实际进展')}
+                    </p>
                   </div>
                   <div>
                     <span>
                       {record.blocker ? '阻塞 / 未完成原因' : '下一步'}
                     </span>
                     <p className={record.blocker ? 'amber-text' : ''}>
-                      {record.blocker || record.nextAction || '尚未填写'}
+                      {record.blocker ||
+                        record.nextAction ||
+                        (record.importSource ? '原表未注明' : '尚未填写')}
                     </p>
                     {record.blocker && record.nextAction && (
                       <small>下一步：{record.nextAction}</small>
@@ -341,7 +372,9 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
                 <footer className="weekly-card-footer">
                   <small>
                     {record.submitted
-                      ? '已提交管理者查看'
+                      ? record.importSource
+                        ? '已有周记录已导入生效'
+                        : '已提交管理者查看'
                       : '草稿仅在提交后计入周统计'}{' '}
                     · 记录 V{record.version}
                   </small>
@@ -439,7 +472,12 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
             <p>
               当前周 {selected.weekStart} ·{' '}
               {data.plans.find((plan) => plan.id === selected.monthlyPlanId)
-                ?.acceptanceCriteria || '临时工作，请记录真实结果与证据。'}
+                ?.acceptanceCriteria ||
+                (selected.importSource ||
+                data.plans.find((plan) => plan.id === selected.monthlyPlanId)
+                  ?.importSource
+                  ? '验收标准：原表未注明，可继续保留为空。'
+                  : '临时工作，请记录真实结果与证据。')}
             </p>
           </div>
           <Form
@@ -465,7 +503,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
               <textarea
                 name="commitment"
                 defaultValue={selected.commitment}
-                required
+                required={!selected.importSource}
                 rows={2}
               />
             </Field>
@@ -480,7 +518,11 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
             </Field>
             <Field
               label="实际成果"
-              hint="选择完成时必填；按事实描述已经交付的结果。"
+              hint={
+                selected.importSource
+                  ? '已有成果保留原文；原表未注明时可留空。'
+                  : '选择完成时必填；按事实描述已经交付的结果。'
+              }
             >
               <textarea
                 name="actualOutcome"
@@ -497,7 +539,14 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
               />
             </Field>
             <div className="form-grid">
-              <Field label="阻塞 / 未完成原因" hint="受阻或未完成时必填。">
+              <Field
+                label="阻塞 / 未完成原因"
+                hint={
+                  selected.importSource
+                    ? '原表未注明时可留空。'
+                    : '受阻或未完成时必填。'
+                }
+              >
                 <textarea
                   name="blocker"
                   rows={3}
@@ -518,7 +567,9 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
                 name="submitted"
                 defaultChecked={selected.submitted}
               />
-              提交管理者查看，纳入本周统计
+              {selected.importSource
+                ? '保留为生效记录，纳入对应周统计'
+                : '提交管理者查看，纳入本周统计'}
             </label>
           </Form>
         </Modal>
@@ -766,9 +817,20 @@ function WeeklyCreate({
             )}
             {plan && (
               <div className="context-box">
-                <strong>预期成果：{plan.expectedOutcome}</strong>
-                <p>验收要求：{plan.acceptanceCriteria}</p>
-                <small>月度截止：{plan.dueDate}</small>
+                <strong>
+                  预期成果：
+                  {plan.expectedOutcome ||
+                    (plan.importSource ? '原表未注明' : '')}
+                </strong>
+                <p>
+                  验收要求：
+                  {plan.acceptanceCriteria ||
+                    (plan.importSource ? '原表未注明' : '')}
+                </p>
+                <small>
+                  月度截止：
+                  {plan.dueDate || (plan.importSource ? '原表未注明' : '')}
+                </small>
               </div>
             )}
             <Field label="个人任务名称">

@@ -71,20 +71,20 @@ export class MonthlyService extends DomainBase {
       const ownerId = patch.ownerId ?? before.ownerId
       if (input.collaboratorIds !== undefined) patch.collaboratorIds = this.collaborators(input.collaboratorIds, ownerId, [before.ownerId, ...before.collaboratorIds])
       else if (patch.ownerId) patch.collaboratorIds = before.collaboratorIds.filter(item => item !== ownerId)
-      if (input.expectedOutcome !== undefined) patch.expectedOutcome = text(input.expectedOutcome, '预期成果')
-      if (input.acceptanceCriteria !== undefined) patch.acceptanceCriteria = text(input.acceptanceCriteria, '验收标准')
+      if (input.expectedOutcome !== undefined) patch.expectedOutcome = text(input.expectedOutcome, '预期成果', !before.importSource)
+      if (input.acceptanceCriteria !== undefined) patch.acceptanceCriteria = text(input.acceptanceCriteria, '验收标准', !before.importSource)
       if (input.dueDate !== undefined) {
-        patch.dueDate = date(input.dueDate, '截止日期')
-        if (!patch.dueDate.startsWith(before.month)) throw new HttpError(400, '截止日期必须在所属月份内')
+        patch.dueDate = before.importSource && text(input.dueDate, '截止日期', false, 10) === '' ? '' : date(input.dueDate, '截止日期')
+        if (patch.dueDate && !patch.dueDate.startsWith(before.month)) throw new HttpError(400, '截止日期必须在所属月份内')
       }
       if (input.priority !== undefined) patch.priority = choice(input.priority, ['high', 'medium', 'low'], '优先级')
       const next = { ...before, ...patch }
-      if (!next.projectId && !next.category) throw new HttpError(400, '没有所属项目时需要填写工作类别')
+      if (!next.projectId && !next.category && !before.importSource) throw new HttpError(400, '没有所属项目时需要填写工作类别')
       if (this.store.list<Task>('tasks').some(task => task.monthlyPlanId === id && !participates(next, task.ownerId))) throw new HttpError(400, '修改责任人前，请先处理仍关联此计划的个人任务，保留任务负责人为协作者')
       const reason = before.status === 'published' ? text(input.reason, '发布后变更原因') : text(input.reason, '修改原因', false)
       if (before.status === 'published') {
         patch.publishedVersion = this.revision(before.month)
-        if ((patch.expectedOutcome && patch.expectedOutcome !== before.expectedOutcome) || (patch.acceptanceCriteria && patch.acceptanceCriteria !== before.acceptanceCriteria)) {
+        if ((patch.expectedOutcome !== undefined && patch.expectedOutcome !== before.expectedOutcome) || (patch.acceptanceCriteria !== undefined && patch.acceptanceCriteria !== before.acceptanceCriteria)) {
           patch.acceptanceStatus = 'pending'
           patch.acceptanceNote = ''
         }

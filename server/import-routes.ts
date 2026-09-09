@@ -26,6 +26,7 @@ export function createImportRouter(store: Store) {
     res.status(202).json(imports.startAnalysis(req.user, String(req.params.id), req.body, tokenId ? () => assertIntegrationTokenActive(store, tokenId, 'imports:write') : undefined))
   })
   router.post('/imports/:id/commit', (req, res) => res.json(service.commit(req.user, String(req.params.id), req.body)))
+  router.post('/imports/:id/request-confirmation', (req, res) => res.json(service.requestConfirmation(req.user, String(req.params.id), req.body)))
   router.post('/imports/:id/fork', (req, res) => {
     const before = service.get(req.user, String(req.params.id))
     const available = service.list(req.user).find(b => b.sourceId === before.sourceId && b.status === 'uploaded' && b.ownerId === req.user.id)
@@ -36,7 +37,7 @@ export function createImportRouter(store: Store) {
     const source = service.source(req.user, String(req.params.id))
     res.set({ 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(source.fileName)}` }).send(Buffer.from(source.base64, 'base64'))
   })
-  router.get('/schema', (_req, res) => res.json({ formatVersion: 1, structuredEndpoint: '/api/v1/imports/structured', required: ['sourceKey', 'rows'], kinds: ['monthly', 'weekly'], modes: ['history', 'draft'], rowFields: ['kind', 'sourceRow', 'sourceSheet', 'sourceText', 'title', 'ownerName', 'ownerId', 'projectName', 'projectId', 'category', 'month', 'weekStart', 'dueDate', 'expectedOutcome', 'acceptanceCriteria', 'actualOutcome', 'blocker', 'nextAction', 'sourceStatus', 'monthlyPlanId', 'taskId'], workflow: 'structured/upload -> analyze (files only) -> edit -> commit; history允许缺项，draft须通过既有月周关系校验；提交请求可安全重试' }))
+  router.get('/schema', (_req, res) => res.json({ formatVersion: 1, structuredEndpoint: '/api/v1/imports/structured', required: ['sourceKey', 'rows'], kinds: ['monthly', 'weekly'], modes: ['history', 'draft', 'existing'], rowFields: ['kind', 'sourceRow', 'sourceSheet', 'sourceText', 'title', 'ownerName', 'ownerId', 'projectName', 'projectId', 'category', 'month', 'weekStart', 'dueDate', 'expectedOutcome', 'acceptanceCriteria', 'actualOutcome', 'blocker', 'nextAction', 'sourceStatus', 'monthlyPlanId', 'taskId', 'linkedRowId', 'monthlyResult', 'weeklyStatus'], workflow: 'structured/upload -> analyze (files only) -> edit -> commit; history仅归档；draft遵循新增计划规则；existing由管理者确认直接生效，原表缺项可空。成员可request-confirmation；同来源草稿转生效复用原ID，提交可安全重试' }))
   router.get('/context', (req, res) => {
     const { users, projects, plans, tasks } = new Domain(store).bootstrap(req.user)
     res.json({ users, projects, plans, tasks })

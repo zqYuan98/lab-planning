@@ -268,7 +268,7 @@ export default function App() {
     weekly: <Weekly {...props} />,
     projects: <Projects {...props} />,
     goals: <Goals {...props} />,
-    imports: <Imports {...props} />,
+    imports: <Imports {...props} navigate={navigate} />,
     reports: manager ? (
       <Reports {...props} onDirtyChange={setReportDirty} />
     ) : null,

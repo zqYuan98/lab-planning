@@ -24,24 +24,32 @@ const timestamp = z.string().max(40).regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v => Number.isFinite(Date.parse(`${v}T00:00:00Z`)) && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v)
 const month = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/)
 const entity = { id, version: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER), createdAt: timestamp, updatedAt: timestamp }
+const importSourceSchema = z.object({ batchId: id, sourceId: id, rowId: id, sourceStatus: line }).strict()
 export const userSchema = z.object({ ...entity, name: z.string().min(1).max(100), email: z.string().min(3).max(254), role: z.enum(['manager', 'member']), position: z.string().max(100), active: z.boolean() }).strict()
 const projectSchema = z.object({ ...entity, name: z.string().min(1).max(200), code: z.string().min(1).max(50), description: line, ownerId: id, status: z.enum(['active', 'archived']) }).strict()
 const goalSchema = z.object({ ...entity, title: z.string().min(1).max(300), year: z.number().int().min(1900).max(2200), target: line.min(1), progress: z.number().min(0).max(100), description: line, ownerId: id, status: z.enum(['active', 'completed']) }).strict()
 const planSchema = z.object({ ...entity, month, title: z.string().min(1).max(300), projectId: id.nullable(), category: z.string().max(100), ownerId: id, collaboratorIds: z.array(id).max(100),
-  expectedOutcome: line.min(1), acceptanceCriteria: line.min(1), dueDate: day, priority: z.enum(['high', 'medium', 'low']), status: z.enum(['draft', 'submitted', 'approved', 'returned', 'published', 'merged']),
+  expectedOutcome: line, acceptanceCriteria: line, dueDate: z.union([day, z.literal('')]), priority: z.enum(['high', 'medium', 'low']), status: z.enum(['draft', 'submitted', 'approved', 'returned', 'published', 'merged']),
   reviewComment: line, publishedVersion: z.number().int().positive().nullable(), sourcePlanId: id.nullable(), actualOutcome: line, acceptanceStatus: z.enum(['pending', 'submitted', 'accepted', 'not_completed']), acceptanceNote: line,
-  mergedFromIds: z.array(id).max(50).optional(), mergedIntoId: id.optional(),
-}).strict()
-const taskSchema = z.object({ ...entity, title: z.string().min(1).max(300), monthlyPlanId: id.nullable(), ownerId: id, description: line, dueDate: day,
-  status: z.enum(['todo', 'doing', 'blocked', 'done']), isTemporary: z.boolean(), temporaryReason: line,
-}).strict()
-const weeklySchema = z.object({ ...entity, taskId: id, monthlyPlanId: id.nullable(), ownerId: id, weekStart: day, commitment: line.min(1), actualOutcome: line,
+  mergedFromIds: z.array(id).max(50).optional(), mergedIntoId: id.optional(), importSource: importSourceSchema.optional(),
+}).strict().superRefine((row, ctx) => {
+  if (!row.importSource && (!row.expectedOutcome.trim() || !row.acceptanceCriteria.trim() || !row.dueDate)) ctx.addIssue({ code: 'custom', message: '普通月计划的预期成果、验收标准和截止日期不可为空' })
+})
+const taskSchema = z.object({ ...entity, title: z.string().min(1).max(300), monthlyPlanId: id.nullable(), ownerId: id, description: z.string().max(20000), dueDate: z.union([day, z.literal('')]),
+  status: z.enum(['todo', 'doing', 'blocked', 'done']), isTemporary: z.boolean(), temporaryReason: line, importSource: importSourceSchema.optional(),
+}).strict().superRefine((row, ctx) => {
+  if (!row.importSource && (!row.dueDate || row.description.length > 12000)) ctx.addIssue({ code: 'custom', message: '普通任务的截止日期或说明格式无效' })
+})
+const weeklySchema = z.object({ ...entity, taskId: id, monthlyPlanId: id.nullable(), ownerId: id, weekStart: day, commitment: line, actualOutcome: line,
   evidenceUrl: z.string().max(2000).refine(v => { if (!v) return true; try { return ['http:', 'https:'].includes(new URL(v).protocol) } catch { return false } }),
-  blocker: line, nextAction: line, status: z.enum(['planned', 'doing', 'blocked', 'done', 'not_done']), submitted: z.boolean(),
-}).strict()
+  blocker: line, nextAction: line, status: z.enum(['planned', 'doing', 'blocked', 'done', 'not_done']), submitted: z.boolean(), importSource: importSourceSchema.optional(),
+}).strict().superRefine((row, ctx) => {
+  if (!row.importSource && !row.commitment.trim()) ctx.addIssue({ code: 'custom', message: '普通周记录的本周承诺不可为空' })
+})
 const importRowSchema = z.object({ id, kind: z.enum(['monthly', 'weekly']), selected: z.boolean(), sourceSheet: z.string().max(200), sourceRow: z.number().int().positive(), sourceText: z.string().max(20000),
   ownerName: line, ownerId: line, projectName: line, projectId: line, category: line, title: z.string().max(300), month: line, weekStart: line, dueDate: line,
   expectedOutcome: line, acceptanceCriteria: line, actualOutcome: line, blocker: line, nextAction: line, sourceStatus: line, monthlyPlanId: line, linkedRowId: line, taskId: line, issues: z.array(line).max(100),
+  monthlyResult: z.enum(['pending', 'submitted', 'accepted', 'not_completed']).optional(), weeklyStatus: z.enum(['planned', 'doing', 'blocked', 'done', 'not_done']).optional(),
   result: z.object({ collection: z.enum(['plans', 'tasks', 'weeklyRecords', 'historicalRecords']), id }).strict().optional(),
 }).strict()
 const historySchema = z.object({ ...entity, importedBy: id, batchId: id, sourceId: id, row: importRowSchema }).strict()
@@ -88,6 +96,7 @@ const auditFields = [...Object.keys(entity), 'entityType', 'entityId', 'actorId'
 export function projectRow(collection: TransferCollection, value: unknown): Record<string, unknown> {
   const schema = schemas[collection]
   const row = pick(value, collection === 'events' ? auditFields : Object.keys((schema as typeof projectSchema).shape))
+  if (row.importSource) row.importSource = pick(row.importSource, Object.keys(importSourceSchema.shape))
   if (collection === 'history') row.row = pick(row.row, Object.keys(importRowSchema.shape))
   if (collection === 'publications') row.plans = (row.plans as unknown[]).map(plan => projectRow('plans', plan))
   if (collection === 'reports') {

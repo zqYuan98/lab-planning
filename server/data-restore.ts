@@ -28,9 +28,9 @@ function semanticIssues(name: TransferCollection, input: unknown, issue: (messag
   }
   if (name === 'plans') {
     const plan = input as MonthlyPlan
-    if (!plan.projectId && !plan.category.trim()) issue(`${label}：缺少所属项目或工作类别`)
-    if (!plan.expectedOutcome.trim() || !plan.acceptanceCriteria.trim()) issue(`${label}：预期成果和验收标准不能为空白`)
-    if (!plan.dueDate.startsWith(plan.month)) issue(`${label}：截止日期不在所属月份`)
+    if (!plan.projectId && !plan.category.trim() && !plan.importSource) issue(`${label}：缺少所属项目或工作类别`)
+    if ((!plan.expectedOutcome.trim() || !plan.acceptanceCriteria.trim()) && !plan.importSource) issue(`${label}：预期成果和验收标准不能为空白`)
+    if (plan.dueDate && !plan.dueDate.startsWith(plan.month)) issue(`${label}：截止日期不在所属月份`)
     if (new Set(plan.collaboratorIds).size !== plan.collaboratorIds.length || plan.collaboratorIds.includes(plan.ownerId)) issue(`${label}：负责人或协作者映射后重复`)
     if (plan.status === 'published' && plan.publishedVersion === null) issue(`${label}：已发布计划缺少发布版本`)
     if (plan.status === 'merged' && !plan.mergedIntoId) issue(`${label}：已合并计划缺少目标计划`)
@@ -38,14 +38,14 @@ function semanticIssues(name: TransferCollection, input: unknown, issue: (messag
   }
   if (name === 'tasks') {
     const task = input as Task
-    if (task.monthlyPlanId && task.isTemporary || !task.monthlyPlanId && (!task.isTemporary || !task.temporaryReason.trim())) issue(`${label}：任务关联与临时工作标记不一致`)
+    if (task.monthlyPlanId && task.isTemporary || !task.monthlyPlanId && (task.isTemporary ? !task.temporaryReason.trim() : !task.importSource)) issue(`${label}：任务关联与临时工作标记不一致`)
   }
   if (name === 'weeklyRecords') {
     const weekly = input as WeeklyRecord
     if (new Date(`${weekly.weekStart}T00:00:00Z`).getUTCDay() !== 1) issue(`${label}：所属周必须为周一`)
-    if (!weekly.commitment.trim()) issue(`${label}：缺少本周承诺`)
-    if (weekly.status === 'done' && !weekly.actualOutcome.trim()) issue(`${label}：已完成周记录缺少成果`)
-    if (['blocked', 'not_done'].includes(weekly.status) && !weekly.blocker.trim()) issue(`${label}：阻塞或未完成周记录缺少原因`)
+    if (!weekly.commitment.trim() && !weekly.importSource) issue(`${label}：缺少本周承诺`)
+    if (weekly.status === 'done' && !weekly.actualOutcome.trim() && !weekly.importSource) issue(`${label}：已完成周记录缺少成果`)
+    if (['blocked', 'not_done'].includes(weekly.status) && !weekly.blocker.trim() && !weekly.importSource) issue(`${label}：阻塞或未完成周记录缺少原因`)
   }
   if (name === 'publications') {
     const publication = input as Publication
@@ -171,7 +171,7 @@ function inspectRestore(store: Store, packet: BusinessDataPacket, requestedMappi
       const end = new Date(`${row.weekStart}T00:00:00Z`); end.setUTCDate(end.getUTCDate() + 6)
       if (plan.month < row.weekStart.slice(0, 7) || plan.month > end.toISOString().slice(0, 7)) issue(`weeklyRecords/${row.id}：所属周与历史月计划月份不相交`)
       if (row.submitted && plan.status !== 'published') issue(`weeklyRecords/${row.id}：已提交周记录的月计划未发布`)
-    } else if (task && !task.temporaryReason.trim()) issue(`weeklyRecords/${row.id}：未关联月计划的历史记录缺少临时工作来源说明`)
+    } else if (task && !task.temporaryReason.trim() && !row.importSource) issue(`weeklyRecords/${row.id}：未关联月计划的历史记录缺少临时工作来源说明`)
   }
   const unique = <T extends Entity>(name: TransferCollection, key: (row: T) => string) => {
     const seen = new Map<string, string>()

@@ -1,4 +1,5 @@
 export type ImportKind = 'monthly' | 'weekly'
+export type ImportMode = 'history' | 'draft' | 'existing'
 export interface ImportRow {
   id: string
   kind: ImportKind
@@ -25,6 +26,8 @@ export interface ImportRow {
   linkedRowId: string
   taskId: string
   issues: string[]
+  monthlyResult?: 'pending' | 'submitted' | 'accepted' | 'not_completed'
+  weeklyStatus?: 'planned' | 'doing' | 'blocked' | 'done' | 'not_done'
   result?: { collection: string; id: string }
 }
 export interface ImportBatch {
@@ -40,9 +43,11 @@ export interface ImportBatch {
   sourceSheets: { name: string; rowCount: number }[]
   warnings: string[]
   rows: ImportRow[]
-  mode: 'history' | 'draft'
+  mode: ImportMode
+  reviewRequestedAt?: string
   committedAt?: string
   committedCount?: number
+  activatedCount?: number
   skippedCount?: number
   analysis?: { status: 'running' | 'failed' | 'completed'; completedChunks: number; totalChunks: number; error?: string }
 }

@@ -23,6 +23,11 @@ import type {
   IntegrationTokenView,
 } from '../../shared/import-types'
 import { registrationApproved } from '../../shared/auth-policy'
+import {
+  importedMonthlyResult,
+  importedWeeklyStatus,
+} from '../../shared/import-status'
+import type { Navigate } from '../navigation'
 import { api, json } from '../api'
 import {
   Badge,
@@ -40,6 +45,55 @@ const batchLabels = {
   uploaded: '待解析',
   parsed: '待校对',
   committed: '已保存',
+}
+const modes = [
+  {
+    id: 'existing',
+    label: '导入已有计划',
+    description: '确认后直接生效，保留原有成果和状态',
+  },
+  {
+    id: 'draft',
+    label: '生成新计划草稿',
+    description: '用于新提报，按现有流程继续完善',
+  },
+  {
+    id: 'history',
+    label: '仅存历史资料',
+    description: '保留原貌，供检索与导出',
+  },
+] as const
+const monthlyResultLabels = {
+  pending: '尚无成果记录',
+  submitted: '成果已记录，验收待确认',
+  accepted: '已验收（管理员确认）',
+  not_completed: '未完成',
+}
+const weeklyResultLabels = {
+  planned: '未开始 / 原状态未明确',
+  doing: '进行中',
+  blocked: '受阻',
+  done: '已完成',
+  not_done: '未完成',
+}
+function savedBatchLabel(mode: ImportBatch['mode']) {
+  return mode === 'existing'
+    ? '已有计划已导入生效'
+    : mode === 'draft'
+      ? '新计划草稿已生成'
+      : '历史资料已保存'
+}
+function savedBatchCounts(batch: ImportBatch) {
+  return `新增 ${batch.committedCount || 0} 条${batch.mode === 'existing' ? `、原草稿转生效 ${batch.activatedCount || 0} 条` : ''}、重复跳过 ${batch.skippedCount || 0} 条`
+}
+function optionalSourceGaps(row: ImportRow) {
+  return [
+    !row.dueDate && '截止日期',
+    !row.expectedOutcome && (row.kind === 'monthly' ? '预期成果' : '本周承诺'),
+    row.kind === 'monthly' && !row.acceptanceCriteria && '验收标准',
+  ]
+    .filter(Boolean)
+    .join('、')
 }
 const scopes = [
   ['imports:read', '查看导入批次'],
@@ -99,9 +153,15 @@ async function fileBase64(file: File): Promise<string> {
   })
 }
 
-export default function Imports({ data, refresh, notify }: PageProps) {
+export default function Imports({
+  data,
+  refresh,
+  notify,
+  navigate,
+}: PageProps & { navigate?: Navigate }) {
   const manager = data.user.role === 'manager'
   const [batches, setBatches] = useState<ImportBatchSummary[]>([])
+  const [pendingOnly, setPendingOnly] = useState(false)
   const [batch, setBatch] = useState<ImportBatch | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState('')
@@ -173,6 +233,14 @@ export default function Imports({ data, refresh, notify }: PageProps) {
   const readOnlyEditor = immutable && !editingHistory
   const parsing = batch?.analysis?.status === 'running'
   const batchBusy = !!busy || parsing
+  const visibleBatches = pendingOnly
+    ? batches.filter(
+        (item) => item.reviewRequestedAt && item.status !== 'committed',
+      )
+    : batches
+  const pendingCount = batches.filter(
+    (item) => item.reviewRequestedAt && item.status !== 'committed',
+  ).length
   const visibleHistory = history.filter((item) => {
     const row = item.row
     return `${row.title} ${row.ownerName} ${row.projectName} ${row.month} ${row.weekStart} ${row.category} ${row.sourceText}`
@@ -339,6 +407,7 @@ export default function Imports({ data, refresh, notify }: PageProps) {
         '/imports',
         json({
           fileName: file.name,
+          mode: 'existing',
           mimeType: file.type,
           base64: await fileBase64(file),
         }),
@@ -386,6 +455,13 @@ export default function Imports({ data, refresh, notify }: PageProps) {
     setHistoryRecord(null)
     setCorrectionReason('')
   }
+  function openImportedResult(row: ImportRow) {
+    if (!navigate || !row.result) return
+    if (row.result.collection === 'plans')
+      navigate('monthly', { id: row.result.id, month: row.month })
+    if (row.result.collection === 'weeklyRecords')
+      navigate('weekly', { id: row.result.id, weekStart: row.weekStart })
+  }
 
   return (
     <div className="imports-page">
@@ -399,18 +475,15 @@ export default function Imports({ data, refresh, notify }: PageProps) {
         }
       />
       <div className="import-journey" aria-label="导入流程">
-        {[
-          '保存原始资料',
-          '智能识别字段',
-          '校对与批量匹配',
-          '归档或生成草稿',
-        ].map((label, index) => (
-          <div key={label}>
-            <span>{String(index + 1).padStart(2, '0')}</span>
-            {label}
-            {index < 3 && <ArrowRight size={15} />}
-          </div>
-        ))}
+        {['保存原始资料', '智能识别字段', '校对与批量匹配', '导入已有计划'].map(
+          (label, index) => (
+            <div key={label}>
+              <span>{String(index + 1).padStart(2, '0')}</span>
+              {label}
+              {index < 3 && <ArrowRight size={15} />}
+            </div>
+          ),
+        )}
       </div>
       {error && (
         <div className="error import-error" role="alert">
@@ -485,7 +558,11 @@ export default function Imports({ data, refresh, notify }: PageProps) {
                 void run('正在保存文字资料', async () => {
                   const next = await api<ImportBatch>(
                     '/imports',
-                    json({ fileName: '粘贴内容.txt', text: pasted }),
+                    json({
+                      fileName: '粘贴内容.txt',
+                      text: pasted,
+                      mode: 'existing',
+                    }),
                   )
                   acceptBatch(next, true)
                   setPasted('')
@@ -523,11 +600,21 @@ export default function Imports({ data, refresh, notify }: PageProps) {
           <p className="import-aside-note">
             已上传资料会保留，随时回来继续校对。
           </p>
+          {manager && (
+            <label className="import-pending-filter">
+              <input
+                type="checkbox"
+                checked={pendingOnly}
+                onChange={(event) => setPendingOnly(event.target.checked)}
+              />
+              待确认的已有计划 <span>{pendingCount}</span>
+            </label>
+          )}
           {loading ? (
             <p className="import-muted">正在读取…</p>
-          ) : batches.length ? (
+          ) : visibleBatches.length ? (
             <div className="import-batch-list">
-              {batches.map((item) => (
+              {visibleBatches.map((item) => (
                 <button
                   key={item.id}
                   className={`import-batch-item ${item.id === batch?.id ? 'active' : ''}`}
@@ -545,22 +632,33 @@ export default function Imports({ data, refresh, notify }: PageProps) {
                   <span>
                     {item.analysis?.status === 'running'
                       ? '正在解析'
-                      : batchLabels[item.status]}{' '}
+                      : item.reviewRequestedAt && item.status !== 'committed'
+                        ? '待管理员确认'
+                        : batchLabels[item.status]}{' '}
                     · {item.rowCount} 条
                   </span>
                   <small>{dateTime(item.createdAt)}</small>
+                  {manager && (
+                    <small>
+                      整理：
+                      {data.users.find((user) => user.id === item.ownerId)
+                        ?.name || '原账号'}
+                    </small>
+                  )}
                 </button>
               ))}
             </div>
           ) : (
-            <p className="import-muted">还没有导入资料</p>
+            <p className="import-muted">
+              {pendingOnly ? '暂无待确认的已有计划' : '还没有导入资料'}
+            </p>
           )}
         </aside>
         <section className="import-detail panel">
           {!batch ? (
             <Empty
               title="资料先保存，再按需整理"
-              description="上传文件，或从左侧打开已保存的批次。旧表缺失的字段可先归档，后续继续补充。"
+              description="上传文件，或从左侧打开已保存批次。已有计划确认后可直接生效，原表未注明的非必要字段保留为空。"
             />
           ) : (
             <>
@@ -572,7 +670,10 @@ export default function Imports({ data, refresh, notify }: PageProps) {
                       : batch.kind === 'table'
                         ? '表格资料'
                         : '文字资料'}{' '}
-                    · {batchLabels[batch.status]}
+                    ·{' '}
+                    {batch.reviewRequestedAt && !immutable
+                      ? '待管理员确认'
+                      : batchLabels[batch.status]}
                   </div>
                   <h2>{batch.fileName}</h2>
                   <p>{dateTime(batch.updatedAt)} 更新</p>
@@ -590,6 +691,19 @@ export default function Imports({ data, refresh, notify }: PageProps) {
                   {batch.warnings.map((warning, index) => (
                     <p key={index}>{warning}</p>
                   ))}
+                </div>
+              )}
+              {batch.reviewRequestedAt && !immutable && (
+                <div className="import-confirmation-note">
+                  <strong>
+                    {manager
+                      ? '成员已整理完成，请确认导入已有计划'
+                      : '已交管理员确认'}
+                  </strong>
+                  <p>
+                    {dateTime(batch.reviewRequestedAt)} ·
+                    确认后直接进入月度计划或每周执行，无需再次提报。继续修改校对内容会取消本次确认申请，保存后可重新交给管理员。
+                  </p>
                 </div>
               )}
               {parsing && (
@@ -801,38 +915,30 @@ export default function Imports({ data, refresh, notify }: PageProps) {
                       <div>
                         <h3>选择保存方式</h3>
                         <p>
-                          历史资料可保留原貌，当前工作可生成待完善的计划草稿。
+                          已在使用的计划可直接导入生效；新提报与历史资料也可分别保存。
                         </p>
                       </div>
                       <div className="import-mode-options">
-                        {(['history', 'draft'] as const).map((mode) => (
+                        {modes.map((mode) => (
                           <label
-                            key={mode}
-                            className={batch.mode === mode ? 'active' : ''}
+                            key={mode.id}
+                            className={batch.mode === mode.id ? 'active' : ''}
                           >
                             <input
                               type="radio"
                               name="import-mode"
-                              value={mode}
-                              checked={batch.mode === mode}
+                              value={mode.id}
+                              checked={batch.mode === mode.id}
                               disabled={batchBusy}
                               onChange={() =>
                                 void run('正在保存导入方式', () =>
-                                  saveRows(batch.rows, mode),
+                                  saveRows(batch.rows, mode.id),
                                 )
                               }
                             />
                             <span>
-                              <strong>
-                                {mode === 'history'
-                                  ? '历史资料归档'
-                                  : '生成计划草稿'}
-                              </strong>
-                              <small>
-                                {mode === 'history'
-                                  ? '缺失字段也能保存，不影响当前统计'
-                                  : '遵循现有人员、日期和月周关联规则'}
-                              </small>
+                              <strong>{mode.label}</strong>
+                              <small>{mode.description}</small>
                             </span>
                           </label>
                         ))}
@@ -970,7 +1076,7 @@ export default function Imports({ data, refresh, notify }: PageProps) {
                     </h3>
                     <span>
                       {immutable
-                        ? `新增 ${batch.committedCount || 0} 条 · 重复跳过 ${batch.skippedCount || 0} 条`
+                        ? savedBatchCounts(batch)
                         : `已勾选 ${selected.length} 条 · ${selectedIssues.length} 条有待补项`}
                     </span>
                   </div>
@@ -1052,6 +1158,32 @@ export default function Imports({ data, refresh, notify }: PageProps) {
                                 <strong className="import-row-title">
                                   {row.title || '待补充工作事项'}
                                 </strong>
+                                {batch.mode === 'existing' && (
+                                  <div className="import-row-destination">
+                                    <strong>
+                                      {row.kind === 'monthly'
+                                        ? `${row.month || '月份待确认'} · 月度计划`
+                                        : `${row.weekStart || '所属周待确认'} · 每周执行`}
+                                    </strong>
+                                    <span>
+                                      {row.kind === 'monthly'
+                                        ? monthlyResultLabels[
+                                            importedMonthlyResult(row)
+                                          ]
+                                        : weeklyResultLabels[
+                                            importedWeeklyStatus(row)
+                                          ]}
+                                    </span>
+                                    {row.sourceStatus && (
+                                      <span>原文状态：{row.sourceStatus}</span>
+                                    )}
+                                    {row.actualOutcome && (
+                                      <span className="import-row-outcome">
+                                        成果：{row.actualOutcome}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
                                 <details className="import-source">
                                   <summary>
                                     {row.sourceSheet || '原始资料'}
@@ -1078,7 +1210,9 @@ export default function Imports({ data, refresh, notify }: PageProps) {
                                 <small>
                                   {row.dueDate
                                     ? `截止 ${row.dueDate}`
-                                    : '截止日期待确认'}
+                                    : batch.mode === 'draft'
+                                      ? '截止日期待确认'
+                                      : '截止日期：原表未注明'}
                                 </small>
                               </td>
                               <td>
@@ -1095,9 +1229,18 @@ export default function Imports({ data, refresh, notify }: PageProps) {
                                     )?.title ||
                                       (row.linkedRowId
                                         ? `同批次：${batch.rows.find((item) => item.id === row.linkedRowId)?.title || '月计划'}`
-                                        : '月计划待关联')}
+                                        : batch.mode === 'draft'
+                                          ? '月计划待关联'
+                                          : '未关联月计划')}
                                   </small>
                                 )}
+                                {batch.mode === 'existing' &&
+                                  optionalSourceGaps(row) && (
+                                    <small className="import-source-gap">
+                                      {optionalSourceGaps(row)}
+                                      ：原表未注明，可直接保留。
+                                    </small>
+                                  )}
                               </td>
                               <td>
                                 {row.issues.length ? (
@@ -1121,6 +1264,22 @@ export default function Imports({ data, refresh, notify }: PageProps) {
                                 >
                                   {immutable ? '查看' : '校对'}
                                 </button>
+                                {immutable &&
+                                  navigate &&
+                                  row.result &&
+                                  ['plans', 'weeklyRecords'].includes(
+                                    row.result.collection,
+                                  ) && (
+                                    <button
+                                      className="import-edit-button import-result-link"
+                                      onClick={() => openImportedResult(row)}
+                                    >
+                                      {row.result.collection === 'plans'
+                                        ? '打开月计划'
+                                        : '打开周记录'}
+                                      <ArrowRight size={12} />
+                                    </button>
+                                  )}
                               </td>
                             </tr>
                           ))}
@@ -1137,14 +1296,18 @@ export default function Imports({ data, refresh, notify }: PageProps) {
                     <div className="import-commit">
                       <div>
                         <strong>
-                          {batch.mode === 'history'
-                            ? '保留历史资料，不要求重复填报'
-                            : '校对完成后生成计划草稿'}
+                          {batch.mode === 'existing'
+                            ? '已有计划确认后直接生效'
+                            : batch.mode === 'history'
+                              ? '保留历史资料，不要求重复填报'
+                              : '校对完成后生成新计划草稿'}
                         </strong>
                         <p>
-                          {batch.mode === 'history'
-                            ? '勾选记录将与来源一起归档。缺失字段可保留为空，历史状态不自动算作当前成果。'
-                            : '勾选记录需补齐必要信息；月计划仍需提交审核发布，周记录按现有流程提交。'}{' '}
+                          {batch.mode === 'existing'
+                            ? `${manager ? '本次确认会直接写入对应月份与周，并保留实际成果及核对后的状态。' : '校对后交管理员确认一次，确认后直接进入对应月份与周，无需成员再次提报。'} 原表未注明的验收标准、预期成果与截止日期可留空；原文“完成”不自动等于已验收。同来源的既有草稿会沿用原编号转为生效计划。`
+                            : batch.mode === 'history'
+                              ? '勾选记录将与来源一起归档。缺失字段可保留为空，历史状态不自动算作当前成果。'
+                              : '用于新计划提报，需补齐必要信息；月计划仍需提交审核发布，周记录按现有流程提交。'}{' '}
                           每次校对保存后，可随时离开再继续。
                         </p>
                       </div>
@@ -1153,27 +1316,43 @@ export default function Imports({ data, refresh, notify }: PageProps) {
                         disabled={
                           batchBusy ||
                           !selected.length ||
-                          (batch.mode === 'draft' && selectedIssues.length > 0)
+                          (batch.mode !== 'history' &&
+                            selectedIssues.length > 0) ||
+                          (batch.mode === 'existing' &&
+                            !manager &&
+                            !!batch.reviewRequestedAt)
                         }
                         onClick={() =>
                           void run('正在保存确认结果', async () => {
                             const next = await api<ImportBatch>(
-                              `/imports/${batch.id}/commit`,
+                              `/imports/${batch.id}/${batch.mode === 'existing' && !manager ? 'request-confirmation' : 'commit'}`,
                               json({ version: batch.version }),
                             )
                             acceptBatch(next)
+                            if (next.status !== 'committed') {
+                              notify(
+                                '已交管理员确认，确认后直接生效，无需再次提报。',
+                              )
+                              return
+                            }
                             await refresh()
                             if (historyLoaded) await loadHistory()
                             notify(
-                              `${next.mode === 'history' ? '历史资料已归档' : '计划草稿已生成'}：新增 ${next.committedCount || 0} 条，重复跳过 ${next.skippedCount || 0} 条。`,
+                              `${savedBatchLabel(next.mode)}：${savedBatchCounts(next)}。`,
                             )
                           })
                         }
                       >
                         <Archive size={16} />
-                        {batch.mode === 'history'
-                          ? `归档 ${selected.length} 条记录`
-                          : `生成 ${selected.length} 条草稿`}
+                        {batch.mode === 'existing'
+                          ? manager
+                            ? `确认 ${selected.length} 条并生效`
+                            : batch.reviewRequestedAt
+                              ? '已交管理员确认'
+                              : `交管理员确认 ${selected.length} 条`
+                          : batch.mode === 'history'
+                            ? `保存 ${selected.length} 条历史资料`
+                            : `生成 ${selected.length} 条新草稿`}
                       </button>
                     </div>
                   )}
@@ -1181,10 +1360,8 @@ export default function Imports({ data, refresh, notify }: PageProps) {
                     <div className="import-saved">
                       <Check size={17} />
                       <span>
-                        {batch.mode === 'history'
-                          ? '历史资料已归档'
-                          : '计划草稿已生成'}{' '}
-                        · {batch.committedAt ? dateTime(batch.committedAt) : ''}
+                        {savedBatchLabel(batch.mode)} ·{' '}
+                        {batch.committedAt ? dateTime(batch.committedAt) : ''}
                         。此批次已锁定，原始资料可随时下载。
                       </span>
                     </div>
@@ -1841,7 +2018,11 @@ export default function Imports({ data, refresh, notify }: PageProps) {
                 </pre>
                 <p>
                   每次修改使用最近响应中的
-                  version；重复确认已保存的批次不会再次生成数据。生成正式工作草稿前，应校对人员、日期和关联。
+                  version；重复确认已保存的批次不会再次生成数据。mode 可选择
+                  existing（已有计划直接生效）、draft（新计划草稿）或
+                  history（历史资料）。existing
+                  的确认生效仅限管理员；成员准备好后使用
+                  /imports/:id/request-confirmation 交管理员确认。
                 </p>
                 <p>
                   智能体已有结构化结果时，可直接提交到以下入口，省去文件解析。sourceKey
@@ -2094,7 +2275,7 @@ export default function Imports({ data, refresh, notify }: PageProps) {
                 </Field>
                 <Field
                   label="原文状态"
-                  hint="保留原始状态，不自动通过审核或验收。"
+                  hint="保留原始状态；原文“完成”不自动等于管理员已验收。"
                 >
                   <input
                     value={editing.sourceStatus}
@@ -2106,6 +2287,66 @@ export default function Imports({ data, refresh, notify }: PageProps) {
                     }
                   />
                 </Field>
+                {batch?.mode === 'existing' &&
+                  !editingHistory &&
+                  (editing.kind === 'monthly' ? (
+                    <Field
+                      label="导入后的成果状态"
+                      hint="计划确认后直接生效。原表已有成果会一起保留；已验收仅由管理员明确选择。"
+                    >
+                      <select
+                        value={importedMonthlyResult(editing)}
+                        onChange={(event) =>
+                          setEditing({
+                            ...editing,
+                            monthlyResult: event.target
+                              .value as ImportRow['monthlyResult'],
+                          })
+                        }
+                      >
+                        {Object.entries(monthlyResultLabels)
+                          .filter(
+                            ([status]) =>
+                              manager ||
+                              status !== 'accepted' ||
+                              editing.monthlyResult === 'accepted',
+                          )
+                          .map(([status, label]) => (
+                            <option
+                              key={status}
+                              value={status}
+                              disabled={!manager && status === 'accepted'}
+                            >
+                              {label}
+                            </option>
+                          ))}
+                      </select>
+                    </Field>
+                  ) : (
+                    <Field
+                      label="导入后的执行状态"
+                      hint="按原文状态识别，可在此校正；实际成果保持原文。"
+                    >
+                      <select
+                        value={importedWeeklyStatus(editing)}
+                        onChange={(event) =>
+                          setEditing({
+                            ...editing,
+                            weeklyStatus: event.target
+                              .value as ImportRow['weeklyStatus'],
+                          })
+                        }
+                      >
+                        {Object.entries(weeklyResultLabels).map(
+                          ([status, label]) => (
+                            <option key={status} value={status}>
+                              {label}
+                            </option>
+                          ),
+                        )}
+                      </select>
+                    </Field>
+                  ))}
                 <Field label="所属月份">
                   <input
                     type="month"
@@ -2124,7 +2365,14 @@ export default function Imports({ data, refresh, notify }: PageProps) {
                     }
                   />
                 </Field>
-                <Field label="截止日期">
+                <Field
+                  label="截止日期"
+                  hint={
+                    batch?.mode === 'existing'
+                      ? '原表未注明时可留空。'
+                      : undefined
+                  }
+                >
                   <input
                     type="date"
                     value={editing.dueDate}
@@ -2139,7 +2387,11 @@ export default function Imports({ data, refresh, notify }: PageProps) {
                   <h3>周工作关联</h3>
                   <Field
                     label="关联已有个人任务"
-                    hint="可关联自己的任务，或先选择月计划以新建任务。"
+                    hint={
+                      batch?.mode === 'existing'
+                        ? '原表已有任务可直接匹配；没有月计划关联也可导入生效。'
+                        : '可关联自己的任务，或先选择月计划以新建任务。'
+                    }
                   >
                     <select
                       value={editing.taskId}
@@ -2172,7 +2424,14 @@ export default function Imports({ data, refresh, notify }: PageProps) {
                         ))}
                     </select>
                   </Field>
-                  <Field label="关联系统月计划">
+                  <Field
+                    label="关联系统月计划"
+                    hint={
+                      batch?.mode === 'existing'
+                        ? '原表没有明确关联时可留空，导入后显示“未关联月计划”。'
+                        : undefined
+                    }
+                  >
                     <select
                       value={editing.monthlyPlanId}
                       onChange={(event) =>
@@ -2269,7 +2528,9 @@ export default function Imports({ data, refresh, notify }: PageProps) {
                 {editing.issues.map((issue, index) => (
                   <p key={index}>{issue}</p>
                 ))}
-                <small>本次修改保存后重新校验。历史资料可保留缺项。</small>
+                <small>
+                  本次修改保存后重新校验。已有计划与历史资料保留原表未注明的非必要字段。
+                </small>
               </div>
             )}
           </Form>

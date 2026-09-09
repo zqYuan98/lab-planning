@@ -29,7 +29,7 @@ export function planOriginLabel(snapshot: ReportSnapshot, plan: MonthlyPlan): st
       const ancestry = describe(source, nextPath)
       return `${source.month} · ${source.title}${ancestry ? `（${ancestry}）` : ''}`
     }
-    return [current.sourcePlanId ? `承接：${label(current.sourcePlanId)}` : '',
+    return [current.importSource ? `已有资料导入${current.importSource.sourceStatus ? `，原状态：${current.importSource.sourceStatus}` : ''}` : '', current.sourcePlanId ? `承接：${label(current.sourcePlanId)}` : '',
       current.mergedFromIds?.length ? `合并：${current.mergedFromIds.map(label).join('、')}` : ''].filter(Boolean).join('；')
   }
   return describe(plan, new Set())
@@ -42,6 +42,9 @@ export function weeklyAssociationLabel(snapshot: ReportSnapshot, record: WeeklyR
     return plan ? `${plan.month} · ${plan.title}` : id
   }
   if (record.monthlyPlanId) return `当期月计划：${planName(record.monthlyPlanId)}`
+  if (record.importSource) return task?.monthlyPlanId
+    ? `原资料导入时未关联月计划；生成报告时任务已补关联：${planName(task.monthlyPlanId)}`
+    : '原资料导入时未关联月计划；生成报告时仍未关联'
   const reason = task?.temporaryReason ? `；临时原因：${task.temporaryReason}` : ''
   return task?.monthlyPlanId
     ? `当期为临时工作；生成报告时任务已补关联：${planName(task.monthlyPlanId)}${reason}`
@@ -52,11 +55,11 @@ export function snapshotWarnings(report: Pick<Report, 'snapshot' | 'type'>): str
   const warnings: string[] = []
   const taskTitle = (id: string) => snapshot.tasks.find(t => t.id === id)?.title || id
   for (const record of snapshot.weeklyRecords.filter(r => r.submitted)) {
-    if (record.status === 'done' && !record.actualOutcome.trim()) warnings.push(`「${taskTitle(record.taskId)}」自报完成，缺少实际成果。`)
+    if (record.status === 'done' && !record.actualOutcome.trim()) warnings.push(`「${taskTitle(record.taskId)}」${record.importSource ? '原资料标记完成，未注明实际成果' : '自报完成，缺少实际成果'}。`)
     if (record.status === 'done' && !record.evidenceUrl.trim()) warnings.push(`「${taskTitle(record.taskId)}」自报完成，缺少验收证据链接。`)
     if (['blocked', 'not_done'].includes(record.status) && !record.blocker.trim()) warnings.push(`「${taskTitle(record.taskId)}」缺少阻塞或未完成原因。`)
     if (['blocked', 'not_done'].includes(record.status) && !record.nextAction.trim()) warnings.push(`「${taskTitle(record.taskId)}」缺少下一步措施。`)
-    if (!record.monthlyPlanId && !snapshot.tasks.find(t => t.id === record.taskId)?.monthlyPlanId) warnings.push(`「${taskTitle(record.taskId)}」当期为临时工作，生成报告时仍未补充月计划关联。`)
+    if (!record.monthlyPlanId && !snapshot.tasks.find(t => t.id === record.taskId)?.monthlyPlanId) warnings.push(`「${taskTitle(record.taskId)}」${record.importSource ? '原资料导入时未关联月计划' : '当期为临时工作'}，生成报告时仍未补充月计划关联。`)
   }
   for (const plan of snapshot.plans.filter(p => p.status === 'published')) {
     if (plan.acceptanceStatus === 'submitted') warnings.push(`月计划「${plan.title}」已提交成果，待管理者验收。`)
@@ -69,4 +72,5 @@ export function snapshotWarnings(report: Pick<Report, 'snapshot' | 'type'>): str
 }
 
 export const weeklyStatusLabels: Record<string, string> = { planned: '未开始', doing: '进行中', blocked: '阻塞', done: '成员自报完成', not_done: '未完成' }
+export function weeklyStatusLabel(record: WeeklyRecord) { return record.importSource && record.status === 'done' ? '原记录标记完成' : weeklyStatusLabels[record.status] }
 export const acceptanceLabels: Record<string, string> = { pending: '待提交成果', submitted: '待管理者验收', accepted: '管理者已验收', not_completed: '确认未完成' }

@@ -31,7 +31,7 @@ import {
   reportMetrics,
   snapshotWarnings,
   weeklyAssociationLabel,
-  weeklyStatusLabels,
+  weeklyStatusLabel,
 } from '../../server/report-metrics'
 import '../reports.css'
 import type { NavigationIntent } from '../navigation'
@@ -176,7 +176,7 @@ export default function Reports({
             .filter((r) => highlightIds.includes(r.id))
             .map(
               (r) =>
-                `- ${s.tasks.find((t) => t.id === r.taskId)?.title || r.commitment}｜${weeklyStatusLabels[r.status]}；实际成果：${r.actualOutcome || '待补充'}`,
+                `- ${s.tasks.find((t) => t.id === r.taskId)?.title || r.commitment}｜${weeklyStatusLabel(r)}；实际成果：${r.actualOutcome || '待补充'}`,
             )
         : s.plans
             .filter((p) => highlightIds.includes(p.id))
@@ -445,7 +445,7 @@ export default function Reports({
                                   selected.snapshot.tasks.find(
                                     (t) => t.id === r.taskId,
                                   )?.title || r.commitment,
-                                status: weeklyStatusLabels[r.status],
+                                status: weeklyStatusLabel(r),
                               }))
                           : selected.snapshot.plans
                               .filter((p) => p.status === 'published')
@@ -933,7 +933,7 @@ function SourceFacts({ report }: { report: Report }) {
                       <small>下一步：{r.nextAction || '待补充'}</small>
                     </td>
                     <td>
-                      {weeklyStatusLabels[r.status]}
+                      {weeklyStatusLabel(r)}
                       {!r.submitted && <small>未提交草稿，不计正式统计</small>}
                     </td>
                   </tr>

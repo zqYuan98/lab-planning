@@ -1,6 +1,6 @@
 import type { AnnualGoal, AuditEvent, MonthlyPlan, Project, Publication, Report, ReportSnapshot, Task, User, WeeklyRecord } from '../shared/types.ts'
 import type { Store } from './store.ts'
-import { acceptanceLabels, planOriginLabel, rateLabel, reportMetrics, snapshotWarnings, weeklyAssociationLabel, weeklyStatusLabels } from './report-metrics.ts'
+import { acceptanceLabels, planOriginLabel, rateLabel, reportMetrics, snapshotWarnings, weeklyAssociationLabel, weeklyStatusLabel } from './report-metrics.ts'
 import { markdownToWord } from './report-word.ts'
 import { canUseAccount, registrationApproved } from '../shared/auth-policy.ts'
 import { readAiSettings, resolveAiSettings } from './ai-service.ts'
@@ -77,7 +77,7 @@ export function generateNarrative(type: Report['type'], snapshot: ReportSnapshot
   if (type === 'weekly') {
     const records = snapshot.weeklyRecords.filter(r => r.submitted)
     if (!records.length) lines.push('暂无已提交周记录。')
-    for (const record of records) lines.push(`- ${taskName(snapshot, record.taskId)}｜${name(snapshot, record.ownerId)}｜${weeklyStatusLabels[record.status]}；实际成果：${fallback(record.actualOutcome)}；证据：${fallback(record.evidenceUrl)}`)
+    for (const record of records) lines.push(`- ${taskName(snapshot, record.taskId)}｜${name(snapshot, record.ownerId)}｜${weeklyStatusLabel(record)}；实际成果：${fallback(record.actualOutcome)}；证据：${fallback(record.evidenceUrl)}`)
   } else {
     const plans = snapshot.plans.filter(p => p.status === 'published')
     if (!plans.length) lines.push('本月尚无已发布月计划，暂无月度验收统计口径。')
@@ -166,7 +166,7 @@ export function exportMarkdown(report: Report): string {
   if (s.plans.length) lines.push(table(['事项', '负责人', '发布状态', '预期成果 / 验收标准', '实际成果', '验收状态'], s.plans.map(p => [p.title, name(s, p.ownerId), p.status === 'published' ? `已发布 V${p.publishedVersion || 1}` : p.status === 'merged' ? '已合并，不计入正式统计' : '未发布，不计入正式统计', `${p.expectedOutcome}；验收：${p.acceptanceCriteria}；截止：${p.dueDate}`, fallback(p.actualOutcome), acceptanceLabels[p.acceptanceStatus]])))
   else lines.push('暂无月计划。')
   lines.push('', '## 完整周记录事实明细')
-  if (s.weeklyRecords.length) lines.push(table(['任务 / 所属周', '负责人', '承诺', '实际成果', '状态', '证据'], s.weeklyRecords.map(r => [`${taskName(s, r.taskId)} / ${r.weekStart}`, name(s, r.ownerId), r.commitment, fallback(r.actualOutcome), `${r.submitted ? '' : '未提交草稿 · '}${weeklyStatusLabels[r.status]}`, fallback(r.evidenceUrl)])))
+  if (s.weeklyRecords.length) lines.push(table(['任务 / 所属周', '负责人', '承诺', '实际成果', '状态', '证据'], s.weeklyRecords.map(r => [`${taskName(s, r.taskId)} / ${r.weekStart}`, name(s, r.ownerId), r.commitment, fallback(r.actualOutcome), `${r.submitted ? '' : '未提交草稿 · '}${weeklyStatusLabel(r)}`, fallback(r.evidenceUrl)])))
   else lines.push('暂无周记录。')
   if (s.weeklyRecords.length) {
     lines.push('', '## 周记录月归属与风险协调', table(['任务 / 所属周', '当期月归属与后续关联', '阻塞或未完成原因', '下一步措施'], s.weeklyRecords.map(r => [
