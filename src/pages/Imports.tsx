@@ -344,7 +344,7 @@ export default function Imports({ data, refresh, notify }: PageProps) {
         }),
       )
       acceptBatch(next, true)
-      notify('原始文件已保存，可选择工作表并开始解析。')
+      notify('原始文件已保存，可设置解析选项并开始解析。')
     })
   }
 
@@ -615,7 +615,9 @@ export default function Imports({ data, refresh, notify }: PageProps) {
                     {batch.analysis.error || '服务暂时未完成解析，请重试。'}
                   </p>
                   <small>
-                    已完成的分段结果保留，使用相同选项重试可继续处理。
+                    {batch.analysis.completedChunks > 0
+                      ? '已完成的分段结果保留，使用相同选项重试可继续处理。'
+                      : '原始资料已保留，修正问题后可直接重试，无需重新上传。'}
                   </small>
                 </div>
               )}
@@ -759,7 +761,9 @@ export default function Imports({ data, refresh, notify }: PageProps) {
                                 `/imports/${batch.id}/analyze`,
                                 json({
                                   version: batch.version,
-                                  sheets: sheetNames,
+                                  ...(batch.kind === 'table'
+                                    ? { sheets: sheetNames }
+                                    : {}),
                                   instruction,
                                   forceRefresh,
                                   kind: parseKind,

@@ -170,7 +170,8 @@ export class ImportService {
     const before = this.mutable(actor, id, input.version)
     if (this.analyzing.has(id)) throw new HttpError(409, '此批次正在解析，请稍后查看')
     const source = this.source(actor, id)
-    const sheets = input.sheets === undefined ? undefined : input.sheets
+    // Images and text have no worksheets; also accept older clients that send [].
+    const sheets = source.parsed.kind === 'table' ? input.sheets : undefined
     if (sheets !== undefined && (!Array.isArray(sheets) || !sheets.length || sheets.some(s => typeof s !== 'string'))) throw new HttpError(400, '请选择至少一张工作表')
     const instruction = text(input.instruction, '解析要求', false, 2000)
     const period = text(input.period, '参考周期', false, 30)
