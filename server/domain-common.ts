@@ -1,5 +1,6 @@
 import type { AuditEvent, Entity, MonthlyPlan, Project, User } from '../shared/types.ts'
 import { Store, HttpError } from './store.ts'
+import { canUseAccount } from '../shared/auth-policy.ts'
 
 export type Input = Record<string, unknown>
 export function text(value: unknown, label: string, required = true, max = 12000): string {
@@ -64,7 +65,7 @@ export class DomainBase {
   }
   protected activeUser(value: unknown): User {
     const user = this.need<User>('users', text(value, '负责人'))
-    if (!user.active) throw new HttpError(400, '不能分配给已停用成员')
+    if (!canUseAccount(user)) throw new HttpError(400, '不能分配给已停用或未通过注册审核的成员')
     return user
   }
   protected activeProject(id: string): Project {

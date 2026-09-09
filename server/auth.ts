@@ -2,6 +2,7 @@ import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypt
 import type { RequestHandler, Response } from 'express'
 import type { Entity, User } from '../shared/types.ts'
 import { HttpError, Store } from './store.ts'
+import { canUseAccount, PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from '../shared/auth-policy.ts'
 
 declare global { namespace Express { interface Request { user: User } } }
 export interface StoredUser extends User { passwordHash: string; credentialVersion: number }
@@ -11,10 +12,10 @@ const SESSION_MS = 12 * 60 * 60 * 1000
 
 export function safeUser(user: User): User {
   const { id, version, createdAt, updatedAt, name, email, role, position, active } = user
-  return { id, version, createdAt, updatedAt, name, email, role, position, active }
+  return { id, version, createdAt, updatedAt, name, email, role, position, active, ...(user.registrationStatus ? { registrationStatus: user.registrationStatus } : {}) }
 }
 export function hashPassword(password: unknown): string {
-  if (typeof password !== 'string' || password.length < 8 || password.length > 256) throw new HttpError(400, '密码需要 8 至 256 个字符')
+  if (typeof password !== 'string' || password.length < PASSWORD_MIN_LENGTH || password.length > PASSWORD_MAX_LENGTH) throw new HttpError(400, '密码需要 8 至 256 个字符')
   const salt = randomBytes(16).toString('hex')
   return `${salt}:${scryptSync(password, salt, 64).toString('hex')}`
 }
@@ -51,7 +52,7 @@ export const requireAuth = (store: Store): RequestHandler => (req, _res, next) =
   const session = token ? store.get<Session>('sessions', tokenHash(token)) : undefined
   const user = session ? store.get<StoredUser>('users', session.userId) : undefined
   const expiry = session ? Date.parse(session.expiresAt) : NaN
-  if (!session || session.revoked !== false || !Number.isFinite(expiry) || expiry <= Date.now() || user?.active !== true || !Number.isInteger(session.credentialVersion) || session.credentialVersion < 1 || user.credentialVersion !== session.credentialVersion) return next(new HttpError(401, '请先登录'))
+  if (!session || session.revoked !== false || !Number.isFinite(expiry) || expiry <= Date.now() || !user || !canUseAccount(user) || !Number.isInteger(session.credentialVersion) || session.credentialVersion < 1 || user.credentialVersion !== session.credentialVersion) return next(new HttpError(401, '请先登录'))
   req.user = safeUser(user)
   next()
 }

@@ -1,4 +1,5 @@
 import type { AnnualGoal, Project, User } from '../shared/types.ts'
+import { canUseAccount, registrationApproved } from '../shared/auth-policy.ts'
 import { checkPassword, hashPassword, safeUser, type StoredUser } from './auth.ts'
 import { HttpError } from './store.ts'
 import { DomainBase, bool, choice, manager, number, text, type Input } from './domain-common.ts'
@@ -21,12 +22,37 @@ export class AdminService extends DomainBase {
       return safeUser(user)
     })
   }
+  register(input: Input) {
+    const data = { name: text(input.name, '姓名', true, 100), email: email(input.email), position: text(input.position, '岗位', false, 100), passwordHash: hashPassword(input.password) }
+    return this.store.transaction(() => {
+      if (!this.store.list<User>('users').some(user => canUseAccount(user) && user.role === 'manager')) throw new HttpError(409, '请先由部门负责人初始化工作空间')
+      if (this.store.list<User>('users').some(user => user.email === data.email)) throw new HttpError(409, '该邮箱已注册或已提交申请，请登录或联系管理员')
+      const user = this.store.insert<StoredUser>('users', { ...data, role: 'member', active: false, credentialVersion: 1, registrationStatus: 'pending', registrationReviewComment: '' })
+      this.audit(user, 'user', user.id, 'register', null, safeUser(user))
+      return { message: '申请已提交，等待管理员审批。通过后可使用邮箱和刚设置的密码登录。' }
+    })
+  }
+  reviewRegistration(actor: User, id: string, input: Input): User {
+    manager(actor)
+    const decision = choice(input.decision, ['approve', 'reject'], '审核结果')
+    const comment = text(input.comment, '审核说明', decision === 'reject', 1000)
+    return this.store.transaction(() => {
+      const before = this.current<StoredUser>('users', id, input)
+      if (!['pending', 'rejected'].includes(before.registrationStatus ?? '')) throw new HttpError(409, '该账号不在待审核申请中，请刷新列表')
+      const user = this.store.update<StoredUser>('users', id, before.version, { registrationStatus: decision === 'approve' ? 'approved' : 'rejected', registrationReviewComment: comment, active: decision === 'approve', role: 'member', credentialVersion: before.credentialVersion + 1 })
+      this.audit(actor, 'user', id, `registration_${decision}`, safeUser(before), safeUser(user), comment)
+      return safeUser(user)
+    })
+  }
   login(input: Input): User {
     const address = email(input.email)
     const user = this.store.list<StoredUser>('users').find(item => item.email === address)
     // Equal-cost hashing also for unknown accounts, to avoid account enumeration by timing.
     const valid = checkPassword(input.password, user?.passwordHash ?? `${'0'.repeat(32)}:${'0'.repeat(128)}`)
-    if (!valid || !user?.active) throw new HttpError(401, '邮箱或密码不正确，或账号已停用')
+    if (!valid || !user) throw new HttpError(401, '邮箱或密码不正确，或账号已停用')
+    if (user.registrationStatus === 'pending') throw new HttpError(403, '注册申请正在等待管理员审批，通过后即可登录')
+    if (user.registrationStatus === 'rejected') throw new HttpError(403, '注册申请未通过，请联系管理员重新审核')
+    if (!canUseAccount(user)) throw new HttpError(401, '邮箱或密码不正确，或账号已停用')
     return safeUser(user)
   }
   createUser(actor: User, input: Input): User {
@@ -45,6 +71,7 @@ export class AdminService extends DomainBase {
     return this.store.transaction(() => {
       const before = this.current<StoredUser>('users', id, input)
       const patch: Partial<StoredUser> = {}
+      if (!registrationApproved(before)) throw new HttpError(409, '请先通过注册审核处理该申请')
       if (input.name !== undefined) patch.name = text(input.name, '姓名', true, 100)
       if (input.position !== undefined) patch.position = text(input.position, '岗位', false, 100)
       if (input.active !== undefined) patch.active = bool(input.active, '账号启用状态')

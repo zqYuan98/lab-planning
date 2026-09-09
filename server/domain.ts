@@ -1,5 +1,6 @@
 import type { AnnualGoal, AuditEvent, Bootstrap, MonthlyPlan, Project, Publication, Report, Task, User, WeeklyRecord } from '../shared/types.ts'
 import { safeUser } from './auth.ts'
+import { registrationApproved } from '../shared/auth-policy.ts'
 import { AdminService } from './domain-admin.ts'
 import { DomainBase, participates } from './domain-common.ts'
 import { MonthlyService } from './domain-plans.ts'
@@ -20,6 +21,8 @@ export class Domain extends DomainBase {
   }
   setup = (...args: Parameters<AdminService['setup']>) => this.admin.setup(...args)
   login = (...args: Parameters<AdminService['login']>) => this.admin.login(...args)
+  register = (...args: Parameters<AdminService['register']>) => this.admin.register(...args)
+  reviewRegistration = (...args: Parameters<AdminService['reviewRegistration']>) => this.admin.reviewRegistration(...args)
   createUser = (...args: Parameters<AdminService['createUser']>) => this.admin.createUser(...args)
   updateUser = (...args: Parameters<AdminService['updateUser']>) => this.admin.updateUser(...args)
   createProject = (...args: Parameters<AdminService['createProject']>) => this.admin.createProject(...args)
@@ -66,6 +69,7 @@ export class Domain extends DomainBase {
       }
     }
     const publications = this.store.list<Publication>('publications').map(item => isManager ? item : { ...item, plans: item.plans.filter(plan => participates(plan, actor.id)) }).filter(item => item.plans.length)
-    return { user: safeUser(actor), users: this.store.list<User>('users').map(safeUser), projects: this.store.list<Project>('projects'), annualGoals: this.store.list<AnnualGoal>('annualGoals'), plans, tasks, weeklyRecords, publications, reports: isManager ? this.store.list<Report>('reports') : [], aiConfigured: aiConfigured() }
+    const users = this.store.list<User>('users').filter(user => isManager || registrationApproved(user)).map(user => ({ ...safeUser(user), ...(isManager && user.registrationStatus ? { registrationReviewComment: user.registrationReviewComment ?? '' } : {}) }))
+    return { user: safeUser(actor), users, projects: this.store.list<Project>('projects'), annualGoals: this.store.list<AnnualGoal>('annualGoals'), plans, tasks, weeklyRecords, publications, reports: isManager ? this.store.list<Report>('reports') : [], aiConfigured: aiConfigured() }
   }
 }

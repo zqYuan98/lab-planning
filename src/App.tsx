@@ -13,13 +13,13 @@ import {
   FileText,
   LoaderCircle,
   UserRound,
-  ShieldCheck,
   X,
 } from 'lucide-react'
 import type { Bootstrap } from '../shared/types'
 import type { Navigate, NavigationIntent, PageId } from './navigation'
-import { api, json, ApiError } from './api'
-import { Field, Form, Modal, currentMonth, monday, localDate } from './ui'
+import { api, ApiError } from './api'
+import { Modal, currentMonth, monday, localDate } from './ui'
+import AuthAccess from './components/AuthAccess'
 import WorkspaceSearch from './components/WorkspaceSearch'
 import Overview from './pages/Overview'
 import Monthly from './pages/Monthly'
@@ -246,72 +246,7 @@ export default function App() {
             TIANSHU LAB <span>让团队的工作，连贯而有序。</span>
           </small>
         </section>
-        <section className="auth-form">
-          <span className="auth-form-icon">
-            <ShieldCheck size={24} />
-          </span>
-          <div className="eyebrow">
-            {initialized ? 'WELCOME BACK' : 'LET’S GET STARTED'}
-          </div>
-          <h2>{initialized ? '欢迎回到工作空间' : '设置首位管理员'}</h2>
-          <p>
-            {initialized
-              ? '登录后，继续推进团队的计划与成果。'
-              : '创建管理员后，可以添加成员开始提报月计划。'}
-          </p>
-          <Form
-            submitLabel={initialized ? '登录工作空间' : '创建工作空间'}
-            onSubmit={async (event) => {
-              const values = Object.fromEntries(
-                new FormData(event.currentTarget),
-              )
-              await api(
-                initialized ? '/auth/login' : '/auth/setup',
-                json(values),
-              )
-              setInitialized(true)
-              await refresh()
-            }}
-          >
-            {!initialized && (
-              <Field label="姓名">
-                <input
-                  name="name"
-                  autoComplete="name"
-                  defaultValue="袁中群"
-                  required
-                  maxLength={80}
-                />
-              </Field>
-            )}
-            <Field label="邮箱">
-              <input
-                name="email"
-                type="email"
-                autoComplete="username"
-                placeholder="you@company.com"
-                required
-              />
-            </Field>
-            <Field
-              label="密码"
-              hint={
-                !initialized
-                  ? '至少 10 位，建议使用字母、数字和符号组合。'
-                  : undefined
-              }
-            >
-              <input
-                name="password"
-                type="password"
-                autoComplete={initialized ? 'current-password' : 'new-password'}
-                minLength={initialized ? undefined : 10}
-                required
-              />
-            </Field>
-          </Form>
-          <p className="auth-form-note">每一次计划，都从清晰的责任开始。</p>
-        </section>
+        <AuthAccess initialized={initialized} onLogin={async () => { setInitialized(true); await refresh() }} />
       </div>
     )
   const manager = data.user.role === 'manager'

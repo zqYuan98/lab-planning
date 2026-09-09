@@ -1,6 +1,6 @@
 export type Role = 'manager' | 'member'
 export interface Entity { id: string; version: number; createdAt: string; updatedAt: string }
-export interface User extends Entity { name: string; email: string; role: Role; position: string; active: boolean }
+export interface User extends Entity { name: string; email: string; role: Role; position: string; active: boolean; registrationStatus?: 'pending' | 'approved' | 'rejected'; registrationReviewComment?: string }
 export interface Project extends Entity { name: string; code: string; description: string; ownerId: string; status: 'active' | 'archived' }
 export interface AnnualGoal extends Entity { title: string; year: number; target: string; progress: number; description: string; ownerId: string; status: 'active' | 'completed' }
 export type PlanStatus = 'draft' | 'submitted' | 'returned' | 'approved' | 'published' | 'merged'

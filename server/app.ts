@@ -81,6 +81,20 @@ export function createApp(options: AppOptions = {}) {
   }
   app.post('/api/auth/setup', loginLimit, authenticate('setup'))
   app.post('/api/auth/login', loginLimit, authenticate('login'))
+  const registrationAttempts = new Map<string, { count: number; resetAt: number }>()
+  app.post('/api/auth/register', (req, res) => {
+    const now = Date.now()
+    for (const [key, state] of registrationAttempts) if (state.resetAt <= now) registrationAttempts.delete(key)
+    const key = req.ip ?? 'local'
+    const state = registrationAttempts.get(key) ?? { count: 0, resetAt: now + 15 * 60 * 1000 }
+    if (state.count >= 20) {
+      res.set('Retry-After', String(Math.ceil((state.resetAt - now) / 1000)))
+      throw new HttpError(429, '注册申请次数过多，请稍后再试')
+    }
+    state.count++
+    registrationAttempts.set(key, state)
+    res.status(202).json(domain.register(req.body))
+  })
   app.use('/api', requireAuth(store))
   app.get('/api/auth/me', (req, res) => res.json(req.user))
   app.post('/api/auth/logout', (req, res) => { clearSession(store, req.headers.cookie, res); res.json({ ok: true }) })
@@ -90,6 +104,7 @@ export function createApp(options: AppOptions = {}) {
   const mutate = (handler: (actor: User, id: string, input: Record<string, unknown>) => unknown): RequestHandler => (req, res) => { res.json(handler(req.user, String(req.params.id), req.body)) }
   app.post('/api/users', create(domain.createUser))
   app.patch('/api/users/:id', mutate(domain.updateUser))
+  app.post('/api/users/:id/registration-review', mutate(domain.reviewRegistration))
   app.post('/api/projects', create(domain.createProject))
   app.patch('/api/projects/:id', mutate(domain.updateProject))
   app.post('/api/annual-goals', create(domain.createAnnualGoal))

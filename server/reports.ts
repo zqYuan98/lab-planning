@@ -2,6 +2,7 @@ import type { AnnualGoal, AuditEvent, MonthlyPlan, Project, Publication, Report,
 import type { Store } from './store.ts'
 import { acceptanceLabels, planOriginLabel, rateLabel, reportMetrics, snapshotWarnings, weeklyAssociationLabel, weeklyStatusLabels } from './report-metrics.ts'
 import { markdownToWord } from './report-word.ts'
+import { canUseAccount, registrationApproved } from '../shared/auth-policy.ts'
 
 function fail(message: string, status = 400): never { throw Object.assign(new Error(message), { status }) }
 export function aiConfigured() { return Boolean(process.env.AI_BASE_URL && process.env.AI_API_KEY && process.env.AI_MODEL) }
@@ -25,7 +26,7 @@ function publicUser(user: User): User {
 }
 export function requireReportManager(store: Store, actorId: string) {
   const user = store.get<User>('users', actorId)
-  if (!user || !user.active || user.role !== 'manager') fail('只有部门管理者可以管理报告。', 403)
+  if (!user || !canUseAccount(user) || user.role !== 'manager') fail('只有部门管理者可以管理报告。', 403)
 }
 export function buildReportSnapshot(store: Store, type: Report['type'], period: string): ReportSnapshot {
   const end = type === 'weekly' ? addDays(period, 6) : `${shiftMonth(period, 1)}-01`
@@ -56,7 +57,7 @@ export function buildReportSnapshot(store: Store, type: Report['type'], period: 
   const publications = store.list<Publication>('publications').filter(p => p.month >= firstMonth && p.month <= lastMonth).sort((a, b) => a.revision - b.revision)
   const changes = store.list<AuditEvent>('events').filter(e => ['plan', 'plans', 'monthlyPlan'].includes(e.entityType) && relevantPlanIds.has(e.entityId)).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   return structuredClone({ plans, contextPlans, weeklyRecords, tasks, projects: store.list<Project>('projects'),
-    users: store.list<User>('users').map(publicUser), annualGoals: store.list<AnnualGoal>('annualGoals').filter(g => g.year === Number(period.slice(0, 4))),
+    users: store.list<User>('users').filter(registrationApproved).map(publicUser), annualGoals: store.list<AnnualGoal>('annualGoals').filter(g => g.year === Number(period.slice(0, 4))),
     nextPlans, nextWeeklyRecords, publications, changes })
 }
 

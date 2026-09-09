@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { Plus, Users, Search } from 'lucide-react'
+import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH, registrationApproved } from '../../shared/auth-policy'
+import RegistrationRequests from '../components/RegistrationRequests'
 import type { User } from '../../shared/types'
 import { api, json } from '../api'
 import {
@@ -13,7 +15,7 @@ import {
 } from '../ui'
 export default function Team({ data, refresh, notify, intent }: PageProps) {
   const [search, setSearch] = useState(intent?.query || '')
-  const members = data.users.filter((item) =>
+  const members = data.users.filter(registrationApproved).filter((item) =>
     `${item.name} ${item.email} ${item.position}`
       .toLocaleLowerCase()
       .includes(search.toLocaleLowerCase()),
@@ -33,6 +35,7 @@ export default function Team({ data, refresh, notify, intent }: PageProps) {
           </button>
         }
       />
+      <RegistrationRequests data={data} refresh={refresh} notify={notify} />
       <div className="toolbar">
         <label className="search-input">
           <Search size={17} />
@@ -173,12 +176,13 @@ export default function Team({ data, refresh, notify, intent }: PageProps) {
             </Field>
             <Field
               label={user ? '重设密码（留空则保留）' : '初始密码'}
-              hint="至少 10 位。通过部门认可的方式将初始密码交给本人。"
+              hint="至少 8 位。通过部门认可的方式将初始密码交给本人。"
             >
               <input
                 name="password"
                 type="password"
-                minLength={10}
+                minLength={PASSWORD_MIN_LENGTH}
+                maxLength={PASSWORD_MAX_LENGTH}
                 required={!user}
                 autoComplete="new-password"
               />
