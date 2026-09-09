@@ -1,6 +1,6 @@
 # API contract
 
-Shared types in shared/types.ts are authoritative. JSON responses return the object/array directly, errors return {error:string}. Authentication uses HttpOnly same-origin cookie. All mutations (except login/setup) require authenticated identity and application/json. Entity update requires version; mismatches return 409. Use strings for IDs, ISO timestamps, YYYY-MM months and YYYY-MM-DD dates. No automatic company data import.
+Shared types in shared/types.ts are authoritative. JSON responses return the object/array directly, errors return {error:string}. Authentication uses HttpOnly same-origin cookie. All mutations (except login/setup/register) require authenticated identity and application/json. Entity update requires version; mismatches return 409. Use strings for IDs, ISO timestamps, YYYY-MM months and YYYY-MM-DD dates. No automatic company data import.
 
 - GET /api/auth/status -> {initialized:boolean}; POST /api/auth/setup {name,email,password} -> User first manager; POST /api/auth/login {email,password}->User; POST /api/auth/logout; GET /api/auth/me -> User.
 - GET /api/bootstrap -> Bootstrap; member views only own/collaborating relevant plans/tasks/weekly records. Manager sees all. users returns safe User objects, never password hashes.
@@ -31,3 +31,10 @@ server/store.ts exports Store: constructor(path:string), get<T>(collection,id):T
 server/auth.ts exports requireAuth(store):RequestHandler attaching req.user:User; requireManager middleware; safeUser strips secrets. server/domain.ts exports Domain(store) containing business logic used by router and tests. server/app.ts exports createApp({store?,dbPath?,enableScheduler?}={}): Express. Root agent implements server/reports.ts and server/report-routes.ts exporting createReportRouter(store):Router, mounted behind requireAuth at /api; server/scheduler.ts exports startScheduler(store):()=>void. API/domain agent integrates those imports only after files exist. Route bootstrap may import report methods only if needed; store.list('reports') manager only.
 
 Frontend src/api.ts exports api<T>(path,options?) using /api prefix, credentials same-origin and error handling. App consumes bootstrap, displays create/review/publish weekly operations and reports, refreshes bootstrap after successful mutation. Root owns src/pages/Reports.tsx and server report modules; frontend agent owns remaining src and styling. Reports page exported default with props {data:Bootstrap,refresh:()=>Promise<void>,notify:(message:string)=>void}; use api and src/ui.tsx shared helpers if available.
+
+## Team registration (2026-09-09)
+
+- POST /api/auth/register {name,email,position?,password} -> 202 {message}. Requires an initialized active manager; creates inactive pending member, never a session. Email is case-insensitive and unique. Separate IP budget:20 attempts per15 minutes, including unsuccessful requests;429 returns Retry-After.
+- POST /api/users/:id/registration-review {version,decision:'approve'|'reject',comment?} -> User. Manager only; reject requires comment. Only pending/rejected can be reviewed. Approval fixes role=member and active=true. Both transitions invalidate old credentials versions and audit atomically.
+- User.registrationStatus is optional for compatibility with existing accounts. Access requires active=true plus absent/approved registrationStatus. Pending/rejected accounts are excluded from ordinary member directories and report snapshots. Manager bootstrap includes review comments. Normal account PATCH cannot activate or promote unapproved applications.
+- All password creation/reset rules accept8–256 characters, without mandatory character classes. Registration form additionally checks confirmation equality.
