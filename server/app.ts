@@ -8,6 +8,9 @@ import { appOrigin, clearSession, createSession, createOriginGuard, requireAuth,
 import { Domain } from './domain.ts'
 import { HttpError, Store } from './store.ts'
 import { createReportRouter } from './report-routes.ts'
+import { createAiSettingsRouter, createImportRouter } from './import-routes.ts'
+import { requireIntegrationAuth } from './integration-auth.ts'
+import { createDataRouter } from './data-routes.ts'
 
 interface AppOptions { store?: Store; dbPath?: string; enableScheduler?: boolean }
 /** Trust named loopback or explicit proxy addresses, never a caller-supplied hop count. */
@@ -37,7 +40,11 @@ export function createApp(options: AppOptions = {}) {
     if (process.env.NODE_ENV === 'production') res.set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
     next()
   })
-  app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next() }, createOriginGuard(canonical), express.json({ limit: '256kb' }))
+  const regularJson = express.json({ limit: '256kb' }), importJson = express.json({ limit: '16mb' }), restoreJson = express.json({ limit: '35mb' })
+  app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next() }, createOriginGuard(canonical), (req, res, next) => {
+    const large = /^\/(?:v1\/)?imports(?:\/|$)/i.test(req.path)
+    return (req.path.toLowerCase().startsWith('/data/restore/') ? restoreJson : large ? importJson : regularJson)(req, res, next)
+  })
   app.use('/api', (req, _res, next) => {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && (!req.body || typeof req.body !== 'object' || Array.isArray(req.body))) return next(new HttpError(400, '请求内容必须是 JSON 对象'))
     next()
@@ -95,6 +102,7 @@ export function createApp(options: AppOptions = {}) {
     registrationAttempts.set(key, state)
     res.status(202).json(domain.register(req.body))
   })
+  app.use('/api/v1', requireIntegrationAuth(store), createImportRouter(store), createDataRouter(store, true), (_req, _res, next) => next(new HttpError(404, '集成接口不存在')))
   app.use('/api', requireAuth(store))
   app.get('/api/auth/me', (req, res) => res.json(req.user))
   app.post('/api/auth/logout', (req, res) => { clearSession(store, req.headers.cookie, res); res.json({ ok: true }) })
@@ -125,6 +133,7 @@ export function createApp(options: AppOptions = {}) {
   app.patch('/api/weekly-records/:id', mutate(domain.updateWeeklyRecord))
   app.post('/api/weekly-records/:id/carry', mutate(domain.carryWeeklyRecord))
   app.use('/api', createReportRouter(store))
+  app.use('/api', createImportRouter(store), createAiSettingsRouter(store), createDataRouter(store))
   app.use('/api', (_req, _res, next) => next(new HttpError(404, '接口不存在')))
 
   const dist = resolve(dirname(fileURLToPath(import.meta.url)), '../dist')

@@ -70,6 +70,6 @@ export class Domain extends DomainBase {
     }
     const publications = this.store.list<Publication>('publications').map(item => isManager ? item : { ...item, plans: item.plans.filter(plan => participates(plan, actor.id)) }).filter(item => item.plans.length)
     const users = this.store.list<User>('users').filter(user => isManager || registrationApproved(user)).map(user => ({ ...safeUser(user), ...(isManager && user.registrationStatus ? { registrationReviewComment: user.registrationReviewComment ?? '' } : {}) }))
-    return { user: safeUser(actor), users, projects: this.store.list<Project>('projects'), annualGoals: this.store.list<AnnualGoal>('annualGoals'), plans, tasks, weeklyRecords, publications, reports: isManager ? this.store.list<Report>('reports') : [], aiConfigured: aiConfigured() }
+    return { user: safeUser(actor), users, projects: this.store.list<Project>('projects'), annualGoals: this.store.list<AnnualGoal>('annualGoals'), plans, tasks, weeklyRecords, publications, reports: isManager ? this.store.list<Report>('reports') : [], aiConfigured: aiConfigured(this.store) }
   }
 }

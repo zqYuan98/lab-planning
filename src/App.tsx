@@ -11,6 +11,7 @@ import {
   Menu,
   Users,
   FileText,
+  FileInput,
   LoaderCircle,
   UserRound,
   X,
@@ -28,6 +29,7 @@ import Projects from './pages/Projects'
 import Goals from './pages/Goals'
 import Team from './pages/Team'
 import Reports from './pages/Reports'
+import Imports from './pages/Imports'
 import labIcon from './assets/lab-icon.png'
 import labWordmark from './assets/lab-wordmark.png'
 import './shell.css'
@@ -57,6 +59,12 @@ const navigation = [
     label: '项目档案',
     group: '资产',
     icon: FolderKanban,
+  },
+  {
+    id: 'imports' as const,
+    label: '数据导入',
+    group: '资产',
+    icon: FileInput,
   },
   {
     id: 'reports' as const,
@@ -260,6 +268,7 @@ export default function App() {
     weekly: <Weekly {...props} />,
     projects: <Projects {...props} />,
     goals: <Goals {...props} />,
+    imports: <Imports {...props} />,
     reports: manager ? (
       <Reports {...props} onDirtyChange={setReportDirty} />
     ) : null,

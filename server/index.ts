@@ -3,6 +3,7 @@ import { createApp } from './app.ts'
 import { Store } from './store.ts'
 import { startScheduler } from './scheduler.ts'
 import { resolve } from 'node:path'
+import { closeImportServices } from './import-routes.ts'
 
 const store = new Store(resolve(process.env.DATABASE_PATH || 'data/lab-planning.sqlite'))
 const app = createApp({ store })
@@ -19,6 +20,7 @@ function shutdown() {
   if (stopping) return
   stopping = true
   stopScheduler()
+  closeImportServices(store)
   server.close(() => { store.close(); process.exitCode = 0 })
   setTimeout(() => process.exit(1), 10000).unref()
 }

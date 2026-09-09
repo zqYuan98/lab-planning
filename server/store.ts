@@ -4,6 +4,7 @@ import { dirname } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { Entity } from '../shared/types.ts'
+import { applyMigrations } from './storage-migrations.ts'
 
 export class HttpError extends Error {
   constructor(public status: number, message: string) { super(message) }
@@ -28,6 +29,7 @@ export class Store {
       collection TEXT NOT NULL, id TEXT NOT NULL, version INTEGER NOT NULL,
       data TEXT NOT NULL, PRIMARY KEY(collection, id)
     )`)
+    applyMigrations(this.db)
   }
   private assertTransactionActive() {
     if (this.transactionContext.getStore()?.active === false) throw new Error('Store transaction has ended; asynchronous work is not allowed')
@@ -67,6 +69,20 @@ export class Store {
         .run(entity.version, JSON.stringify(entity), collection, id, expectedVersion)
       if (result.changes !== 1) throw new HttpError(409, '数据已更新，请刷新后重试')
     } catch (error) { throw storageError(error) }
+    return structuredClone(entity)
+  }
+  /** Only for validated, administrator-authorized data restoration; never upserts. */
+  restoreEntity<T extends Entity>(collection: string, entity: T): T {
+    this.assertTransactionActive()
+    if (!entity.id || !Number.isInteger(entity.version) || entity.version < 1 || !Number.isFinite(Date.parse(entity.createdAt)) || !Number.isFinite(Date.parse(entity.updatedAt))) throw new HttpError(400, '恢复记录缺少有效标识或版本时间')
+    try {
+      this.db.prepare('INSERT INTO entities(collection,id,version,data) VALUES(?,?,?,?)').run(collection, entity.id, entity.version, JSON.stringify(entity))
+    } catch (error) {
+      const mapped = storageError(error)
+      if (mapped !== error) throw mapped
+      if (this.get(collection, entity.id)) throw new HttpError(409, '恢复记录已存在，未覆盖原数据')
+      throw error
+    }
     return structuredClone(entity)
   }
   transaction<T>(fn: () => T): T {

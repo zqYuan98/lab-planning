@@ -1,5 +1,5 @@
 export type PageId =
-  'overview' | 'monthly' | 'weekly' | 'goals' | 'projects' | 'reports' | 'team'
+  'overview' | 'monthly' | 'weekly' | 'goals' | 'projects' | 'reports' | 'team' | 'imports'
 export interface NavigationIntent {
   action?: 'create' | 'review' | 'publish' | 'write-weekly'
   query?: string
