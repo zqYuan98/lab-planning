@@ -4,15 +4,16 @@ import { canUseAccount } from '../shared/auth-policy.ts'
 import { manager } from './domain-common.ts'
 import { HttpError, Store } from './store.ts'
 import { reportSubmissionIssues, weeklyTransferIssues } from './weekly-submission-transfer.ts'
-import type { WeeklyReportSubmission } from '../shared/weekly-submissions.ts'
+import type { WeeklyReportSubmission, WeeklyRule } from '../shared/weekly-submissions.ts'
 import { businessEventCollections, canonical, collectionNames, emptyCollections, parsePacket, projectRow, remapUsers, rowReferences, storedCollection, type BusinessCollections, type BusinessDataPacket, type TransferCollection } from './data-transfer-schema.ts'
 
-export interface RestoreCount { total: number; insert: number; skip: number }
+export interface RestoreCount { total: number; insert: number; skip: number; replace: number }
 export interface RestorePreview {
   canRestore: boolean; fingerprint: string; counts: Record<TransferCollection, RestoreCount>; issues: string[]
+  notices: string[]
   missingUsers: Array<{ id: string; name: string; email: string; reason: string }>; mapping: Record<string, string>
 }
-interface CheckedRestore { preview: RestorePreview; rows: BusinessCollections }
+interface CheckedRestore { preview: RestorePreview; rows: BusinessCollections; unusedRule?: WeeklyRule }
 const fingerprint = (value: unknown) => createHash('sha256').update(canonical(value)).digest('hex')
 
 function requireManager(store: Store, actor: User) {
@@ -84,6 +85,8 @@ function semanticIssues(name: TransferCollection, input: unknown, issue: (messag
 
 function inspectRestore(store: Store, packet: BusinessDataPacket, requestedMapping: Record<string, string>): CheckedRestore {
   const issues: string[] = []
+  const notices: string[] = []
+  let unusedRule: WeeklyRule | undefined
   const issueSet = new Set<string>()
   const issue = (message: string) => { if (!issueSet.has(message)) { issueSet.add(message); issues.push(message) } }
   if (!requestedMapping || typeof requestedMapping !== 'object' || Array.isArray(requestedMapping) || Object.values(requestedMapping).some(value => typeof value !== 'string' || !value || value.length > 200)) throw new HttpError(400, '账号映射格式无效')
@@ -123,7 +126,7 @@ function inspectRestore(store: Store, packet: BusinessDataPacket, requestedMappi
     if (name === 'users') {
       current[name] = currentUsers.map(user => ({ ...projectRow('users', user), registrationStatus: user.registrationStatus ?? 'approved' } as unknown as Entity))
       available[name] = new Map(activeUsers.map(user => [user.id, user]))
-      counts[name] = { total: incoming.length, insert: 0, skip: incoming.length }
+      counts[name] = { total: incoming.length, insert: 0, skip: incoming.length, replace: 0 }
       continue
     }
     current[name] = store.list<Entity>(storedCollection(name))
@@ -131,11 +134,15 @@ function inspectRestore(store: Store, packet: BusinessDataPacket, requestedMappi
     const transformed = incoming.map(row => remapUsers(name, row, mapping) as Entity)
     ;(rows[name] as Entity[]) = transformed
     available[name] = new Map([...existing, ...transformed.map(row => [row.id, row] as const)])
-    const count = { total: transformed.length, insert: 0, skip: 0 }
+    const count = { total: transformed.length, insert: 0, skip: 0, replace: 0 }
     for (const row of transformed) {
       const before = existing.get(row.id)
       if (!before) count.insert++
       else if (canonical(before) === canonical(row)) count.skip++
+      else if (name === 'weeklyRules' && store.isUnusedWeeklyRule(before as WeeklyRule)) {
+        unusedRule = before as WeeklyRule; count.replace++
+        notices.push('将接纳迁移包中的周提报规则，替换本服务自动生成且尚未使用的默认规则；来源版本、生效窗口和时间原样保留。')
+      }
       else issue(`${name}/${row.id} 已存在不同内容，恢复不会覆盖现有记录`)
       semanticIssues(name, row, issue)
     }
@@ -192,8 +199,8 @@ function inspectRestore(store: Store, packet: BusinessDataPacket, requestedMappi
   unique<Report>('reports', row => `${row.type}/${row.period}/${row.revision}`)
   weeklyTransferIssues(rows, available, issue)
   return {
-    rows,
-    preview: { canRestore: issues.length === 0, fingerprint: fingerprint({ packet, mapping, current }), counts, issues, missingUsers, mapping },
+    rows, unusedRule,
+    preview: { canRestore: issues.length === 0, fingerprint: fingerprint({ packet, mapping, current }), counts, issues, notices, missingUsers, mapping },
   }
 }
 
@@ -213,11 +220,18 @@ export function restoreBusinessData(store: Store, actor: User, input: unknown, m
     if (checked.preview.fingerprint !== expectedFingerprint) throw new HttpError(409, '迁移包、账号映射或现有数据已变化，请重新预览后确认')
     if (!checked.preview.canRestore) throw new HttpError(409, `迁移包尚有 ${checked.preview.issues.length} 项问题，请先修正预览中的缺项或冲突`)
     let restored = 0, skipped = 0
+    // Replace before inserting imported cycles, and recheck the untouched default
+    // inside this same transaction. Any later failure rolls this back too.
+    if (checked.unusedRule) store.replaceUnusedWeeklyRule(checked.unusedRule, checked.rows.weeklyRules[0])
     for (const name of collectionNames.filter(name => name !== 'users')) for (const row of checked.rows[name] as Entity[]) {
+      if (name === 'weeklyRules' && checked.unusedRule) { restored++; continue }
       if (store.get(storedCollection(name), row.id)) { skipped++; continue }
       store.restoreEntity(storedCollection(name), row); restored++
     }
     const restoredAt = new Date().toISOString()
+    if (checked.unusedRule) store.insert<BusinessCollections['events'][number]>('events', {
+      entityType: 'weeklyRule', entityId: checked.unusedRule.id, actorId: actor.id, action: 'restore_default', reason: checked.preview.notices[0], before: checked.unusedRule, after: checked.rows.weeklyRules[0],
+    })
     if (restored) store.insert<Entity & { entityType: string; entityId: string; actorId: string; action: string; reason: string; before: null; after: unknown }>('events', {
       entityType: 'dataRestore', entityId: expectedFingerprint, actorId: actor.id, action: 'restore', reason: '', before: null,
       after: { application: packet.application, formatVersion: packet.formatVersion, exportedAt: packet.exportedAt, restored, skipped, restoredAt },

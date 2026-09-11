@@ -4,6 +4,7 @@ import { dirname } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { Entity } from '../shared/types.ts'
+import type { WeeklyRule } from '../shared/weekly-submissions.ts'
 import { applyMigrations } from './storage-migrations.ts'
 
 export class HttpError extends Error {
@@ -84,6 +85,33 @@ export class Store {
       throw error
     }
     return structuredClone(entity)
+  }
+  /** A server-created, untouched default is not yet a configured business rule. */
+  isUnusedWeeklyRule(rule: WeeklyRule): boolean {
+    const current = this.get<WeeklyRule>('weeklyRules', 'weekly-submission-rule')
+    if (!current || JSON.stringify(current) !== JSON.stringify(rule) || this.list('weeklyRules').length !== 1) return false
+    if (rule.id !== 'weekly-submission-rule' || rule.version !== 1 || rule.createdAt !== rule.updatedAt || !rule.enabled || rule.timezone !== 'Asia/Shanghai') return false
+    if (Object.keys(rule).sort().join(',') !== 'createdAt,effectiveWeek,enabled,id,timezone,updatedAt,version,windows') return false
+    const created = new Date(rule.createdAt)
+    if (!Number.isFinite(created.getTime())) return false
+    const local = new Date(created.getTime() + 8 * 3600000)
+    local.setUTCDate(local.getUTCDate() + 7 - ((local.getUTCDay() + 6) % 7))
+    const nextWeek = local.toISOString().slice(0, 10)
+    if (rule.effectiveWeek !== nextWeek || JSON.stringify(rule.windows) !== JSON.stringify([{ fromWeek: nextWeek, toWeek: null }])) return false
+    if (['weeklyCycles', 'weeklyDuties', 'weeklySubmissions', 'weeklyMissing', 'weeklyAdjustments'].some(name => this.list(name).length > 0)) return false
+    if (this.list<{ entityType: string }>('events').some(event => ['weeklyRule', 'weeklyCycle'].includes(event.entityType))) return false
+    return !this.list<{ snapshot?: { weeklySubmissions?: unknown[] } }>('reports').some(report => report.snapshot?.weeklySubmissions?.length)
+  }
+  /** Migration-only exception: replace exactly an unused bootstrap rule, atomically. */
+  replaceUnusedWeeklyRule(before: WeeklyRule, incoming: WeeklyRule): WeeklyRule {
+    this.assertTransactionActive()
+    if (this.depth === 0 || incoming.id !== 'weekly-submission-rule' || !this.isUnusedWeeklyRule(before)) throw new HttpError(409, '默认周提报规则已使用或变化，请重新预览')
+    try {
+      const result = this.db.prepare('UPDATE entities SET version=?,data=? WHERE collection=? AND id=? AND version=?')
+        .run(incoming.version, JSON.stringify(incoming), 'weeklyRules', before.id, before.version)
+      if (result.changes !== 1) throw new HttpError(409, '默认周提报规则已变化，请重新预览')
+    } catch (error) { throw storageError(error) }
+    return structuredClone(incoming)
   }
   transaction<T>(fn: () => T): T {
     this.assertTransactionActive()

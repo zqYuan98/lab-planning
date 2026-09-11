@@ -120,8 +120,9 @@ interface HistoricalRecord {
 interface RestorePreview {
   canRestore: boolean
   fingerprint: string
-  counts: Record<string, { total: number; insert: number; skip: number }>
+  counts: Record<string, { total: number; insert: number; skip: number; replace: number }>
   issues: string[]
+  notices: string[]
   missingUsers: { id: string; name: string; email: string; reason: string }[]
   mapping: Record<string, string>
 }
@@ -129,13 +130,19 @@ const collectionLabels: Record<string, string> = {
   users: '账号匹配',
   projects: '项目档案',
   annualGoals: '年度目标',
-  plans: '月度计划',
+  plans: '月度目标',
   tasks: '个人任务',
   weeklyRecords: '每周执行',
   history: '历史资料',
   publications: '发布快照',
   reports: '报告',
   events: '变更记录',
+  weeklyRules: '周提报规则',
+  weeklyCycles: '周提报名单',
+  weeklyDuties: '个人应交项',
+  weeklySubmissions: '周提报收据',
+  weeklyMissing: '截止缺交记录',
+  weeklyAdjustments: '豁免与更正记录',
 }
 const emptyBulk: Bulk = {
   ownerId: '',
@@ -702,7 +709,7 @@ export default function Imports({
                   </strong>
                   <p>
                     {dateTime(batch.reviewRequestedAt)} ·
-                    确认后直接进入月度计划或每周执行，无需再次提报。继续修改校对内容会取消本次确认申请，保存后可重新交给管理员。
+                    确认后直接进入月度目标或每周执行，无需再次提报。继续修改校对内容会取消本次确认申请，保存后可重新交给管理员。
                   </p>
                 </div>
               )}
@@ -817,7 +824,7 @@ export default function Imports({
                               setPeriod('')
                             }}
                           >
-                            <option value="monthly">月度计划 / 历史月报</option>
+                            <option value="monthly">月度目标 / 历史月报</option>
                             <option value="weekly">每周工作 / 历史周报</option>
                           </select>
                         </Field>
@@ -990,7 +997,7 @@ export default function Imports({
                           placeholder="工作类别（可选）"
                         />
                         <select
-                          aria-label="批量匹配周记录的月计划"
+                          aria-label="批量匹配周记录的月度目标"
                           value={bulk.monthlyPlanId}
                           onChange={(event) =>
                             setBulk({
@@ -999,7 +1006,7 @@ export default function Imports({
                             })
                           }
                         >
-                          <option value="">周记录关联月计划：保持原值</option>
+                          <option value="">周记录关联月度目标：保持原值</option>
                           {availablePlans.map((plan) => (
                             <option key={plan.id} value={plan.id}>
                               {plan.month} · {plan.title}
@@ -1110,7 +1117,7 @@ export default function Imports({
                             </th>
                             <th>工作事项 / 来源</th>
                             <th>负责人 / 周期</th>
-                            <th>项目 / 月计划关联</th>
+                            <th>项目 / 月度目标关联</th>
                             <th>待核对</th>
                             <th>操作</th>
                           </tr>
@@ -1162,7 +1169,7 @@ export default function Imports({
                                   <div className="import-row-destination">
                                     <strong>
                                       {row.kind === 'monthly'
-                                        ? `${row.month || '月份待确认'} · 月度计划`
+                                        ? `${row.month || '月份待确认'} · 月度目标`
                                         : `${row.weekStart || '所属周待确认'} · 每周执行`}
                                     </strong>
                                     <span>
@@ -1228,10 +1235,10 @@ export default function Imports({
                                       (plan) => plan.id === row.monthlyPlanId,
                                     )?.title ||
                                       (row.linkedRowId
-                                        ? `同批次：${batch.rows.find((item) => item.id === row.linkedRowId)?.title || '月计划'}`
+                                        ? `同批次：${batch.rows.find((item) => item.id === row.linkedRowId)?.title || '月度目标'}`
                                         : batch.mode === 'draft'
-                                          ? '月计划待关联'
-                                          : '未关联月计划')}
+                                          ? '月度目标待关联'
+                                          : '未关联月度目标')}
                                   </small>
                                 )}
                                 {batch.mode === 'existing' &&
@@ -1275,7 +1282,7 @@ export default function Imports({
                                       onClick={() => openImportedResult(row)}
                                     >
                                       {row.result.collection === 'plans'
-                                        ? '打开月计划'
+                                        ? '打开月度目标'
                                         : '打开周记录'}
                                       <ArrowRight size={12} />
                                     </button>
@@ -1307,7 +1314,7 @@ export default function Imports({
                             ? `${manager ? '本次确认会直接写入对应月份与周，并保留实际成果及核对后的状态。' : '校对后交管理员确认一次，确认后直接进入对应月份与周，无需成员再次提报。'} 原表未注明的验收标准、预期成果与截止日期可留空；原文“完成”不自动等于已验收。同来源的既有草稿会沿用原编号转为生效计划。`
                             : batch.mode === 'history'
                               ? '勾选记录将与来源一起归档。缺失字段可保留为空，历史状态不自动算作当前成果。'
-                              : '用于新计划提报，需补齐必要信息；月计划仍需提交审核发布，周记录按现有流程提交。'}{' '}
+                              : manager ? '用于新目标或周任务草稿，需补齐必要信息；月度目标由管理员发布。' : '成员可导入自己的周任务草稿。团队月度目标由管理员创建；月度资料可存为历史，或选择已有计划交管理员确认。'}{' '}
                           每次校对保存后，可随时离开再继续。
                         </p>
                       </div>
@@ -1316,6 +1323,7 @@ export default function Imports({
                         disabled={
                           batchBusy ||
                           !selected.length ||
+                          (!manager && batch.mode === 'draft' && selected.some(row => row.kind === 'monthly')) ||
                           (batch.mode !== 'history' &&
                             selectedIssues.length > 0) ||
                           (batch.mode === 'existing' &&
@@ -1632,7 +1640,7 @@ export default function Imports({
                 >
                   {[
                     ['all', '全部业务数据'],
-                    ['plans', '月度计划'],
+                    ['plans', '月度目标'],
                     ['weeklyRecords', '每周执行记录'],
                     ['projects', '项目档案'],
                     ['tasks', '个人任务'],
@@ -1776,6 +1784,7 @@ export default function Imports({
                           <th>数据集合</th>
                           <th>包内记录</th>
                           <th>拟新增</th>
+                          <th>未使用默认规则替换</th>
                           <th>相同 / 账号匹配</th>
                           <th>同 ID 冲突</th>
                         </tr>
@@ -1787,11 +1796,12 @@ export default function Imports({
                               <td>{collectionLabels[name] || name}</td>
                               <td>{count.total}</td>
                               <td>{count.insert}</td>
+                              <td>{count.replace}</td>
                               <td>{count.skip}</td>
                               <td>
                                 {Math.max(
                                   0,
-                                  count.total - count.insert - count.skip,
+                                  count.total - count.insert - count.skip - count.replace,
                                 )}
                               </td>
                             </tr>
@@ -1800,6 +1810,11 @@ export default function Imports({
                       </tbody>
                     </table>
                   </div>
+                  {restorePreview.notices.length > 0 && (
+                    <div className="import-restore-ready" role="status">
+                      {restorePreview.notices.map((notice) => <p key={notice}>{notice}</p>)}
+                    </div>
+                  )}
                   {restorePreview.issues.length > 0 ? (
                     <div className="import-restore-issues" role="alert">
                       <strong>
@@ -2191,7 +2206,7 @@ export default function Imports({
                       })
                     }
                   >
-                    <option value="monthly">月度计划</option>
+                    <option value="monthly">月度目标</option>
                     <option value="weekly">每周工作</option>
                   </select>
                 </Field>
@@ -2389,8 +2404,8 @@ export default function Imports({
                     label="关联已有个人任务"
                     hint={
                       batch?.mode === 'existing'
-                        ? '原表已有任务可直接匹配；没有月计划关联也可导入生效。'
-                        : '可关联自己的任务，或先选择月计划以新建任务。'
+                        ? '原表已有任务可直接匹配；没有月度目标关联也可导入生效。'
+                        : '可关联自己的任务，或先选择月度目标以新建任务。'
                     }
                   >
                     <select
@@ -2425,10 +2440,10 @@ export default function Imports({
                     </select>
                   </Field>
                   <Field
-                    label="关联系统月计划"
+                    label="关联系统月度目标"
                     hint={
                       batch?.mode === 'existing'
-                        ? '原表没有明确关联时可留空，导入后显示“未关联月计划”。'
+                        ? '原表没有明确关联时可留空，导入后显示“未关联月度目标”。'
                         : undefined
                     }
                   >
@@ -2451,7 +2466,7 @@ export default function Imports({
                       ))}
                     </select>
                   </Field>
-                  <Field label="或关联本批次的月计划">
+                  <Field label="或关联本批次的月度目标">
                     <select
                       value={editing.linkedRowId}
                       onChange={(event) =>
@@ -2463,7 +2478,7 @@ export default function Imports({
                         })
                       }
                     >
-                      <option value="">不使用本批次月计划</option>
+                      <option value="">不使用本批次月度目标</option>
                       {(editingHistory ? [] : batch?.rows || [])
                         .filter(
                           (row) =>

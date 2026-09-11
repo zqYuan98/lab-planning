@@ -81,12 +81,14 @@ test('v1 restores no synthetic submission history and keeps old report snapshots
   for (const name of collectionNames.filter(name => ['weeklyRules', 'weeklyCycles', 'weeklyDuties', 'weeklySubmissions', 'weeklyMissing', 'weeklyAdjustments'].includes(name))) delete legacy.collections[name]
   legacy.collections.events = []
   delete (legacy.collections.reports[0] as Report).snapshot.weeklySubmissions
+  ;(legacy.collections.reports[0] as Report).finalizedAt = '2026-09-11T16:00:00+08:00'
   const preview = previewRestore(target.store, target.manager, legacy)
   assert.equal(preview.canRestore, true, preview.issues.join('\n'))
   restoreBusinessData(target.store, target.manager, legacy, {}, preview.fingerprint)
   assert.equal(target.store.list('weeklyMissing').length, 0)
   assert.equal(target.store.list('weeklySubmissions').length, 0)
   assert.equal(target.store.list<Report>('reports')[0].snapshot.weeklySubmissions, undefined)
+  assert.equal(target.store.list<Report>('reports')[0].finalizedAt, '2026-09-11T16:00:00+08:00')
   assert.doesNotThrow(() => exportCsv(parsePacket(legacy)))
 })
 
@@ -110,9 +112,9 @@ test('tampered duty, receipt, cutoff, draft and logical identities are rejected 
     copy => { copy.collections.weeklySubmissions[0].records[0].ownerId = source.other.id },
     copy => { copy.collections.weeklySubmissions[0].records[0].weekStart = '2026-09-14' },
     copy => { copy.collections.weeklySubmissions[0].retainedDraftManifest[0].id = 'missing-draft' },
-    copy => { copy.collections.weeklySubmissions[0].submittedAt = '2026-09-01T00:00:00Z' },
-    copy => { copy.collections.weeklyMissing[0].detectedAt = '2026-09-11T07:59:59Z' },
-    copy => { copy.collections.weeklyDuties[0].deadlineAt = '2026-09-11T09:00:00Z' },
+    copy => { copy.collections.weeklySubmissions[0].submittedAt = '2026-09-01T00:00:00.000Z' },
+    copy => { copy.collections.weeklyMissing[0].detectedAt = '2026-09-11T07:59:59.000Z' },
+    copy => { copy.collections.weeklyDuties[0].deadlineAt = '2026-09-11T09:00:00.000Z' },
     copy => { copy.collections.weeklyDuties.push({ ...copy.collections.weeklyDuties[0], id: crypto.randomUUID() }) },
     copy => { copy.collections.weeklyCycles[0].rosterIds = [] },
     copy => { copy.collections.weeklyRules[0].windows[0].fromWeek = '2026-09-14' },
@@ -131,7 +133,7 @@ test('tampered duty, receipt, cutoff, draft and logical identities are rejected 
   const valid = previewRestore(target.store, target.manager, packet)
   restoreBusinessData(target.store, target.manager, packet, {}, valid.fingerprint)
   const conflict = structuredClone(packet)
-  conflict.collections.weeklySubmissions[0].submittedAt = '2026-09-11T08:00:01Z'
+  conflict.collections.weeklySubmissions[0].submittedAt = '2026-09-11T08:00:01.000Z'
   assert.match(previewRestore(target.store, target.manager, conflict).issues.join('\n'), /已存在不同内容/)
 })
 
@@ -143,4 +145,118 @@ test('reference-only goal projections cannot be restored as actual goal definiti
   assert.equal(preview.canRestore, false)
   assert.match(preview.issues.join('\n'), /投影不能作为真实目标恢复/)
   assert.equal(target.store.list('plans').length, 0)
+})
+
+test('normal server bootstrap rule can be explicitly replaced without changing migrated history', t => {
+  const source = fixture(t, 'source', true), target = fixture(t, 'target')
+  const bootstrap = new WeeklySubmissionService(target.store).getRule()
+  const packet = exportBusinessData(source.store, source.manager)
+  const preview = previewRestore(target.store, target.manager, packet)
+  assert.equal(preview.canRestore, true, preview.issues.join('\n'))
+  assert.equal(preview.counts.weeklyRules.replace, 1)
+  assert.equal(preview.counts.weeklyRules.insert, 0)
+  assert.match(preview.notices.join('\n'), /尚未使用的默认规则/)
+  assert.deepEqual(target.store.get('weeklyRules', bootstrap.id), bootstrap, 'preview is read-only')
+  restoreBusinessData(target.store, target.manager, packet, {}, preview.fingerprint)
+  assert.deepEqual(target.store.get('weeklyRules', bootstrap.id), packet.collections.weeklyRules[0])
+  assert.ok(target.store.list<{ action: string }>('events').some(event => event.action === 'restore_default'))
+  const missingBefore = target.store.list('weeklyMissing')
+  const view = new WeeklySubmissionService(target.store, () => new Date('2026-09-11T09:00:00Z')).view(target.member, '2026-09-07')
+  assert.equal(view.duties.find(duty => duty.kind === 'results')!.status, 'on_time')
+  assert.equal(view.duties.find(duty => duty.kind === 'results')!.missingAtDeadline, false)
+  assert.deepEqual(target.store.list('weeklyMissing'), missingBefore, 'reconciliation does not invent misses for restored on-time receipts')
+  const repeat = previewRestore(target.store, target.manager, packet)
+  assert.equal(repeat.canRestore, true, repeat.issues.join('\n'))
+  assert.equal(repeat.counts.weeklyRules.skip, 1)
+  assert.equal(repeat.counts.weeklyRules.replace, 0)
+  const third = fixture(t, 'third')
+  new WeeklySubmissionService(third.store).getRule()
+  const secondPacket = exportBusinessData(target.store, target.manager)
+  const secondPreview = previewRestore(third.store, third.manager, secondPacket)
+  assert.equal(secondPreview.canRestore, true, secondPreview.issues.join('\n'))
+  restoreBusinessData(third.store, third.manager, secondPacket, {}, secondPreview.fingerprint)
+  const importedAudit = third.store.list<{ action: string; before: unknown; after: unknown }>('events').find(event => event.action === 'restore_default')!
+  assert.deepEqual(importedAudit.before, bootstrap)
+  assert.deepEqual(importedAudit.after, packet.collections.weeklyRules[0])
+})
+
+test('configured, audited or used rules never receive the bootstrap replacement exception', t => {
+  const source = fixture(t, 'source', true)
+  const packet = exportBusinessData(source.store, source.manager)
+  for (const state of ['configured', 'audited', 'weeklyCycles', 'weeklyDuties', 'weeklySubmissions', 'weeklyMissing', 'weeklyAdjustments', 'report'] as const) {
+    const target = fixture(t, state)
+    const service = new WeeklySubmissionService(target.store)
+    const rule = service.getRule()
+    if (state === 'configured') service.updateRule(target.manager, { version: rule.version, enabled: false })
+    else if (state === 'audited') target.store.restoreEntity('events', packet.collections.events.find(event => event.entityType === 'weeklyRule')!)
+    else if (state === 'report') target.store.restoreEntity('reports', packet.collections.reports[0])
+    else target.store.restoreEntity(state, packet.collections[state][0])
+    const preview = previewRestore(target.store, target.manager, packet)
+    assert.equal(preview.canRestore, false, state)
+    assert.equal(preview.counts.weeklyRules.replace, 0, state)
+    assert.match(preview.issues.join('\n'), /weeklyRules\/weekly-submission-rule 已存在不同内容/, state)
+    assert.deepEqual(preview.notices, [])
+  }
+})
+
+test('bootstrap replacement rolls back after later write failure and rechecks preview changes', t => {
+  const source = fixture(t, 'source', true), target = fixture(t, 'target')
+  const service = new WeeklySubmissionService(target.store)
+  const bootstrap = service.getRule()
+  const packet = exportBusinessData(source.store, source.manager)
+  const preview = previewRestore(target.store, target.manager, packet)
+  const beforeEvents = target.store.list('events')
+  const original = target.store.restoreEntity.bind(target.store)
+  const mock = t.mock.method(target.store, 'restoreEntity', (name: string, entity: Parameters<typeof original>[1]) => {
+    if (name === 'weeklyDuties') throw new Error('injected after rule replacement')
+    return original(name, entity)
+  })
+  assert.throws(() => restoreBusinessData(target.store, target.manager, packet, {}, preview.fingerprint), /injected after rule replacement/)
+  assert.deepEqual(target.store.get('weeklyRules', bootstrap.id), bootstrap)
+  assert.deepEqual(target.store.list('events'), beforeEvents)
+  assert.deepEqual(target.store.list('weeklyCycles'), [])
+  mock.mock.restore()
+  service.updateRule(target.manager, { version: bootstrap.version, enabled: false })
+  assert.throws(() => restoreBusinessData(target.store, target.manager, packet, {}, preview.fingerprint), { status: 409 })
+  assert.equal(previewRestore(target.store, target.manager, packet).counts.weeklyRules.replace, 0)
+  const used = fixture(t, 'used')
+  const unused = new WeeklySubmissionService(used.store).getRule()
+  const beforeUse = previewRestore(used.store, used.manager, packet)
+  assert.equal(beforeUse.canRestore, true)
+  new WeeklySubmissionService(used.store, () => new Date(`${unused.effectiveWeek}T01:00:00Z`)).reconcile()
+  assert.ok(used.store.list('weeklyCycles').length > 0)
+  assert.throws(() => restoreBusinessData(used.store, used.manager, packet, {}, beforeUse.fingerprint), { status: 409 })
+  assert.equal(previewRestore(used.store, used.manager, packet).counts.weeklyRules.replace, 0)
+})
+
+test('weekly timestamp schemas reject equivalent offset and non-millisecond representations at every new nesting level', t => {
+  const source = fixture(t, 'source', true), target = fixture(t, 'target')
+  const packet = exportBusinessData(source.store, source.manager)
+  const paths: Array<Array<string | number>> = []
+  for (const name of ['weeklyRules', 'weeklyCycles', 'weeklyDuties', 'weeklySubmissions', 'weeklyMissing', 'weeklyAdjustments'] as const) {
+    for (const field of Object.keys(packet.collections[name][0]).filter(key => key.endsWith('At'))) paths.push(['collections', name, 0, field])
+  }
+  paths.push(['collections', 'reports', 0, 'snapshot', 'weeklySubmissions', 0, 'deadlineAt'])
+  paths.push(['collections', 'reports', 0, 'snapshot', 'weeklySubmissions', 0, 'firstSubmittedAt'])
+  const ruleAudit = packet.collections.events.findIndex(event => event.entityType === 'weeklyRule')
+  const cycleAudit = packet.collections.events.findIndex(event => event.entityType === 'weeklyCycle')
+  paths.push(['collections', 'events', ruleAudit, 'before', 'createdAt'])
+  paths.push(['collections', 'events', ruleAudit, 'createdAt'])
+  paths.push(['collections', 'events', cycleAudit, 'updatedAt'])
+  paths.push(['collections', 'events', cycleAudit, 'after', 'deadlineAt'])
+  packet.collections.reports[0].snapshot.changes.push(packet.collections.events[cycleAudit])
+  paths.push(['collections', 'reports', 0, 'snapshot', 'changes', 0, 'after', 'frozenAt'])
+  for (const path of paths) for (const representation of ['offset', 'noMillis'] as const) {
+    const copy = structuredClone(packet)
+    let parent: any = copy
+    for (const part of path.slice(0, -1)) parent = parent[part]
+    const field = path.at(-1)!, before = parent[field] as string
+    assert.equal(typeof before, 'string', path.join('.'))
+    const equivalent = new Date(Date.parse(before) + 8 * 3600000).toISOString().replace('Z', '+08:00')
+    assert.equal(Date.parse(equivalent), Date.parse(before))
+    parent[field] = representation === 'offset' ? equivalent : before.replace(/\.\d{3}Z$/, 'Z')
+    assert.throws(() => previewRestore(target.store, target.manager, copy), { status: 400 }, `${path.join('.')}: ${representation}`)
+  }
+  assert.deepEqual(target.store.list('weeklyMissing'), [])
+  assert.deepEqual(target.store.list('weeklySubmissions'), [])
 })

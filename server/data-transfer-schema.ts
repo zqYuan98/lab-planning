@@ -24,6 +24,9 @@ export const businessEventCollections: Record<string, TransferCollection> = {
 const id = z.string().min(1).max(200)
 const line = z.string().max(12000)
 const timestamp = z.string().max(40).regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/).refine(v => Number.isFinite(Date.parse(v)))
+// The weekly submission service orders these values lexically. One canonical
+// representation is mandatory; legacy business timestamps retain their schema.
+const weeklyTimestamp = timestamp.refine(v => Number.isFinite(Date.parse(v)) && new Date(v).toISOString() === v, '周提报时间必须使用 ISO UTC 毫秒格式')
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v => Number.isFinite(Date.parse(`${v}T00:00:00Z`)) && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v)
 const month = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/)
 const entity = { id, version: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER), createdAt: timestamp, updatedAt: timestamp }
@@ -60,15 +63,19 @@ const reportPatchSchema = z.object({ id: id.optional(), version: z.number().int(
 const week = day.refine(v => new Date(`${v}T00:00:00Z`).getUTCDay() === 1)
 const kind = z.enum(['results', 'plan'])
 const dutyIdentity = { ownerId: id, cycleWeek: week, kind }
-const ruleSchema = z.object({ ...entity, id: z.literal('weekly-submission-rule'), enabled: z.boolean(), effectiveWeek: week, timezone: z.literal('Asia/Shanghai'), windows: z.array(z.object({ fromWeek: week, toWeek: week.nullable() }).strict()).max(50000) }).strict()
-const cycleSchema = z.object({ ...entity, week, deadlineAt: timestamp, rosterIds: z.array(id).max(50000), needsReview: z.boolean(), confirmedBy: id.nullable(), confirmationReason: line, frozenAt: timestamp }).strict()
-const dutySchema = z.object({ ...entity, ...dutyIdentity, contentWeek: week, deadlineAt: timestamp }).strict()
-const submissionSchema = z.object({ ...entity, ...dutyIdentity, dutyId: id, submittedAt: timestamp, actorId: id, reason: line, note: line, requestId: id, records: z.array(weeklySchema).max(50000), retainedDraftIds: z.array(id).max(50000), retainedDraftManifest: z.array(z.object({ id, version: z.number().int().positive() }).strict()).max(50000) }).strict()
-const missingSchema = z.object({ ...entity, ...dutyIdentity, dutyId: id, deadlineAt: timestamp, detectedAt: timestamp }).strict()
-const adjustmentSchema = z.object({ ...entity, ...dutyIdentity, dutyId: id, action: z.enum(['exempt', 'revoke_exemption', 'invalidate', 'restore']), submissionId: id.nullable(), actorId: id, reason: line.min(1), occurredAt: timestamp }).strict()
-const reportSubmissionSchema = z.object({ ...dutyIdentity, status: z.enum(['due', 'on_time', 'missing', 'late', 'exempt']), deadlineAt: timestamp, firstSubmittedAt: timestamp.nullable(), missingAtDeadline: z.boolean(), exemptionReason: line }).strict()
+const weeklyEntity = { ...entity, createdAt: weeklyTimestamp, updatedAt: weeklyTimestamp }
+const ruleSchema = z.object({ ...weeklyEntity, id: z.literal('weekly-submission-rule'), enabled: z.boolean(), effectiveWeek: week, timezone: z.literal('Asia/Shanghai'), windows: z.array(z.object({ fromWeek: week, toWeek: week.nullable() }).strict()).max(50000) }).strict()
+const cycleSchema = z.object({ ...weeklyEntity, week, deadlineAt: weeklyTimestamp, rosterIds: z.array(id).max(50000), needsReview: z.boolean(), confirmedBy: id.nullable(), confirmationReason: line, frozenAt: weeklyTimestamp }).strict()
+const dutySchema = z.object({ ...weeklyEntity, ...dutyIdentity, contentWeek: week, deadlineAt: weeklyTimestamp }).strict()
+const submissionSchema = z.object({ ...weeklyEntity, ...dutyIdentity, dutyId: id, submittedAt: weeklyTimestamp, actorId: id, reason: line, note: line, requestId: id, records: z.array(weeklySchema).max(50000), retainedDraftIds: z.array(id).max(50000), retainedDraftManifest: z.array(z.object({ id, version: z.number().int().positive() }).strict()).max(50000) }).strict()
+const missingSchema = z.object({ ...weeklyEntity, ...dutyIdentity, dutyId: id, deadlineAt: weeklyTimestamp, detectedAt: weeklyTimestamp }).strict()
+const adjustmentSchema = z.object({ ...weeklyEntity, ...dutyIdentity, dutyId: id, action: z.enum(['exempt', 'revoke_exemption', 'invalidate', 'restore']), submissionId: id.nullable(), actorId: id, reason: line.min(1), occurredAt: weeklyTimestamp }).strict()
+const reportSubmissionSchema = z.object({ ...dutyIdentity, status: z.enum(['due', 'on_time', 'missing', 'late', 'exempt']), deadlineAt: weeklyTimestamp, firstSubmittedAt: weeklyTimestamp.nullable(), missingAtDeadline: z.boolean(), exemptionReason: line }).strict()
 const weeklySchemas = { weeklyRules: ruleSchema, weeklyCycles: cycleSchema, weeklyDuties: dutySchema, weeklySubmissions: submissionSchema, weeklyMissing: missingSchema, weeklyAdjustments: adjustmentSchema }
 const auditSchema = z.object({ ...entity, entityType: z.enum(['project', 'annualGoal', 'plan', 'plans', 'monthlyPlan', 'task', 'weeklyRecord', 'historicalRecord', 'report', 'weeklyRule', 'weeklyCycle']), entityId: id, actorId: id, action: z.string().min(1).max(100), reason: line, before: z.unknown(), after: z.unknown() }).strict().superRefine((event, ctx) => {
+  if (['weeklyRule', 'weeklyCycle'].includes(event.entityType)) for (const field of ['createdAt', 'updatedAt'] as const) {
+    if (!weeklyTimestamp.safeParse(event[field]).success) ctx.addIssue({ code: 'custom', path: [field], message: '周提报审计时间必须使用 ISO UTC 毫秒格式' })
+  }
   const schema = event.entityType === 'report' ? reportPatchSchema : ({ project: projectSchema, annualGoal: goalSchema, plan: planSchema, plans: planSchema, monthlyPlan: planSchema, task: taskSchema, weeklyRecord: weeklySchema, historicalRecord: historySchema, weeklyRule: ruleSchema, weeklyCycle: cycleSchema } as const)[event.entityType]
   for (const field of ['before', 'after'] as const) {
     const value = event[field]
