@@ -60,7 +60,7 @@ test('invalid relation or current account permissions cannot partially write or 
   const f = fixture()
   try {
     const batch = f.service.structured(f.member, { sourceKey: 'spoof', mode: 'draft', rows: [monthly(f.actor.id)] })
-    assert.throws(() => f.service.commit(f.member, batch.id, { version: batch.version }), /只能为自己/)
+    assert.throws(() => f.service.commit(f.member, batch.id, { version: batch.version }), { status: 403 })
     assert.equal(f.store.list('plans').length, 0)
     assert.throws(() => f.service.get(f.member, f.service.structured(f.actor, { sourceKey: 'private', rows: [monthly(f.actor.id)] }).id), /无权查看/)
     let linked = f.service.structured(f.actor, { sourceKey: 'atomic', mode: 'draft', rows: [monthly(f.member.id), weekly(f.member.id)] })

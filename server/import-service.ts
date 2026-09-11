@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import type { AuditEvent, Entity, MonthlyPlan, Project, Task, User } from '../shared/types.ts'
+import type { AuditEvent, Entity, MonthlyPlan, Project, Task, User, WeeklyRecord } from '../shared/types.ts'
 import type { ImportBatch, ImportBatchSummary, ImportMode, ImportRow } from '../shared/import-types.ts'
 import { importedMonthlyResult, importedWeeklyStatus } from '../shared/import-status.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
@@ -10,9 +10,37 @@ import { date, monday, text, type Input } from './domain-common.ts'
 import { parseImportFile, buildModelChunks, type ParsedImportFile } from './import-files.ts'
 import { callAiJson, resolveAiSettings } from './ai-service.ts'
 import { ExistingPlanWriter, validateExistingRow } from './existing-plan-writer.ts'
+import { participates, visiblePlan } from './plan-visibility.ts'
 
 interface ImportSource extends Entity { ownerId: string; fileName: string; mimeType: string; base64: string; hash: string; parsed: ParsedImportFile }
 export interface HistoricalRecord extends Entity { importedBy: string; batchId: string; sourceId: string; row: ImportRow }
+
+function projectImportRow(store: Store, actor: User, row: ImportRow): ImportRow {
+  if (actor.role === 'manager') return row
+  const safe = { ...row }
+  const canRead = (collection: string, id: string) => {
+    if (collection === 'plans') {
+      const plan = store.get<MonthlyPlan>('plans', id)
+      return !!plan && !!visiblePlan(store, actor, plan)
+    }
+    if (collection === 'historicalRecords') {
+      const record = store.get<HistoricalRecord>(collection, id)
+      return !!record && (record.row.ownerId === actor.id || (!record.row.ownerId && record.importedBy === actor.id))
+    }
+    if (!['tasks', 'weeklyRecords'].includes(collection)) return false
+    return store.get<Task | WeeklyRecord>(collection, id)?.ownerId === actor.id
+  }
+  if (safe.taskId && !canRead('tasks', safe.taskId)) safe.taskId = ''
+  if (safe.monthlyPlanId && !canRead('plans', safe.monthlyPlanId)) safe.monthlyPlanId = ''
+  if (safe.result && !canRead(safe.result.collection, safe.result.id)) delete safe.result
+  return safe
+}
+
+export function visibleImportHistory(store: Store, actor: User): HistoricalRecord[] {
+  return store.list<HistoricalRecord>('historicalRecords')
+    .filter(record => actor.role === 'manager' || record.row.ownerId === actor.id || (!record.row.ownerId && record.importedBy === actor.id))
+    .map(record => ({ ...record, row: projectImportRow(store, actor, record.row) }))
+}
 interface ImportLink extends Entity { batchId: string; rowId: string; result: { collection: string; id: string }; rowFingerprint: string; mode?: ImportMode; executionFingerprint?: string }
 interface ImportJob extends Entity { ownerId: string; batchId: string; status: 'running' | 'failed' | 'completed'; completedChunks: number; totalChunks: number; error?: string }
 interface ParsedChunk extends Entity { rows: Input[]; warnings: string[] }
@@ -37,19 +65,24 @@ export class ImportService {
     for (const job of store.list<ImportJob>('importJobs').filter(j => j.status === 'running')) store.update<ImportJob>('importJobs', job.id, job.version, { status: 'failed', error: '服务已重启，原资料及已解析片段已保留，请重新开始解析' })
   }
   close() { this.closed = true }
-  get(actor: User, id: string): ImportBatch {
+  private batch(actor: User, id: string): ImportBatch {
     const batch = this.store.get<ImportBatch>('importBatches', id)
     if (!batch) throw new HttpError(404, '导入批次不存在')
     if (actor.role !== 'manager' && batch.ownerId !== actor.id) throw new HttpError(403, '无权查看此导入批次')
     const job = this.store.get<ImportJob>('importJobs', id)
     return job ? { ...batch, analysis: { status: job.status, completedChunks: job.completedChunks, totalChunks: job.totalChunks, ...(job.error ? { error: job.error } : {}) } } : batch
   }
+  get(actor: User, id: string): ImportBatch {
+    const batch = this.batch(actor, id)
+    if (actor.role === 'manager') return batch
+    return { ...batch, rows: batch.rows.filter(row => !row.ownerId || row.ownerId === actor.id).map(row => projectImportRow(this.store, actor, row)) }
+  }
   list(actor: User): ImportBatchSummary[] {
     return this.store.list<ImportBatch>('importBatches').filter(b => actor.role === 'manager' || b.ownerId === actor.id)
       .reverse().map(batch => { const { rows, ...rest } = this.get(actor, batch.id); return { ...rest, rowCount: rows.length } })
   }
   source(actor: User, id: string) {
-    const batch = this.get(actor, id)
+    const batch = this.batch(actor, id)
     const source = this.store.get<ImportSource>('importSources', batch.sourceId)
     if (!source) throw new HttpError(404, '原始资料不存在')
     return source
@@ -75,7 +108,7 @@ export class ImportService {
     const parsed = await parseImportFile(fileName, mimeType, bytes)
     return this.store.transaction(() => {
       const raced = this.store.list<ImportBatch>('importBatches').find(b => b.sourceId === sourceId)
-      if (raced) return raced
+      if (raced) return this.get(actor, raced.id)
       this.store.insert<ImportSource>('importSources', { id: sourceId, ownerId: actor.id, fileName, mimeType: parsed.mimeType || mimeType, base64: bytes.toString('base64'), hash: fingerprint, parsed })
       const batch = this.store.insert<ImportBatch>('importBatches', { ownerId: actor.id, sourceId, fileName, kind: parsed.kind, status: 'uploaded', sourceSheets: parsed.sheets?.map(s => ({ name: s.name, rowCount: s.rows.length })) ?? [], warnings: parsed.warnings, rows: [], mode: mode as ImportMode })
       this.audit(actor, batch.id, 'upload', { fileName, sourceId })
@@ -86,7 +119,7 @@ export class ImportService {
     this.store.insert<AuditEvent>('events', { entityType: 'import', entityId: id, actorId: actor.id, action, reason: '', before: null, after })
   }
   private mutable(actor: User, id: string, version: unknown) {
-    const batch = this.get(actor, id)
+    const batch = this.batch(actor, id)
     if (batch.status === 'committed') throw new HttpError(409, '此批次已保存，可从历史资料或对应计划查看结果')
     if (batch.version !== version) throw new HttpError(409, '批次已更新，请刷新后重试')
     return batch
@@ -137,6 +170,7 @@ export class ImportService {
     }
     try { date(row.dueDate) } catch { issues.push('缺少有效截止日期') }
     if (row.kind === 'monthly') {
+      if (actor.role !== 'manager') issues.push('团队月度目标须由管理者创建')
       if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(row.month)) issues.push('缺少所属月份')
       else if (!row.dueDate.startsWith(row.month)) issues.push('截止日期须在所属月份内')
       if (!row.projectId && !row.category) issues.push('请选择项目或填写工作类别')
@@ -145,10 +179,14 @@ export class ImportService {
     } else {
       try { date(row.weekStart) } catch { issues.push('缺少有效所属周') }
       if (!row.expectedOutcome) issues.push('缺少本周承诺')
-      const task = row.taskId ? this.store.get<Task>('tasks', row.taskId) : undefined
+      const candidate = row.taskId ? this.store.get<Task>('tasks', row.taskId) : undefined
+      const task = candidate && (actor.role === 'manager' || candidate.ownerId === actor.id) ? candidate : undefined
       if (row.taskId && (!task || task.ownerId !== row.ownerId)) issues.push('关联任务无效或负责人不一致')
       const planId = task?.monthlyPlanId || row.monthlyPlanId
-      const plan = planId ? this.store.get<MonthlyPlan>('plans', planId) : undefined
+      const candidatePlan = planId ? this.store.get<MonthlyPlan>('plans', planId) : undefined
+      const plan = candidatePlan && (actor.role === 'manager' || participates(candidatePlan, actor.id)) ? candidatePlan : undefined
+      if (planId && !plan) issues.push('关联月计划不存在或无权使用')
+      if (plan?.visibility === 'reference') issues.push('历史目标引用不能用于新增任务')
       const linked = rows.find(r => r.id === row.linkedRowId && r.kind === 'monthly' && r.selected)
       if (!task && !plan && !linked) issues.push('请选择月计划，或关联本批次的月计划行')
       if (plan && (plan.status === 'merged' || ![plan.ownerId, ...plan.collaboratorIds].includes(row.ownerId))) issues.push('负责人未参与所选月计划')
@@ -255,7 +293,7 @@ export class ImportService {
         this.mutable(actor, id, before.version)
         const result = this.store.update<ImportBatch>('importBatches', id, before.version, { status: 'parsed', rows: checked, warnings: [...new Set(warnings)].slice(0, 100), reviewRequestedAt: undefined })
         this.audit(actor, id, 'analyze', { rowCount: rows.length, sourceId: source.id })
-        return result
+        return this.get(actor, result.id)
       })
     } finally { this.analyzing.delete(id) }
   }
@@ -278,7 +316,7 @@ export class ImportService {
       })
       const result = this.store.update<ImportBatch>('importBatches', id, before.version, { rows: this.checked(actor, rows, mode as ImportMode), mode: mode as ImportMode, reviewRequestedAt: undefined })
       this.audit(actor, id, 'edit_preview', { rowCount: rows.length, mode })
-      return result
+      return this.get(actor, result.id)
     })
   }
   structured(actor: User, input: Input): ImportBatch {
@@ -293,7 +331,7 @@ export class ImportService {
       const existing = this.store.list<ImportBatch>('importBatches').find(b => b.sourceId === sourceId)
       if (existing) {
         if (this.source(actor, existing.id).hash !== fingerprint) throw new HttpError(409, '同一来源请求编号的内容已改变，请使用新编号并核对原批次')
-        return existing
+        return this.get(actor, existing.id)
       }
       const rows = this.match(actor, rawRows.map((value, index) => this.normalizeRow({ sourceRow: index + 1, ...(value as Input) }, index)))
       if (actor.role !== 'manager' && rows.some(row => row.monthlyResult === 'accepted')) throw new HttpError(403, '月度成果确认需要管理者权限')
@@ -305,7 +343,7 @@ export class ImportService {
     })
   }
   history(actor: User): HistoricalRecord[] {
-    return this.store.list<HistoricalRecord>('historicalRecords').filter(r => actor.role === 'manager' || r.importedBy === actor.id || r.row.ownerId === actor.id)
+    return visibleImportHistory(this.store, actor)
   }
   requestConfirmation(actor: User, id: string, input: Input): ImportBatch {
     if (this.analyzing.has(id)) throw new HttpError(409, '解析进行中，请完成后再确认')
@@ -318,7 +356,7 @@ export class ImportService {
       if (invalid) throw new HttpError(400, `第${invalid.sourceRow}行：${invalid.issues.join('；')}`)
       const result = this.store.update<ImportBatch>('importBatches', id, batch.version, { reviewRequestedAt: new Date().toISOString() })
       this.audit(actor, id, 'request_import_confirmation', { count: selected.length })
-      return result
+      return this.get(actor, result.id)
     })
   }
   editHistory(actor: User, id: string, input: Input): HistoricalRecord {
@@ -337,13 +375,14 @@ export class ImportService {
   commit(actor: User, id: string, input: Input): ImportBatch {
     if (this.analyzing.has(id)) throw new HttpError(409, '解析进行中，请完成后再保存')
     return this.store.transaction(() => {
-      const batch = this.get(actor, id)
-      if (batch.status === 'committed') return batch // An uncertain response can safely be retried.
+      const batch = this.batch(actor, id)
+      if (batch.status === 'committed') return this.get(actor, id) // An uncertain response can safely be retried.
       if (batch.mode === 'existing' && actor.role !== 'manager') throw new HttpError(403, '已有计划请交管理员确认后直接生效，无需重新提报')
       this.mutable(actor, id, input.version)
       if (batch.status !== 'parsed') throw new HttpError(400, '请先解析并核对资料')
       const rows = this.checked(actor, batch.rows, batch.mode), selected = rows.filter(r => r.selected)
       if (!selected.length) throw new HttpError(400, '请至少选择一条记录')
+      if (actor.role !== 'manager' && batch.mode !== 'history' && selected.some(row => row.kind === 'monthly')) throw new HttpError(403, '团队月度目标须由管理者创建')
       if (batch.mode !== 'history') {
         const invalid = selected.find(r => r.issues.length)
         if (invalid) throw new HttpError(400, `${invalid.sourceSheet || '资料'}第${invalid.sourceRow}行：${invalid.issues.join('；')}`)
@@ -412,7 +451,7 @@ export class ImportService {
       existingWriter?.finish()
       const result = this.store.update<ImportBatch>('importBatches', id, batch.version, { rows, status: 'committed', committedAt: new Date().toISOString(), committedCount: written, activatedCount: activated, skippedCount: skipped })
       this.audit(actor, id, 'commit', { mode: batch.mode, count: written, activated, skipped, records: selected.map(r => r.result) })
-      return result
+      return this.get(actor, result.id)
     })
   }
 }

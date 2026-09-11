@@ -1,4 +1,5 @@
 import type { AuditEvent, MonthlyPlan, Publication, Task, User } from '../shared/types.ts'
+import { projectPlan, visiblePlanHistory } from './plan-visibility.ts'
 import { HttpError } from './store.ts'
 import { DomainBase, choice, date, manager, month, own, participates, text, type Input } from './domain-common.ts'
 
@@ -21,6 +22,7 @@ export class MonthlyService extends DomainBase {
     if (!this.planVisible(actor, plan)) throw new HttpError(403, '无权查看此月计划')
   }
   create(actor: User, input: Input): MonthlyPlan {
+    manager(actor)
     return this.store.transaction(() => {
       const period = month(input.month)
       const ownerId = this.owner(actor, input.ownerId)
@@ -50,6 +52,7 @@ export class MonthlyService extends DomainBase {
     })
   }
   update(actor: User, id: string, input: Input): MonthlyPlan {
+    manager(actor)
     return this.store.transaction(() => {
       const before = this.need<MonthlyPlan>('plans', id)
       own(actor, before.ownerId)
@@ -96,6 +99,7 @@ export class MonthlyService extends DomainBase {
     })
   }
   submit(actor: User, id: string, input: Input): MonthlyPlan {
+    manager(actor)
     return this.store.transaction(() => {
       const before = this.need<MonthlyPlan>('plans', id)
       own(actor, before.ownerId)
@@ -191,14 +195,15 @@ export class MonthlyService extends DomainBase {
       const acceptanceNote = text(input.acceptanceNote, status === 'not_completed' ? '未完成原因' : '验收说明', false)
       const plan = this.store.update<MonthlyPlan>('plans', id, before.version, { actualOutcome, acceptanceStatus: status, acceptanceNote })
       this.audit(actor, 'plan', id, 'result', before, plan, acceptanceNote)
-      return plan
+      return projectPlan(actor, plan)
     })
   }
   history(actor: User, id: string): AuditEvent[] {
     this.visible(actor, this.need<MonthlyPlan>('plans', id))
-    return this.store.list<AuditEvent>('events').filter(event => event.entityType === 'plan' && event.entityId === id)
+    return visiblePlanHistory(actor, id, this.store.list<AuditEvent>('events'))
   }
   carry(actor: User, id: string, input: Input): MonthlyPlan {
+    manager(actor)
     return this.store.transaction(() => {
       const source = this.need<MonthlyPlan>('plans', id)
       own(actor, source.ownerId)

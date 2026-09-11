@@ -1,6 +1,7 @@
 import ExcelJS from 'exceljs'
 import type { Entity, MonthlyPlan, User } from '../shared/types.ts'
 import type { HistoricalRecord } from './import-service.ts'
+import { visibleImportHistory } from './import-service.ts'
 import { Domain } from './domain.ts'
 import { HttpError, Store } from './store.ts'
 import { businessEventCollections, collectionNames, emptyCollections, parsePacket, projectRow, rowReferences, type BusinessCollections, type BusinessDataPacket, type TransferCollection, type TransferType } from './data-transfer-schema.ts'
@@ -29,7 +30,7 @@ export function exportBusinessData(store: Store, actor: User, options: ExportOpt
     const complete = type === 'all' && !options.month && !options.ownerId && !options.projectId
     const sources: BusinessCollections = {
       users: visible.users, projects: visible.projects, annualGoals: visible.annualGoals, plans: visible.plans, tasks: visible.tasks, weeklyRecords: visible.weeklyRecords,
-      history: store.list<HistoricalRecord>('historicalRecords').filter(record => isManager || record.importedBy === actor.id || record.row.ownerId === actor.id),
+      history: visibleImportHistory(store, actor),
       publications: visible.publications, reports: visible.reports,
       // Authentication, API connections and tokens are deliberately outside a business-data packet.
       events: isManager ? store.list<BusinessCollections['events'][number]>('events').filter(event => Object.hasOwn(businessEventCollections, event.entityType)) : [],

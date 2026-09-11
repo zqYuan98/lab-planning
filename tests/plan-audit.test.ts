@@ -46,7 +46,7 @@ function fixture() {
     collaboratorIds: [collaborator.id],
   }
   function publish(owner: User, plan: MonthlyPlan) {
-    const submitted = domain.submitPlan(owner, plan.id, {
+    const submitted = domain.submitPlan(manager, plan.id, {
       version: plan.version,
     })
     domain.reviewPlan(manager, plan.id, {
@@ -73,11 +73,11 @@ test('a previously submitted boundary-week record keeps its original month after
   try {
     const september = f.publish(
       f.member,
-      f.domain.createPlan(f.member, f.input),
+      f.domain.createPlan(f.manager, { ...f.input, ownerId: f.member.id }),
     )
     const october = f.publish(
       f.member,
-      f.domain.carryPlan(f.member, september.id, {
+      f.domain.carryPlan(f.manager, september.id, {
         month: '2026-10',
         dueDate: '2026-10-30',
         reason: '继续验证',
@@ -125,16 +125,16 @@ test('a previously submitted boundary-week record keeps its original month after
   }
 })
 
-test('old-month collaborators can resolve historical tasks without seeing a new private assignment', () => {
+test('old-month collaborators cannot read peer task snapshots or weekly records', () => {
   const f = fixture()
   try {
     const september = f.publish(
       f.member,
-      f.domain.createPlan(f.member, f.input),
+      f.domain.createPlan(f.manager, { ...f.input, ownerId: f.member.id }),
     )
     const october = f.publish(
       f.member,
-      f.domain.createPlan(f.member, {
+      f.domain.createPlan(f.manager, { ownerId: f.member.id,
         ...f.input,
         month: '2026-10',
         dueDate: '2026-10-30',
@@ -169,18 +169,9 @@ test('old-month collaborators can resolve historical tasks without seeing a new 
       commitment: '十月私人草稿',
     })
     const visible = f.domain.bootstrap(f.collaborator)
-    assert.ok(
-      visible.weeklyRecords.some((record) => record.id === historical.id),
-    )
-    assert.ok(!visible.weeklyRecords.some((record) => record.id === future.id))
-    const taskContext = visible.tasks.find((item) => item.id === task.id)
-    assert.ok(
-      taskContext,
-      'visible weekly records must retain resolvable task context',
-    )
-    assert.equal(taskContext.monthlyPlanId, september.id)
-    assert.equal(taskContext.title, '九月共同评测')
-    assert.equal(taskContext.description, '')
+    assert.ok(!visible.weeklyRecords.some(record => record.id === historical.id))
+    assert.ok(!visible.weeklyRecords.some(record => record.id === future.id))
+    assert.ok(!visible.tasks.some(item => item.id === task.id))
     assert.equal(
       f.domain.bootstrap(f.member).tasks.find((item) => item.id === task.id)
         ?.title,
@@ -194,7 +185,7 @@ test('old-month collaborators can resolve historical tasks without seeing a new 
 test('direct sourcePlanId creation cannot bypass carry ownership or revive a merged source', () => {
   const f = fixture()
   try {
-    let first = f.domain.createPlan(f.member, f.input)
+    let first = f.domain.createPlan(f.manager, { ...f.input, ownerId: f.member.id })
     const nextInput = {
       ...f.input,
       month: '2026-10',
@@ -205,12 +196,12 @@ test('direct sourcePlanId creation cannot bypass carry ownership or revive a mer
     assert.throws(() => f.domain.createPlan(f.collaborator, nextInput), {
       status: 403,
     })
-    let second = f.domain.createPlan(f.member, {
+    let second = f.domain.createPlan(f.manager, { ownerId: f.member.id,
       ...f.input,
       title: '同成果的第二项提报',
     })
-    first = f.domain.submitPlan(f.member, first.id, { version: first.version })
-    second = f.domain.submitPlan(f.member, second.id, {
+    first = f.domain.submitPlan(f.manager, first.id, { version: first.version })
+    second = f.domain.submitPlan(f.manager, second.id, {
       version: second.version,
     })
     f.domain.mergePlans(f.manager, {
@@ -218,12 +209,12 @@ test('direct sourcePlanId creation cannot bypass carry ownership or revive a mer
       title: '联合交付',
       reason: '统一交付范围',
     })
-    assert.throws(() => f.domain.createPlan(f.member, nextInput), {
+    assert.throws(() => f.domain.createPlan(f.manager, { ...nextInput, ownerId: f.member.id }), {
       status: 400,
     })
     assert.throws(
       () =>
-        f.domain.carryPlan(f.member, first.id, {
+        f.domain.carryPlan(f.manager, first.id, {
           month: '2026-10',
           dueDate: '2026-10-30',
           reason: '尝试复活来源',
@@ -244,7 +235,7 @@ test('direct sourcePlanId creation cannot bypass carry ownership or revive a mer
 test('existing inactive collaborators survive normal plan edits while new inactive assignments stay forbidden', () => {
   const f = fixture()
   try {
-    let plan = f.publish(f.member, f.domain.createPlan(f.member, f.input))
+    let plan = f.publish(f.member, f.domain.createPlan(f.manager, { ...f.input, ownerId: f.member.id }))
     f.domain.createTask(f.collaborator, {
       title: '原测试责任',
       monthlyPlanId: plan.id,
@@ -270,7 +261,7 @@ test('existing inactive collaborators survive normal plan edits while new inacti
         }),
       { status: 400 },
     )
-    assert.throws(() => f.domain.createPlan(f.member, f.input), { status: 400 })
+    assert.throws(() => f.domain.createPlan(f.manager, { ...f.input, ownerId: f.member.id }), { status: 400 })
     assert.equal(
       f.domain.planHistory(f.member, plan.id).at(-1)?.action,
       'published_change',
@@ -283,11 +274,11 @@ test('existing inactive collaborators survive normal plan edits while new inacti
 test('archived project proposals do not block the active publish batch or appear as new weekly choices', () => {
   const f = fixture()
   try {
-    let archived = f.domain.createPlan(f.member, {
+    let archived = f.domain.createPlan(f.manager, { ownerId: f.member.id,
       ...f.input,
       title: '已归档待发布成果',
     })
-    archived = f.domain.submitPlan(f.member, archived.id, {
+    archived = f.domain.submitPlan(f.manager, archived.id, {
       version: archived.version,
     })
     f.domain.reviewPlan(f.manager, archived.id, {
@@ -303,12 +294,12 @@ test('archived project proposals do not block the active publish batch or appear
       version: f.project.version,
       status: 'archived',
     })
-    let active = f.domain.createPlan(f.member, {
+    let active = f.domain.createPlan(f.manager, { ownerId: f.member.id,
       ...f.input,
       projectId: null,
       title: '正常待发布成果',
     })
-    active = f.domain.submitPlan(f.member, active.id, {
+    active = f.domain.submitPlan(f.manager, active.id, {
       version: active.version,
     })
     f.domain.reviewPlan(f.manager, active.id, {

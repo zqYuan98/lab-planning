@@ -10,6 +10,7 @@ export class WorkService extends DomainBase {
   }
   private usablePlan(id: string, ownerId: string, published = false) {
     const plan = this.need<MonthlyPlan>('plans', id)
+    if (plan.visibility === 'reference') throw new HttpError(400, '历史目标引用不能用于新增任务')
     if (plan.status === 'merged') throw new HttpError(400, '请关联合并后的月计划')
     if (!participates(plan, ownerId)) throw new HttpError(403, '任务负责人必须是月计划负责人或协作者')
     if (published && plan.status !== 'published') throw new HttpError(400, '正式周计划必须关联已发布月计划')

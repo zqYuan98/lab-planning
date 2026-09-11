@@ -45,15 +45,18 @@ export function validateExistingRow(store: Store, actor: User, row: ImportRow, r
     let weekStart = ''
     check(() => { weekStart = monday(row.weekStart) })
     check(() => choice(importedWeeklyStatus(row), ['planned', 'doing', 'blocked', 'done', 'not_done'], '周状态'))
-    const task = typeof row.taskId === 'string' && row.taskId ? store.get<Task>('tasks', row.taskId) : undefined
+    const candidate = typeof row.taskId === 'string' && row.taskId ? store.get<Task>('tasks', row.taskId) : undefined
+    const task = candidate && (actor.role === 'manager' || candidate.ownerId === actor.id) ? candidate : undefined
     if (row.taskId && (!task || task.ownerId !== row.ownerId)) issues.push('关联任务不存在或负责人不一致')
     const linked = row.linkedRowId ? rows.find(item => item.id === row.linkedRowId && item.kind === 'monthly' && item.selected) : undefined
     if (row.linkedRowId && !linked && !row.monthlyPlanId) issues.push('请选择本批次中有效的月计划行')
     const planId = row.monthlyPlanId || (!linked ? task?.monthlyPlanId : '')
     if (planId) {
-      const plan = store.get<MonthlyPlan>('plans', planId)
+      const candidatePlan = store.get<MonthlyPlan>('plans', planId)
+      const plan = candidatePlan && (actor.role === 'manager' || participates(candidatePlan, actor.id)) ? candidatePlan : undefined
       if (!plan || plan.status !== 'published') issues.push('关联月计划必须已生效')
       else {
+        if (plan.visibility === 'reference') issues.push('历史目标引用不能用于新增任务')
         if (!participates(plan, row.ownerId)) issues.push('负责人未参与所选月计划')
         if (weekStart && !overlaps(weekStart, plan.month)) issues.push('所属周与月计划月份不相交')
         if (plan.projectId && store.get<Project>('projects', plan.projectId)?.status !== 'active') issues.push('关联月计划的项目已归档或不存在')

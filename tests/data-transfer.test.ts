@@ -31,8 +31,8 @@ function populated(t: TestContext) {
   const member = maybeMember!
   const project = domain.createProject(manager, { name: '算法项目', code: 'TRANSFER-01', description: '旧系统资料', ownerId: member.id })
   domain.createAnnualGoal(manager, { title: '年度交付', year: 2026, target: '形成平台能力', progress: 40, ownerId: member.id })
-  let plan = domain.createPlan(member, { month: '2026-09', title: '九月计划', projectId: project.id, expectedOutcome: '完成第一版', acceptanceCriteria: '验收记录', dueDate: '2026-09-30' })
-  plan = domain.submitPlan(member, plan.id, { version: plan.version })
+  let plan = domain.createPlan(manager, { ownerId: member.id, month: '2026-09', title: '九月计划', projectId: project.id, expectedOutcome: '完成第一版', acceptanceCriteria: '验收记录', dueDate: '2026-09-30' })
+  plan = domain.submitPlan(manager, plan.id, { version: plan.version })
   plan = domain.reviewPlan(manager, plan.id, { version: plan.version, decision: 'approve', comment: '批准' })
   domain.publishMonth(manager, '2026-09', { planIds: [plan.id] })
   plan = store.get<MonthlyPlan>('plans', plan.id)!
@@ -129,7 +129,7 @@ test('corrected historical records export and restore both audit snapshots with 
 test('member exports stay within visible work and history; filtered JSON includes required dependencies', t => {
   const f = populated(t)
   const outsider = f.domain.createUser(f.manager, { name: '其他成员', email: 'outsider@transfer.test', password: 'Fixture-password-2026!', role: 'member' })
-  const privatePlan = f.domain.createPlan(outsider, { month: '2026-10', title: '其他成员的私有计划', category: '技术研究', expectedOutcome: '新成果', acceptanceCriteria: '新标准', dueDate: '2026-10-30' })
+  const privatePlan = f.domain.createPlan(f.manager, { ownerId: outsider.id, month: '2026-10', title: '其他成员的私有计划', category: '技术研究', expectedOutcome: '新成果', acceptanceCriteria: '新标准', dueDate: '2026-10-30' })
   f.store.insert<HistoricalRecord>('historicalRecords', { importedBy: outsider.id, batchId: 'private-batch', sourceId: 'private-source', row: historicalRow(outsider, '其他成员的私有历史') })
   const memberPacket = exportBusinessData(f.store, f.member)
   assert.equal(memberPacket.collections.plans.some(plan => plan.id === privatePlan.id), false)

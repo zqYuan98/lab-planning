@@ -6,6 +6,8 @@ import { requireManager } from './auth.ts'
 import { readAiSettings, updateAiSettings, testAiConnection } from './ai-service.ts'
 import { listIntegrationTokens, createIntegrationToken, revokeIntegrationToken, assertIntegrationTokenActive } from './integration-auth.ts'
 import type { ImportBatch } from '../shared/import-types.ts'
+import type { MonthlyPlan } from '../shared/types.ts'
+import { participates } from './plan-visibility.ts'
 const services = new WeakMap<Store, ImportService>()
 export function closeImportServices(store: Store) { services.get(store)?.close() }
 
@@ -40,7 +42,12 @@ export function createImportRouter(store: Store) {
   router.get('/schema', (_req, res) => res.json({ formatVersion: 1, structuredEndpoint: '/api/v1/imports/structured', required: ['sourceKey', 'rows'], kinds: ['monthly', 'weekly'], modes: ['history', 'draft', 'existing'], rowFields: ['kind', 'sourceRow', 'sourceSheet', 'sourceText', 'title', 'ownerName', 'ownerId', 'projectName', 'projectId', 'category', 'month', 'weekStart', 'dueDate', 'expectedOutcome', 'acceptanceCriteria', 'actualOutcome', 'blocker', 'nextAction', 'sourceStatus', 'monthlyPlanId', 'taskId', 'linkedRowId', 'monthlyResult', 'weeklyStatus'], workflow: 'structured/upload -> analyze (files only) -> edit -> commit; history仅归档；draft遵循新增计划规则；existing由管理者确认直接生效，原表缺项可空。成员可request-confirmation；同来源草稿转生效复用原ID，提交可安全重试' }))
   router.get('/context', (req, res) => {
     const { users, projects, plans, tasks } = new Domain(store).bootstrap(req.user)
-    res.json({ users, projects, plans, tasks })
+    const eligiblePlans = req.user.role === 'manager' ? plans : plans.filter(plan => {
+      const current = store.get<MonthlyPlan>('plans', plan.id)
+      return current && current.visibility !== 'reference' && participates(current, req.user.id) && current.status !== 'merged'
+        && (!current.projectId || projects.some(project => project.id === current.projectId && project.status === 'active'))
+    })
+    res.json({ users, projects, plans: eligiblePlans, tasks })
   })
   return router
 }

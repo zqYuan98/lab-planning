@@ -6,6 +6,8 @@ export interface Project extends Entity { name: string; code: string; descriptio
 export interface AnnualGoal extends Entity { title: string; year: number; target: string; progress: number; description: string; ownerId: string; status: 'active' | 'completed' }
 export type PlanStatus = 'draft' | 'submitted' | 'returned' | 'approved' | 'published' | 'merged'
 export interface MonthlyPlan extends Entity {
+  /** Member-only historical reference projection; never a selectable current goal. */
+  visibility?: 'reference';
   month: string; title: string; projectId: string | null; category: string; ownerId: string;
   collaboratorIds: string[]; expectedOutcome: string; acceptanceCriteria: string; dueDate: string;
   priority: 'high' | 'medium' | 'low'; status: PlanStatus; reviewComment: string;

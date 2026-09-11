@@ -8,7 +8,7 @@ import Weekly from '../src/pages/Weekly.tsx'
 import { buildOverview } from '../src/overview-data.ts'
 import type { NavigationIntent } from '../src/navigation.ts'
 
-test('member search and overview navigation show authorized collaboration records without granting edit controls', () => {
+test('member search and overview do not reveal peer work under a shared goal', () => {
   const store = new Store(':memory:')
   try {
     const domain = new Domain(store)
@@ -31,7 +31,7 @@ test('member search and overview navigation show authorized collaboration record
       position: '开发',
       role: 'member',
     })
-    let plan = domain.createPlan(owner, {
+    let plan = domain.createPlan(manager, { ownerId: owner.id,
       month: '2026-09',
       title: '联合验证交付',
       projectId: null,
@@ -41,7 +41,7 @@ test('member search and overview navigation show authorized collaboration record
       acceptanceCriteria: '评审通过',
       dueDate: '2026-09-30',
     })
-    plan = domain.submitPlan(owner, plan.id, { version: plan.version })
+    plan = domain.submitPlan(manager, plan.id, { version: plan.version })
     plan = domain.reviewPlan(manager, plan.id, {
       version: plan.version,
       decision: 'approve',
@@ -75,11 +75,11 @@ test('member search and overview navigation show authorized collaboration record
       submitted: false,
     })
     const data = domain.bootstrap(viewer)
-    assert.ok(data.tasks.some((item) => item.id === task.id))
-    assert.ok(data.weeklyRecords.some((item) => item.id === blocked.id))
+    assert.ok(!data.tasks.some((item) => item.id === task.id))
+    assert.ok(!data.weeklyRecords.some((item) => item.id === blocked.id))
     const overview = buildOverview(data, '2026-09-08')
-    assert.equal(overview.blocked.length, 1)
-    assert.equal(overview.drafts.length, 1)
+    assert.equal(overview.blocked.length, 0)
+    assert.equal(overview.drafts.length, 0)
 
     const render = (intent: NavigationIntent) =>
       renderToStaticMarkup(
@@ -102,45 +102,10 @@ test('member search and overview navigation show authorized collaboration record
     })
     const draftScope = render({ weekStart: draft.weekStart, status: 'draft' })
     const timeline = render({ weekStart: blocked.weekStart })
-    for (const html of [search, attention, blockedScope, timeline]) {
-      assert.ok(
-        html.includes(blocked.commitment),
-        'navigation must retain the authorized target record',
-      )
-    }
-    for (const html of [draftScope, timeline])
-      assert.ok(html.includes(draft.commitment))
-    assert.ok(
-      !blockedScope.includes(draft.commitment),
-      'blocked overview shortcut preserves the requested status filter',
-    )
-    assert.ok(
-      !draftScope.includes(blocked.commitment),
-      'draft overview shortcut preserves the requested status filter',
-    )
-    for (const html of [
-      search,
-      attention,
-      blockedScope,
-      draftScope,
-      timeline,
-    ]) {
-      assert.ok(
-        html.includes('回到我的周计划'),
-        'collaboration scope must be visible and reversible',
-      )
-      assert.ok(!html.includes('当前没有周计划记录'))
-      for (const control of [
-        '更新进展',
-        '提交周计划',
-        '顺延一周',
-        '调整月度关联',
-      ]) {
-        assert.ok(
-          !html.includes(control),
-          `collaboration access must not expose ${control}`,
-        )
-      }
+    assert.ok(data.plans.some(item => item.id === plan.id))
+    for (const html of [search, attention, blockedScope, draftScope, timeline]) {
+      assert.ok(!html.includes(blocked.commitment))
+      assert.ok(!html.includes(draft.commitment))
     }
     assert.throws(
       () =>

@@ -1,5 +1,7 @@
 import type { AuditEvent, Entity, MonthlyPlan, Project, User } from '../shared/types.ts'
 import { Store, HttpError } from './store.ts'
+import { visiblePlan } from './plan-visibility.ts'
+export { participates } from './plan-visibility.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
 
 export type Input = Record<string, unknown>
@@ -49,7 +51,6 @@ export function manager(actor: User) {
 export function own(actor: User, ownerId: string) {
   if (actor.role !== 'manager' && actor.id !== ownerId) throw new HttpError(403, '不能修改其他成员的记录')
 }
-export function participates(plan: MonthlyPlan, userId: string) { return plan.ownerId === userId || plan.collaboratorIds.includes(userId) }
 
 export class DomainBase {
   constructor(protected store: Store) {}
@@ -74,11 +75,7 @@ export class DomainBase {
     return project
   }
   protected planVisible(actor: User, plan: MonthlyPlan): boolean {
-    if (actor.role === 'manager' || participates(plan, actor.id)) return true
-    return this.store.list<AuditEvent>('events').some(event => event.entityType === 'plan' && event.entityId === plan.id && [event.before, event.after].some(snapshot => {
-      const item = snapshot as MonthlyPlan | null
-      return item?.ownerId === actor.id || item?.collaboratorIds?.includes(actor.id)
-    }))
+    return !!visiblePlan(this.store, actor, plan)
   }
   protected audit(actor: User, entityType: string, entityId: string, action: string, before: unknown, after: unknown, reason = '') {
     this.store.insert<AuditEvent>('events', { entityType, entityId, actorId: actor.id, action, reason, before, after })

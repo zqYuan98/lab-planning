@@ -6,7 +6,7 @@ import { createApp } from '../server/app.ts'
 import { Store } from '../server/store.ts'
 import type { Bootstrap, MonthlyPlan, Project, Report, Task, User, WeeklyRecord } from '../shared/types.ts'
 
-test('real HTTP workflow from member proposal to published month, weekly evidence and immutable report', async () => {
+test('real HTTP workflow from manager goal to published month, weekly evidence and immutable report', async () => {
   const store = new Store(':memory:')
   const app = createApp({ store, enableScheduler: false })
   const server = app.listen(0, '127.0.0.1')
@@ -34,13 +34,13 @@ test('real HTTP workflow from member proposal to published month, weekly evidenc
     await member('/auth/login', { email: 'member@example.test', password: 'Fixture-pass-2026!' })
     await outsider('/auth/login', { email: 'outsider@example.test', password: 'Fixture-pass-2026!' })
     const project = await manager<Project>('/projects', { name: '验证项目', code: 'QA-01', description: '隔离测试数据', ownerId: lead.id })
-    let plan = await member<MonthlyPlan>('/plans', { month: '2026-09', title: '形成可验收算法成果', projectId: project.id, category: '算法研发', expectedOutcome: '交付评测和部署包', acceptanceCriteria: '固定测试集评测通过并提供记录', dueDate: '2026-09-30', priority: 'high' })
+    let plan = await manager<MonthlyPlan>('/plans', { ownerId: person.id, month: '2026-09', title: '形成可验收算法成果', projectId: project.id, category: '算法研发', expectedOutcome: '交付评测和部署包', acceptanceCriteria: '固定测试集评测通过并提供记录', dueDate: '2026-09-30', priority: 'high' })
     await outsider(`/plans/${plan.id}`, { version: plan.version, title: '越权改写' }, 'PATCH', 403)
-    plan = await member<MonthlyPlan>(`/plans/${plan.id}/submit`, { version: plan.version })
+    plan = await manager<MonthlyPlan>(`/plans/${plan.id}/submit`, { version: plan.version })
     plan = await manager<MonthlyPlan>(`/plans/${plan.id}/review`, { version: plan.version, decision: 'return', comment: '请补充交付版本要求' })
     assert.equal(plan.status, 'returned')
-    plan = await member<MonthlyPlan>(`/plans/${plan.id}`, { version: plan.version, expectedOutcome: '交付 v1 评测记录与部署包' }, 'PATCH')
-    plan = await member<MonthlyPlan>(`/plans/${plan.id}/submit`, { version: plan.version })
+    plan = await manager<MonthlyPlan>(`/plans/${plan.id}`, { version: plan.version, expectedOutcome: '交付 v1 评测记录与部署包' }, 'PATCH')
+    plan = await manager<MonthlyPlan>(`/plans/${plan.id}/submit`, { version: plan.version })
     plan = await manager<MonthlyPlan>(`/plans/${plan.id}/review`, { version: plan.version, decision: 'approve', comment: '按此成果发布' })
     await manager('/months/2026-09/publish', { planIds: [plan.id] })
     let data = await member<Bootstrap>('/bootstrap')

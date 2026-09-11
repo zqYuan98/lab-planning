@@ -2,10 +2,11 @@ import type { AnnualGoal, AuditEvent, Bootstrap, MonthlyPlan, Project, Publicati
 import { safeUser } from './auth.ts'
 import { registrationApproved } from '../shared/auth-policy.ts'
 import { AdminService } from './domain-admin.ts'
-import { DomainBase, participates } from './domain-common.ts'
+import { DomainBase } from './domain-common.ts'
 import { MonthlyService } from './domain-plans.ts'
 import { WorkService } from './domain-work.ts'
 import { Store } from './store.ts'
+import { planReference, visiblePlan, visiblePublications } from './plan-visibility.ts'
 import { aiConfigured } from './reports.ts'
 
 /** Facade shared by HTTP routes and domain integration tests. */
@@ -47,28 +48,30 @@ export class Domain extends DomainBase {
 
   bootstrap(actor: User): Bootstrap {
     const isManager = actor.role === 'manager'
-    const plans = this.store.list<MonthlyPlan>('plans').filter(plan => this.planVisible(actor, plan))
-    const currentPlanIds = new Set(plans.filter(plan => participates(plan, actor.id)).map(plan => plan.id))
-    const tasks = this.store.list<Task>('tasks').filter(task => isManager || task.ownerId === actor.id || (task.monthlyPlanId && currentPlanIds.has(task.monthlyPlanId)))
-    const weeklyRecords = this.store.list<WeeklyRecord>('weeklyRecords').filter(record => isManager || record.ownerId === actor.id || (record.monthlyPlanId && currentPlanIds.has(record.monthlyPlanId)))
-    // A task can move to a new month that an old collaborator cannot access. Keep the
-    // old weekly records readable using an authorized task snapshot, never its new contents.
+    const plans = this.store.list<MonthlyPlan>('plans').flatMap(plan => {
+      const visible = visiblePlan(this.store, actor, plan)
+      return visible ? [visible] : []
+    })
+    const tasks = this.store.list<Task>('tasks').filter(task => isManager || task.ownerId === actor.id)
+    const weeklyRecords = this.store.list<WeeklyRecord>('weeklyRecords').filter(record => isManager || record.ownerId === actor.id)
+    // Backfill only this member's own task snapshot when a historical record outlives its task.
     const visibleTaskIds = new Set(tasks.map(task => task.id))
-    const missingTaskIds = new Set(weeklyRecords.filter(record => !visibleTaskIds.has(record.taskId)).map(record => record.taskId))
-    if (missingTaskIds.size) {
-      const taskEvents = this.store.list<AuditEvent>('events').filter(event => event.entityType === 'task').reverse()
-      for (const taskId of missingTaskIds) {
-        const relevantPlanIds = new Set(weeklyRecords.filter(record => record.taskId === taskId && record.monthlyPlanId && currentPlanIds.has(record.monthlyPlanId)).map(record => record.monthlyPlanId))
-        const historical = taskEvents.filter(event => event.entityId === taskId)
-          .flatMap(event => [event.after, event.before])
-          .find(snapshot => {
-            const task = snapshot as Task | null
-            return task?.id === taskId && task.monthlyPlanId !== null && relevantPlanIds.has(task.monthlyPlanId)
-          }) as Task | undefined
-        if (historical) tasks.push(historical)
-      }
+    for (const record of weeklyRecords) {
+      if (visibleTaskIds.has(record.taskId)) continue
+      const historical = this.store.list<AuditEvent>('events').filter(event => event.entityType === 'task' && event.entityId === record.taskId)
+        .flatMap(event => [event.before, event.after]).filter((value): value is Task => {
+          const task = value as Task | null
+          return !!task && task.id === record.taskId && (isManager || task.ownerId === actor.id)
+        }).sort((a, b) => b.version - a.version)[0]
+      if (historical) { tasks.push(historical); visibleTaskIds.add(historical.id) }
     }
-    const publications = this.store.list<Publication>('publications').map(item => isManager ? item : { ...item, plans: item.plans.filter(plan => participates(plan, actor.id)) }).filter(item => item.plans.length)
+    const visiblePlanIds = new Set(plans.map(plan => plan.id))
+    for (const work of [...tasks, ...weeklyRecords]) {
+      if (!work.monthlyPlanId || visiblePlanIds.has(work.monthlyPlanId)) continue
+      const current = this.store.get<MonthlyPlan>('plans', work.monthlyPlanId)
+      if (current) { plans.push(planReference(current)); visiblePlanIds.add(current.id) }
+    }
+    const publications = visiblePublications(actor, this.store.list<Publication>('publications'))
     const users = this.store.list<User>('users').filter(user => isManager || registrationApproved(user)).map(user => ({ ...safeUser(user), ...(isManager && user.registrationStatus ? { registrationReviewComment: user.registrationReviewComment ?? '' } : {}) }))
     return { user: safeUser(actor), users, projects: this.store.list<Project>('projects'), annualGoals: this.store.list<AnnualGoal>('annualGoals'), plans, tasks, weeklyRecords, publications, reports: isManager ? this.store.list<Report>('reports') : [], aiConfigured: aiConfigured(this.store) }
   }

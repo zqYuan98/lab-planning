@@ -18,15 +18,15 @@ function fixture() {
 test('monthly review/publication retains submission, guards ownership and optimistic versions', () => {
   const f = fixture(); const { domain: d, store, manager, member, other } = f
   try {
-    let plan = d.createPlan(member, f.planInput)
+    let plan = d.createPlan(manager, { ...f.planInput, ownerId: member.id })
     assert.throws(() => d.updatePlan(other, plan.id, { version: plan.version, title: '越权' }), { status: 403 })
-    plan = d.submitPlan(member, plan.id, { version: plan.version })
+    plan = d.submitPlan(manager, plan.id, { version: plan.version })
     assert.throws(() => d.updatePlan(member, plan.id, { version: plan.version, title: '改动' }), { status: 403 })
     plan = d.reviewPlan(manager, plan.id, { version: plan.version, decision: 'return', comment: '补充样本' })
     assert.equal(plan.reviewComment, '补充样本')
-    plan = d.updatePlan(member, plan.id, { version: plan.version, title: '交付新模型' })
-    assert.throws(() => d.updatePlan(member, plan.id, { version: 1, title: '旧页面' }), { status: 409 })
-    plan = d.submitPlan(member, plan.id, { version: plan.version })
+    plan = d.updatePlan(manager, plan.id, { version: plan.version, title: '交付新模型' })
+    assert.throws(() => d.updatePlan(manager, plan.id, { version: 1, title: '旧页面' }), { status: 409 })
+    plan = d.submitPlan(manager, plan.id, { version: plan.version })
     plan = d.reviewPlan(manager, plan.id, { version: plan.version, decision: 'approve', comment: '' })
     d.publishMonth(manager, '2026-09', { planIds: [plan.id] })
     plan = store.get('plans', plan.id)!
@@ -47,12 +47,12 @@ test('monthly review/publication retains submission, guards ownership and optimi
 test('weekly publication gate, result distinction, stable task carry and relink snapshots', () => {
   const f = fixture(); const { domain: d, store, manager, member } = f
   try {
-    let plan = d.createPlan(member, f.planInput)
+    let plan = d.createPlan(manager, { ...f.planInput, ownerId: member.id })
     const task = d.createTask(member, { title: '验证样本', monthlyPlanId: plan.id, description: '', dueDate: '2026-09-20' })
     let week = d.createWeeklyRecord(member, { taskId: task.id, weekStart: '2026-09-09', commitment: '验证 100 条' })
     assert.equal(week.weekStart, '2026-09-07')
     assert.throws(() => d.updateWeeklyRecord(member, week.id, { version: week.version, submitted: true }), { status: 400 })
-    plan = d.submitPlan(member, plan.id, { version: plan.version })
+    plan = d.submitPlan(manager, plan.id, { version: plan.version })
     plan = d.reviewPlan(manager, plan.id, { version: plan.version, decision: 'approve', comment: '' })
     d.publishMonth(manager, plan.month, { planIds: [plan.id] })
     week = d.updateWeeklyRecord(member, week.id, { version: week.version, status: 'done', actualOutcome: '完成 100 条验证', submitted: true })
@@ -63,9 +63,9 @@ test('weekly publication gate, result distinction, stable task carry and relink 
     assert.equal(carried.actualOutcome, '')
     assert.equal(carried.submitted, false)
     assert.throws(() => d.createWeeklyRecord(member, { taskId: task.id, weekStart: '2026-09-15', commitment: '重复' }), { status: 409 })
-    const next = d.carryPlan(member, plan.id, { month: '2026-10', dueDate: '2026-10-30', reason: '后续验证' })
+    const next = d.carryPlan(manager, plan.id, { month: '2026-10', dueDate: '2026-10-30', reason: '后续验证' })
     assert.equal(next.sourcePlanId, plan.id)
-    let approved = d.submitPlan(member, next.id, { version: next.version })
+    let approved = d.submitPlan(manager, next.id, { version: next.version })
     approved = d.reviewPlan(manager, next.id, { version: approved.version, decision: 'approve', comment: '' })
     d.publishMonth(manager, next.month, { planIds: [next.id] })
     // Represents a provisional draft saved before month-overlap validation was introduced.
@@ -86,13 +86,13 @@ test('weekly publication gate, result distinction, stable task carry and relink 
 test('manager safeguards and project archive preserve history', () => {
   const f = fixture(); const { domain: d, store, manager, member, other } = f
   try {
-    const plan = d.createPlan(member, f.planInput)
+    const plan = d.createPlan(manager, { ...f.planInput, ownerId: member.id })
     assert.throws(() => d.updateUser(manager, manager.id, { version: manager.version, active: false }), { status: 400 })
     assert.throws(() => d.createUser(member, { name: '越权', email: 'bad@example.test', password: 'password123', role: 'manager', position: '' }), { status: 403 })
     const goal = d.createAnnualGoal(manager, { title: '年度方向', year: 2026, target: '独立目标', progress: 27, description: '', ownerId: manager.id })
     assert.equal(goal.progress, 27)
     d.updateProject(manager, f.project.id, { version: f.project.version, status: 'archived' })
-    assert.throws(() => d.createPlan(member, f.planInput), { status: 400 })
+    assert.throws(() => d.createPlan(manager, { ...f.planInput, ownerId: member.id }), { status: 400 })
     assert.equal(d.bootstrap(member).plans[0].id, plan.id)
     assert.equal(d.bootstrap(other).plans.length, 0)
     assert.ok(d.bootstrap(member).users.every(user => !('passwordHash' in user)))
@@ -115,10 +115,10 @@ test('transactions roll back records and nested writes together', () => {
 test('merged submissions preserve both original responsibilities and cannot be edited as active plans', () => {
   const f = fixture(); const { domain: d, store, manager, member, other } = f
   try {
-    let a = d.createPlan(member, { ...f.planInput, title: '模型评测', expectedOutcome: '模型准确率报告' })
-    let b = d.createPlan(other, { ...f.planInput, title: '系统验证', category: '测试验证', expectedOutcome: '测试覆盖率报告' })
-    a = d.submitPlan(member, a.id, { version: a.version })
-    b = d.submitPlan(other, b.id, { version: b.version })
+    let a = d.createPlan(manager, { ownerId: member.id, ...f.planInput, title: '模型评测', expectedOutcome: '模型准确率报告' })
+    let b = d.createPlan(manager, { ownerId: other.id, ...f.planInput, title: '系统验证', category: '测试验证', expectedOutcome: '测试覆盖率报告' })
+    a = d.submitPlan(manager, a.id, { version: a.version })
+    b = d.submitPlan(manager, b.id, { version: b.version })
     const input = { planIds: [a.id, b.id], title: '联合验收', reason: '两个岗位共同交付同一成果' }
     assert.throws(() => d.mergePlans(member, input), { status: 403 })
     const merged = d.mergePlans(manager, input)
@@ -135,10 +135,10 @@ test('merged submissions preserve both original responsibilities and cannot be e
     d.publishMonth(manager, merged.month, { planIds: [merged.id] })
     assert.equal(store.list<Publication>('publications')[0].plans.length, 1)
     assert.ok(d.planHistory(other, b.id).some(event => event.action === 'submit'))
-    let unscopedA = d.createPlan(member, { ...f.planInput, projectId: null, category: '培训' })
-    let unscopedB = d.createPlan(other, { ...f.planInput, projectId: null, category: '申报' })
-    unscopedA = d.submitPlan(member, unscopedA.id, { version: unscopedA.version })
-    unscopedB = d.submitPlan(other, unscopedB.id, { version: unscopedB.version })
+    let unscopedA = d.createPlan(manager, { ownerId: member.id, ...f.planInput, projectId: null, category: '培训' })
+    let unscopedB = d.createPlan(manager, { ownerId: other.id, ...f.planInput, projectId: null, category: '申报' })
+    unscopedA = d.submitPlan(manager, unscopedA.id, { version: unscopedA.version })
+    unscopedB = d.submitPlan(manager, unscopedB.id, { version: unscopedB.version })
     assert.throws(() => d.mergePlans(manager, { ...input, planIds: [unscopedA.id, unscopedB.id] }), { status: 400 })
   } finally { store.close() }
 })
@@ -146,8 +146,8 @@ test('merged submissions preserve both original responsibilities and cannot be e
 test('weekly submission must overlap its month, and archive rejects new weeks but retains editable history', () => {
   const f = fixture(); const { domain: d, store, manager, member } = f
   try {
-    let plan = d.createPlan(member, f.planInput)
-    plan = d.submitPlan(member, plan.id, { version: plan.version })
+    let plan = d.createPlan(manager, { ...f.planInput, ownerId: member.id })
+    plan = d.submitPlan(manager, plan.id, { version: plan.version })
     plan = d.reviewPlan(manager, plan.id, { version: plan.version, decision: 'approve' })
     d.publishMonth(manager, plan.month, { planIds: [plan.id] })
     const task = d.createTask(member, { title: '跨月边界任务', monthlyPlanId: plan.id, description: '', dueDate: '2026-09-30' })
@@ -163,7 +163,7 @@ test('weekly submission must overlap its month, and archive rejects new weeks bu
 test('historical plan access never grants access to a new owner’s future tasks or drafts', () => {
   const f = fixture(); const { domain: d, store, manager, member, other } = f
   try {
-    let plan = d.createPlan(member, f.planInput)
+    let plan = d.createPlan(manager, { ...f.planInput, ownerId: member.id })
     plan = d.updatePlan(manager, plan.id, { version: plan.version, ownerId: other.id, collaboratorIds: [] })
     const task = d.createTask(other, { title: '新负责人私人草稿', monthlyPlanId: plan.id, dueDate: plan.dueDate })
     const weekly = d.createWeeklyRecord(other, { taskId: task.id, weekStart: '2026-09-07', commitment: '新负责人的未提交承诺' })
@@ -172,7 +172,7 @@ test('historical plan access never grants access to a new owner’s future tasks
     assert.ok(d.planHistory(member, plan.id).some(event => event.action === 'update'))
     assert.ok(!visible.tasks.some(item => item.id === task.id))
     assert.ok(!visible.weeklyRecords.some(item => item.id === weekly.id))
-    plan = d.submitPlan(other, plan.id, { version: plan.version })
+    plan = d.submitPlan(manager, plan.id, { version: plan.version })
     plan = d.reviewPlan(manager, plan.id, { version: plan.version, decision: 'approve' })
     d.publishMonth(manager, plan.month, { planIds: [plan.id] })
     assert.equal(d.bootstrap(member).publications.length, 0)

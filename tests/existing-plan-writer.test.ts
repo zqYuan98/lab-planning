@@ -70,14 +70,14 @@ test('imported omissions stay editable while ordinary creation remains strict', 
   assert.equal(updatedPlan.dueDate, '')
   assert.equal(updatedWeek.actualOutcome, '')
   assert.equal(updatedTask.description.length, 20000)
-  assert.throws(() => f.domain.createPlan(f.member, { month: '2026-09', title: '普通新计划', importSource: imported.plan.importSource }), { status: 400 })
+  assert.throws(() => f.domain.createPlan(f.manager, { ownerId: f.member.id, month: '2026-09', title: '普通新计划', importSource: imported.plan.importSource }), { status: 400 })
   assert.throws(() => f.domain.createTask(f.member, { title: '普通新任务', isTemporary: false, importSource: task.importSource }), { status: 400 })
   assert.throws(() => f.domain.createWeeklyRecord(f.member, { taskId: task.id, weekStart: '2026-09-14', commitment: '', importSource: imported.weekly.importSource }), { status: 400 })
 })
 
 test('existing draft IDs are promoted without touching reused task status and edited drafts are rejected', t => {
   const f = fixture(t)
-  const draft = f.domain.createPlan(f.member, { month: '2026-09', title: '原草稿', category: '研发', expectedOutcome: '原成果计划', acceptanceCriteria: '原标准', dueDate: '2026-09-30' })
+  const draft = f.domain.createPlan(f.manager, { ownerId: f.member.id, month: '2026-09', title: '原草稿', category: '研发', expectedOutcome: '原成果计划', acceptanceCriteria: '原标准', dueDate: '2026-09-30' })
   let task = f.domain.createTask(f.member, { title: '既有任务', monthlyPlanId: draft.id, dueDate: '2026-09-12' })
   task = f.domain.updateTask(f.member, task.id, { version: task.version, status: 'doing' })
   const draftWeek = f.domain.createWeeklyRecord(f.member, { taskId: task.id, weekStart: '2026-09-07', commitment: '原周承诺', submitted: false })
@@ -93,8 +93,8 @@ test('existing draft IDs are promoted without touching reused task status and ed
   assert.equal(f.store.get<Task>('tasks', task.id)!.status, 'doing')
   assert.equal(f.store.list<MonthlyPlan>('plans').length, 1)
   assert.equal(f.store.list<WeeklyRecord>('weeklyRecords').length, 1)
-  const another = f.domain.createPlan(f.member, { month: '2026-09', title: '手改草稿', category: '研发', expectedOutcome: '成果', acceptanceCriteria: '标准', dueDate: '2026-09-30' })
-  f.domain.updatePlan(f.member, another.id, { version: another.version, title: '已手工修改' })
+  const another = f.domain.createPlan(f.manager, { ownerId: f.member.id, month: '2026-09', title: '手改草稿', category: '研发', expectedOutcome: '成果', acceptanceCriteria: '标准', dueDate: '2026-09-30' })
+  f.domain.updatePlan(f.manager, another.id, { version: another.version, title: '已手工修改' })
   assert.throws(() => new ExistingPlanWriter(f.store, f.manager, { id: 'batch-4', sourceId: 'source-4' }).monthly(row(f.member.id), another.id), { status: 409 })
 })
 

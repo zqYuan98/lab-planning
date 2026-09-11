@@ -99,7 +99,7 @@ test('server prevents ownership spoofing, temporary-work bypass and snapshot rel
     await other.request('/auth/login', { email: outsider.email, password })
     const input = { month: '2026-09', title: '研发成果', category: '研发', expectedOutcome: '验证报告', acceptanceCriteria: '评测通过', dueDate: '2026-09-30' }
     await member.request('/plans', { ...input, ownerId: outsider.id }, 'POST', 403)
-    const plan = await member.request<MonthlyPlan>('/plans', { ...input, status: 'published', acceptanceStatus: 'accepted' })
+    const plan = await manager.request<MonthlyPlan>('/plans', { ...input, ownerId: person.id, status: 'published', acceptanceStatus: 'accepted' })
     assert.equal(plan.status, 'draft')
     assert.equal(plan.acceptanceStatus, 'pending')
     await other.request(`/plans/${plan.id}/history`, undefined, 'GET', 403)
