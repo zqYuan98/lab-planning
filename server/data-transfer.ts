@@ -34,11 +34,18 @@ export function exportBusinessData(store: Store, actor: User, options: ExportOpt
       publications: visible.publications, reports: visible.reports,
       // Authentication, API connections and tokens are deliberately outside a business-data packet.
       events: isManager ? store.list<BusinessCollections['events'][number]>('events').filter(event => Object.hasOwn(businessEventCollections, event.entityType)) : [],
+      weeklyRules: isManager ? store.list('weeklyRules') : [],
+      weeklyCycles: isManager ? store.list('weeklyCycles') : [],
+      weeklyDuties: store.list<BusinessCollections['weeklyDuties'][number]>('weeklyDuties').filter(row => isManager || row.ownerId === actor.id),
+      weeklySubmissions: store.list<BusinessCollections['weeklySubmissions'][number]>('weeklySubmissions').filter(row => isManager || row.ownerId === actor.id),
+      weeklyMissing: store.list<BusinessCollections['weeklyMissing'][number]>('weeklyMissing').filter(row => isManager || row.ownerId === actor.id),
+      weeklyAdjustments: store.list<BusinessCollections['weeklyAdjustments'][number]>('weeklyAdjustments').filter(row => isManager || row.ownerId === actor.id),
     }
     const plans = new Map(visible.plans.map(row => [row.id, row]))
     const matches = (name: TransferCollection, value: Entity) => {
       const row = value as unknown as Record<string, unknown>
       if (name === 'users' || name === 'events') return complete
+      if (name === 'weeklyRules' || name === 'weeklyCycles') return complete
       if ((name === 'reports' || name === 'publications') && (options.ownerId || options.projectId)) return false
       if (name === 'history') {
         const record = value as HistoricalRecord
@@ -53,6 +60,7 @@ export function exportBusinessData(store: Store, actor: User, options: ExportOpt
       if (!options.month) return true
       if (name === 'plans' || name === 'publications') return row.month === options.month
       if (name === 'weeklyRecords') return overlapsMonth(String(row.weekStart), options.month)
+      if (['weeklyDuties', 'weeklySubmissions', 'weeklyMissing', 'weeklyAdjustments'].includes(name)) return overlapsMonth(String(row.cycleWeek), options.month)
       if (name === 'tasks') return String(row.dueDate).startsWith(options.month) || plans.get(String(row.monthlyPlanId))?.month === options.month
       if (name === 'annualGoals') return row.year === Number(options.month.slice(0, 4))
       if (name === 'reports') return row.type === 'monthly' ? row.period === options.month : overlapsMonth(String(row.period), options.month)
@@ -83,7 +91,7 @@ export function exportBusinessData(store: Store, actor: User, options: ExportOpt
     }
     const collections = emptyCollections()
     for (const name of collectionNames) (collections[name] as unknown[]) = (sources[name] as Entity[]).filter(row => selected[name].has(row.id)).map(row => projectRow(name, row))
-    return parsePacket({ application: 'lab-planning', formatVersion: 1, exportedAt: new Date().toISOString(), collections })
+    return parsePacket({ application: 'lab-planning', formatVersion: 2, exportedAt: new Date().toISOString(), collections })
   })
 }
 

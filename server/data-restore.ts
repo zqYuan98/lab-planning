@@ -3,6 +3,8 @@ import type { Entity, MonthlyPlan, Project, Publication, Report, Task, User, Wee
 import { canUseAccount } from '../shared/auth-policy.ts'
 import { manager } from './domain-common.ts'
 import { HttpError, Store } from './store.ts'
+import { reportSubmissionIssues, weeklyTransferIssues } from './weekly-submission-transfer.ts'
+import type { WeeklyReportSubmission } from '../shared/weekly-submissions.ts'
 import { businessEventCollections, canonical, collectionNames, emptyCollections, parsePacket, projectRow, remapUsers, rowReferences, storedCollection, type BusinessCollections, type BusinessDataPacket, type TransferCollection } from './data-transfer-schema.ts'
 
 export interface RestoreCount { total: number; insert: number; skip: number }
@@ -28,6 +30,7 @@ function semanticIssues(name: TransferCollection, input: unknown, issue: (messag
   }
   if (name === 'plans') {
     const plan = input as MonthlyPlan
+    if (plan.visibility && !nested) issue(`${label}：参考或历史投影不能作为真实目标恢复，请使用管理员完整导出`)
     if (!plan.projectId && !plan.category.trim() && !plan.importSource) issue(`${label}：缺少所属项目或工作类别`)
     if ((!plan.expectedOutcome.trim() || !plan.acceptanceCriteria.trim()) && !plan.importSource) issue(`${label}：预期成果和验收标准不能为空白`)
     if (plan.dueDate && !plan.dueDate.startsWith(plan.month)) issue(`${label}：截止日期不在所属月份`)
@@ -62,10 +65,12 @@ function semanticIssues(name: TransferCollection, input: unknown, issue: (messag
     if (!validPeriod) issue(`${label}：报告周期无效`)
     if ((report.status === 'finalized') !== (report.finalizedAt !== null)) issue(`${label}：定稿状态与定稿时间不一致`)
     for (const [key, entries] of Object.entries(report.snapshot)) {
+      if (key === 'weeklySubmissions') { for (const entry of entries as WeeklyReportSubmission[]) reportSubmissionIssues(entry, issue); continue }
       const target = ({ contextPlans: 'plans', nextPlans: 'plans', nextWeeklyRecords: 'weeklyRecords', changes: 'events' } as Record<string, TransferCollection>)[key] ?? key as TransferCollection
       for (const entry of entries) semanticIssues(target, entry, issue, true)
     }
   }
+  if (name === 'weeklySubmissions') for (const record of (input as BusinessCollections['weeklySubmissions'][number]).records) semanticIssues('weeklyRecords', record, issue, true)
   if (name === 'events') {
     const target = businessEventCollections[String(row.entityType)]
     if (target !== 'reports') for (const field of ['before', 'after']) {
@@ -185,6 +190,7 @@ function inspectRestore(store: Store, packet: BusinessDataPacket, requestedMappi
   unique<WeeklyRecord>('weeklyRecords', row => `${row.taskId}/${row.weekStart}`)
   unique<Publication>('publications', row => `${row.month}/${row.revision}`)
   unique<Report>('reports', row => `${row.type}/${row.period}/${row.revision}`)
+  weeklyTransferIssues(rows, available, issue)
   return {
     rows,
     preview: { canRestore: issues.length === 0, fingerprint: fingerprint({ packet, mapping, current }), counts, issues, missingUsers, mapping },

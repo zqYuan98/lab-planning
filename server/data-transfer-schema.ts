@@ -1,22 +1,25 @@
 import { z } from 'zod'
 import type { AnnualGoal, AuditEvent, MonthlyPlan, Project, Publication, Report, Task, User, WeeklyRecord } from '../shared/types.ts'
 import type { HistoricalRecord } from './import-service.ts'
+import type { WeeklyRule, WeeklyCycle, WeeklyDuty, WeeklySubmission, WeeklyMissing, WeeklyAdjustment } from '../shared/weekly-submissions.ts'
 import { HttpError } from './store.ts'
 
-export const collectionNames = ['users', 'projects', 'annualGoals', 'plans', 'tasks', 'weeklyRecords', 'history', 'publications', 'reports', 'events'] as const
+export const collectionNames = ['users', 'projects', 'annualGoals', 'plans', 'tasks', 'weeklyRecords', 'history', 'publications', 'reports', 'events', 'weeklyRules', 'weeklyCycles', 'weeklyDuties', 'weeklySubmissions', 'weeklyMissing', 'weeklyAdjustments'] as const
 export type TransferCollection = typeof collectionNames[number]
 export type TransferType = 'all' | 'plans' | 'weeklyRecords' | 'projects' | 'tasks' | 'annualGoals' | 'history'
 export interface BusinessCollections {
   users: User[]; projects: Project[]; annualGoals: AnnualGoal[]; plans: MonthlyPlan[]; tasks: Task[]
   weeklyRecords: WeeklyRecord[]; history: HistoricalRecord[]; publications: Publication[]; reports: Report[]; events: AuditEvent[]
+  weeklyRules: WeeklyRule[]; weeklyCycles: WeeklyCycle[]; weeklyDuties: WeeklyDuty[]; weeklySubmissions: WeeklySubmission[]; weeklyMissing: WeeklyMissing[]; weeklyAdjustments: WeeklyAdjustment[]
 }
 export interface BusinessDataPacket {
-  application: 'lab-planning'; formatVersion: 1; exportedAt: string; collections: BusinessCollections
+  application: 'lab-planning'; formatVersion: 1 | 2; exportedAt: string; collections: BusinessCollections
 }
 export const storedCollection = (name: TransferCollection) => name === 'history' ? 'historicalRecords' : name
 export const businessEventCollections: Record<string, TransferCollection> = {
   project: 'projects', annualGoal: 'annualGoals', plan: 'plans', plans: 'plans', monthlyPlan: 'plans',
   task: 'tasks', weeklyRecord: 'weeklyRecords', historicalRecord: 'history', report: 'reports',
+  weeklyRule: 'weeklyRules', weeklyCycle: 'weeklyCycles',
 }
 const id = z.string().min(1).max(200)
 const line = z.string().max(12000)
@@ -31,9 +34,9 @@ const goalSchema = z.object({ ...entity, title: z.string().min(1).max(300), year
 const planSchema = z.object({ ...entity, month, title: z.string().min(1).max(300), projectId: id.nullable(), category: z.string().max(100), ownerId: id, collaboratorIds: z.array(id).max(100),
   expectedOutcome: line, acceptanceCriteria: line, dueDate: z.union([day, z.literal('')]), priority: z.enum(['high', 'medium', 'low']), status: z.enum(['draft', 'submitted', 'approved', 'returned', 'published', 'merged']),
   reviewComment: line, publishedVersion: z.number().int().positive().nullable(), sourcePlanId: id.nullable(), actualOutcome: line, acceptanceStatus: z.enum(['pending', 'submitted', 'accepted', 'not_completed']), acceptanceNote: line,
-  mergedFromIds: z.array(id).max(50).optional(), mergedIntoId: id.optional(), importSource: importSourceSchema.optional(), visibility: z.literal('reference').optional(),
+  mergedFromIds: z.array(id).max(50).optional(), mergedIntoId: id.optional(), importSource: importSourceSchema.optional(), visibility: z.enum(['reference', 'historical']).optional(),
 }).strict().superRefine((row, ctx) => {
-  if (!row.importSource && row.visibility !== 'reference' && (!row.expectedOutcome.trim() || !row.acceptanceCriteria.trim() || !row.dueDate)) ctx.addIssue({ code: 'custom', message: '普通月计划的预期成果、验收标准和截止日期不可为空' })
+  if (!row.importSource && !row.visibility && (!row.expectedOutcome.trim() || !row.acceptanceCriteria.trim() || !row.dueDate)) ctx.addIssue({ code: 'custom', message: '普通月计划的预期成果、验收标准和截止日期不可为空' })
 })
 const taskSchema = z.object({ ...entity, title: z.string().min(1).max(300), monthlyPlanId: id.nullable(), ownerId: id, description: z.string().max(20000), dueDate: z.union([day, z.literal('')]),
   status: z.enum(['todo', 'doing', 'blocked', 'done']), isTemporary: z.boolean(), temporaryReason: line, importSource: importSourceSchema.optional(),
@@ -54,8 +57,19 @@ const importRowSchema = z.object({ id, kind: z.enum(['monthly', 'weekly']), sele
 }).strict()
 const historySchema = z.object({ ...entity, importedBy: id, batchId: id, sourceId: id, row: importRowSchema }).strict()
 const reportPatchSchema = z.object({ id: id.optional(), version: z.number().int().positive(), title: z.string().max(200).optional(), narrative: z.string().max(120000).optional(), status: z.enum(['draft', 'finalized']).optional(), finalizedAt: timestamp.nullable().optional() }).strict()
-const auditSchema = z.object({ ...entity, entityType: z.enum(['project', 'annualGoal', 'plan', 'plans', 'monthlyPlan', 'task', 'weeklyRecord', 'historicalRecord', 'report']), entityId: id, actorId: id, action: z.string().min(1).max(100), reason: line, before: z.unknown(), after: z.unknown() }).strict().superRefine((event, ctx) => {
-  const schema = event.entityType === 'report' ? reportPatchSchema : ({ project: projectSchema, annualGoal: goalSchema, plan: planSchema, plans: planSchema, monthlyPlan: planSchema, task: taskSchema, weeklyRecord: weeklySchema, historicalRecord: historySchema } as const)[event.entityType]
+const week = day.refine(v => new Date(`${v}T00:00:00Z`).getUTCDay() === 1)
+const kind = z.enum(['results', 'plan'])
+const dutyIdentity = { ownerId: id, cycleWeek: week, kind }
+const ruleSchema = z.object({ ...entity, id: z.literal('weekly-submission-rule'), enabled: z.boolean(), effectiveWeek: week, timezone: z.literal('Asia/Shanghai'), windows: z.array(z.object({ fromWeek: week, toWeek: week.nullable() }).strict()).max(50000) }).strict()
+const cycleSchema = z.object({ ...entity, week, deadlineAt: timestamp, rosterIds: z.array(id).max(50000), needsReview: z.boolean(), confirmedBy: id.nullable(), confirmationReason: line, frozenAt: timestamp }).strict()
+const dutySchema = z.object({ ...entity, ...dutyIdentity, contentWeek: week, deadlineAt: timestamp }).strict()
+const submissionSchema = z.object({ ...entity, ...dutyIdentity, dutyId: id, submittedAt: timestamp, actorId: id, reason: line, note: line, requestId: id, records: z.array(weeklySchema).max(50000), retainedDraftIds: z.array(id).max(50000), retainedDraftManifest: z.array(z.object({ id, version: z.number().int().positive() }).strict()).max(50000) }).strict()
+const missingSchema = z.object({ ...entity, ...dutyIdentity, dutyId: id, deadlineAt: timestamp, detectedAt: timestamp }).strict()
+const adjustmentSchema = z.object({ ...entity, ...dutyIdentity, dutyId: id, action: z.enum(['exempt', 'revoke_exemption', 'invalidate', 'restore']), submissionId: id.nullable(), actorId: id, reason: line.min(1), occurredAt: timestamp }).strict()
+const reportSubmissionSchema = z.object({ ...dutyIdentity, status: z.enum(['due', 'on_time', 'missing', 'late', 'exempt']), deadlineAt: timestamp, firstSubmittedAt: timestamp.nullable(), missingAtDeadline: z.boolean(), exemptionReason: line }).strict()
+const weeklySchemas = { weeklyRules: ruleSchema, weeklyCycles: cycleSchema, weeklyDuties: dutySchema, weeklySubmissions: submissionSchema, weeklyMissing: missingSchema, weeklyAdjustments: adjustmentSchema }
+const auditSchema = z.object({ ...entity, entityType: z.enum(['project', 'annualGoal', 'plan', 'plans', 'monthlyPlan', 'task', 'weeklyRecord', 'historicalRecord', 'report', 'weeklyRule', 'weeklyCycle']), entityId: id, actorId: id, action: z.string().min(1).max(100), reason: line, before: z.unknown(), after: z.unknown() }).strict().superRefine((event, ctx) => {
+  const schema = event.entityType === 'report' ? reportPatchSchema : ({ project: projectSchema, annualGoal: goalSchema, plan: planSchema, plans: planSchema, monthlyPlan: planSchema, task: taskSchema, weeklyRecord: weeklySchema, historicalRecord: historySchema, weeklyRule: ruleSchema, weeklyCycle: cycleSchema } as const)[event.entityType]
   for (const field of ['before', 'after'] as const) {
     const value = event[field]
     if (value === null) continue
@@ -67,13 +81,18 @@ const publicationSchema = z.object({ ...entity, month, revision: z.number().int(
 const snapshotSchema = z.object({ plans: z.array(planSchema).max(50000), contextPlans: z.array(planSchema).max(50000).optional(), weeklyRecords: z.array(weeklySchema).max(50000), tasks: z.array(taskSchema).max(50000),
   projects: z.array(projectSchema).max(50000), users: z.array(userSchema).max(50000), annualGoals: z.array(goalSchema).max(50000), nextPlans: z.array(planSchema).max(50000), nextWeeklyRecords: z.array(weeklySchema).max(50000),
   publications: z.array(publicationSchema).max(50000), changes: z.array(auditSchema).max(50000),
+  weeklySubmissions: z.array(reportSubmissionSchema).max(50000).optional(),
 }).strict()
 const reportSchema = z.object({ ...entity, type: z.enum(['weekly', 'monthly']), period: z.string().max(10), title: z.string().min(1).max(200), status: z.enum(['draft', 'finalized']), revision: z.number().int().positive(), narrative: z.string().max(120000), snapshot: snapshotSchema, authorId: id, finalizedAt: timestamp.nullable() }).strict()
-export const schemas = { users: userSchema, projects: projectSchema, annualGoals: goalSchema, plans: planSchema, tasks: taskSchema, weeklyRecords: weeklySchema, history: historySchema, publications: publicationSchema, reports: reportSchema, events: auditSchema }
+export const schemas = { users: userSchema, projects: projectSchema, annualGoals: goalSchema, plans: planSchema, tasks: taskSchema, weeklyRecords: weeklySchema, history: historySchema, publications: publicationSchema, reports: reportSchema, events: auditSchema, ...weeklySchemas }
 const collectionsSchema = z.object({ users: z.array(userSchema).max(50000), projects: z.array(projectSchema).max(50000), annualGoals: z.array(goalSchema).max(50000), plans: z.array(planSchema).max(50000),
   tasks: z.array(taskSchema).max(50000), weeklyRecords: z.array(weeklySchema).max(50000), history: z.array(historySchema).max(50000), publications: z.array(publicationSchema).max(50000), reports: z.array(reportSchema).max(50000), events: z.array(auditSchema).max(50000),
 }).strict()
-const packetSchema = z.object({ application: z.literal('lab-planning'), formatVersion: z.literal(1), exportedAt: timestamp, collections: collectionsSchema }).strict()
+const weeklyCollectionsSchema = z.object({ weeklyRules: z.array(ruleSchema).max(1), weeklyCycles: z.array(cycleSchema).max(50000), weeklyDuties: z.array(dutySchema).max(50000), weeklySubmissions: z.array(submissionSchema).max(50000), weeklyMissing: z.array(missingSchema).max(50000), weeklyAdjustments: z.array(adjustmentSchema).max(50000) }).strict()
+const packetSchema = z.discriminatedUnion('formatVersion', [
+  z.object({ application: z.literal('lab-planning'), formatVersion: z.literal(1), exportedAt: timestamp, collections: collectionsSchema }).strict(),
+  z.object({ application: z.literal('lab-planning'), formatVersion: z.literal(2), exportedAt: timestamp, collections: collectionsSchema.extend(weeklyCollectionsSchema.shape) }).strict(),
+])
 
 export function parsePacket(input: unknown): BusinessDataPacket {
   let encoded: string
@@ -84,7 +103,8 @@ export function parsePacket(input: unknown): BusinessDataPacket {
     const location = parsed.error.issues[0]?.path.map(String).join('.') || '根对象'
     throw new HttpError(400, `迁移包格式无效或含未允许字段：${location}`)
   }
-  return parsed.data as BusinessDataPacket
+  // Normalize legacy inputs to the current in-memory packet shape without inventing facts.
+  return { ...parsed.data, formatVersion: 2, collections: { ...emptyCollections(), ...parsed.data.collections } } as BusinessDataPacket
 }
 
 function pick(value: unknown, fields: string[]): Record<string, unknown> {
@@ -98,10 +118,16 @@ export function projectRow(collection: TransferCollection, value: unknown): Reco
   const row = pick(value, collection === 'events' ? auditFields : Object.keys((schema as typeof projectSchema).shape))
   if (row.importSource) row.importSource = pick(row.importSource, Object.keys(importSourceSchema.shape))
   if (collection === 'history') row.row = pick(row.row, Object.keys(importRowSchema.shape))
+  if (collection === 'weeklyRules') row.windows = (row.windows as unknown[]).map(item => pick(item, ['fromWeek', 'toWeek']))
+  if (collection === 'weeklySubmissions') {
+    row.records = (row.records as unknown[]).map(item => projectRow('weeklyRecords', item))
+    row.retainedDraftManifest = (row.retainedDraftManifest as unknown[]).map(item => pick(item, ['id', 'version']))
+  }
   if (collection === 'publications') row.plans = (row.plans as unknown[]).map(plan => projectRow('plans', plan))
   if (collection === 'reports') {
     const snapshot = row.snapshot as Record<string, unknown[]>
     row.snapshot = Object.fromEntries(Object.keys(snapshotSchema.shape).filter(key => snapshot[key] !== undefined).map(key => {
+      if (key === 'weeklySubmissions') return [key, snapshot[key].map(item => pick(item, Object.keys(reportSubmissionSchema.shape)))]
       const target = ({ contextPlans: 'plans', nextPlans: 'plans', nextWeeklyRecords: 'weeklyRecords', changes: 'events' } as Record<string, TransferCollection>)[key] ?? key as TransferCollection
       return [key, snapshot[key].map(item => projectRow(target, item))]
     }))
@@ -119,7 +145,7 @@ export function projectRow(collection: TransferCollection, value: unknown): Reco
 }
 
 export function emptyCollections(): BusinessCollections {
-  return { users: [], projects: [], annualGoals: [], plans: [], tasks: [], weeklyRecords: [], history: [], publications: [], reports: [], events: [] }
+  return { users: [], projects: [], annualGoals: [], plans: [], tasks: [], weeklyRecords: [], history: [], publications: [], reports: [], events: [], weeklyRules: [], weeklyCycles: [], weeklyDuties: [], weeklySubmissions: [], weeklyMissing: [], weeklyAdjustments: [] }
 }
 
 export function canonical(value: unknown): string {
@@ -144,6 +170,16 @@ export function rowReferences(collection: TransferCollection, value: unknown): D
     }
     if (target === 'tasks' || target === 'weeklyRecords') add('plans', row.monthlyPlanId)
     if (target === 'weeklyRecords') add('tasks', row.taskId)
+    if (target === 'weeklyCycles') { add('weeklyRules', 'weekly-submission-rule'); add('users', row.confirmedBy); for (const id of row.rosterIds as string[]) add('users', id) }
+    if (['weeklyDuties', 'weeklySubmissions', 'weeklyMissing', 'weeklyAdjustments'].includes(target)) { add('users', row.ownerId); add('weeklyCycles', row.cycleWeek) }
+    if (['weeklySubmissions', 'weeklyMissing', 'weeklyAdjustments'].includes(target)) add('weeklyDuties', row.dutyId)
+    if (target === 'weeklySubmissions' || target === 'weeklyAdjustments') add('users', row.actorId)
+    if (target === 'weeklyAdjustments') add('weeklySubmissions', row.submissionId)
+    if (target === 'weeklySubmissions') {
+      for (const item of row.records as unknown[]) visit('weeklyRecords', item, true)
+      for (const id of row.retainedDraftIds as string[]) add('weeklyRecords', id)
+      for (const item of row.retainedDraftManifest as { id: string }[]) add('weeklyRecords', item.id)
+    }
     if (target === 'history') {
       add('users', row.importedBy)
       const item = row.row as Record<string, unknown>
@@ -159,6 +195,7 @@ export function rowReferences(collection: TransferCollection, value: unknown): D
       add('users', row.authorId)
       const snapshot = row.snapshot as Record<string, unknown[]>
       for (const [key, items] of Object.entries(snapshot)) {
+        if (key === 'weeklySubmissions') { for (const item of items as { ownerId: string }[]) add('users', item.ownerId); continue }
         const child = ({ contextPlans: 'plans', nextPlans: 'plans', nextWeeklyRecords: 'weeklyRecords', changes: 'events' } as Record<string, TransferCollection>)[key] ?? key as TransferCollection
         for (const item of items) visit(child, item, true)
       }
@@ -182,6 +219,10 @@ export function remapUsers(collection: TransferCollection, value: unknown, mappi
   const replace = (field: string) => { if (typeof row[field] === 'string' && mapping[row[field] as string]) row[field] = mapping[row[field] as string] }
   if (collection === 'users') replace('id')
   if (['projects', 'annualGoals', 'plans', 'tasks', 'weeklyRecords'].includes(collection)) replace('ownerId')
+  if (['weeklyDuties', 'weeklySubmissions', 'weeklyMissing', 'weeklyAdjustments'].includes(collection)) replace('ownerId')
+  if (collection === 'weeklyCycles') { replace('confirmedBy'); row.rosterIds = (row.rosterIds as string[]).map(id => mapping[id] ?? id) }
+  if (collection === 'weeklySubmissions' || collection === 'weeklyAdjustments') replace('actorId')
+  if (collection === 'weeklySubmissions') row.records = (row.records as unknown[]).map(item => remapUsers('weeklyRecords', item, mapping))
   if (collection === 'plans') row.collaboratorIds = (row.collaboratorIds as string[]).map(id => mapping[id] ?? id)
   if (collection === 'history') {
     replace('importedBy')
@@ -192,6 +233,7 @@ export function remapUsers(collection: TransferCollection, value: unknown, mappi
   if (collection === 'reports') {
     replace('authorId')
     row.snapshot = Object.fromEntries(Object.entries(row.snapshot as Record<string, unknown[]>).map(([key, items]) => {
+      if (key === 'weeklySubmissions') return [key, items.map(item => { const summary = item as { ownerId: string }; return { ...summary, ownerId: mapping[summary.ownerId] ?? summary.ownerId } })]
       const child = ({ contextPlans: 'plans', nextPlans: 'plans', nextWeeklyRecords: 'weeklyRecords', changes: 'events' } as Record<string, TransferCollection>)[key] ?? key as TransferCollection
       return [key, items.map(item => remapUsers(child, item, mapping))]
     }))
