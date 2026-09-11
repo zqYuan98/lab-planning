@@ -1,6 +1,7 @@
 import type { Entity, ReportSchedule, User } from '../shared/types.ts'
 import type { Store } from './store.ts'
 import { generateReport, normalizeReportPeriod, shiftMonth } from './reports.ts'
+import { WeeklySubmissionService } from './weekly-submissions.ts'
 
 interface ScheduleRun extends Entity { key: string; type: 'weekly' | 'monthly'; period: string; reportId: string }
 const SCHEDULE_ID = 'report-schedule'
@@ -49,7 +50,11 @@ export function runScheduledReports(store: Store, now = new Date()): string[] {
   return reportIds
 }
 export function startScheduler(store: Store): () => void {
-  const tick = () => { try { runScheduledReports(store) } catch (error) { console.error('报告定时任务未完成：', error instanceof Error ? error.message : '未知错误') } }
+  const submissions = new WeeklySubmissionService(store)
+  const tick = () => {
+    try { submissions.reconcile() } catch (error) { console.error('周提报核对未完成：', error instanceof Error ? error.message : '未知错误') }
+    try { runScheduledReports(store) } catch (error) { console.error('报告定时任务未完成：', error instanceof Error ? error.message : '未知错误') }
+  }
   const interval = setInterval(tick, 30000)
   interval.unref()
   tick()

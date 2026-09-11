@@ -162,8 +162,8 @@ export function buildOverview(data: Bootstrap, today = shanghaiToday()) {
       !data.plans.some(
         (plan) =>
           plan.month === month &&
-          plan.ownerId === user.id &&
-          plan.status !== "draft",
+          (plan.ownerId === user.id || plan.collaboratorIds.includes(user.id)) &&
+          !plan.visibility && plan.status !== "merged",
       ),
   );
   const planExecution = (plan: MonthlyPlan) => {

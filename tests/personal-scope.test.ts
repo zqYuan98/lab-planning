@@ -95,6 +95,14 @@ test('merged source prose is projected for member reads and result responses whi
   assert.ok(f.store.get<MonthlyPlan>('plans', merged.id)!.expectedOutcome.includes('B_SOURCE_SECRET'))
   const raw = f.domain.planHistory(f.manager, merged.id).find(event => event.action === 'merge_create')!
   assert.equal((raw.before as MonthlyPlan[]).length, 2)
+  let carried = f.publish(f.domain.carryPlan(f.manager, merged.id, { month: '2026-10', dueDate: '2026-10-30', reason: '跨月继续' }))
+  carried = f.publish(f.domain.carryPlan(f.manager, carried.id, { month: '2026-11', dueDate: '2026-11-30', reason: '再次承接' }))
+  for (const actor of [f.member, f.peer]) {
+    for (const item of [f.domain.bootstrap(actor), f.domain.planHistory(actor, carried.id), exportBusinessData(f.store, actor)]) {
+      // Each actor may still read their own original source; peer source must stay private through carries.
+      assert.ok(!JSON.stringify(item).includes(actor.id === f.member.id ? 'B_SOURCE_SECRET' : 'A_SOURCE_SECRET'))
+    }
+  }
 })
 
 test('team goal mutations and monthly imports require manager authority; personal task writes reject owner and goal tampering', t => {
@@ -114,6 +122,27 @@ test('team goal mutations and monthly imports require manager authority; persona
     assert.throws(() => f.imports.commit(f.member, batch.id, { version: batch.version }), { status: 403 })
   }
   assert.equal(f.store.list<Task>('tasks').length, 0)
+})
+
+test('member can edit and commit the visible subset after an import row is reassigned', t => {
+  const f = fixture(t)
+  let batch = f.imports.structured(f.member, { sourceKey: 'reassigned-edit', mode: 'history', rows: [
+    { kind: 'weekly', title: '本人的资料', ownerId: f.member.id, sourceRow: 1 },
+    { kind: 'weekly', title: '重新分配的资料', ownerId: f.member.id, sourceRow: 2 },
+  ] })
+  batch = f.imports.edit(f.manager, batch.id, { version: batch.version, rows: batch.rows.map((row, index) => index ? { ...row, ownerId: f.peer.id } : row) })
+  const visible = f.imports.get(f.member, batch.id)
+  assert.equal(visible.rows.length, 1)
+  const edited = f.imports.edit(f.member, batch.id, { version: visible.version, rows: visible.rows.map(row => ({ ...row, title: '本人校对后的资料' })) })
+  const completed = f.imports.commit(f.member, batch.id, { version: edited.version })
+  assert.equal(completed.status, 'committed')
+  assert.equal(f.store.list<HistoricalRecord>('historicalRecords').length, 1)
+  const admin = f.imports.get(f.manager, batch.id)
+  assert.equal(admin.status, 'parsed')
+  assert.equal(admin.rows[1].ownerId, f.peer.id)
+  assert.equal(admin.rows[1].result, undefined)
+  f.imports.commit(f.manager, admin.id, { version: admin.version })
+  assert.equal(f.store.list<HistoricalRecord>('historicalRecords').length, 2)
 })
 
 test('legacy import results and reassigned historical rows cannot expose peer work through get, history or export', t => {

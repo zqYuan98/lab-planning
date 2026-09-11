@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import type { Task, WeeklyRecord } from '../../shared/types'
 import { api, json } from '../api'
+import WeeklySubmissionPanel from '../components/WeeklySubmissionPanel'
 import {
   Badge,
   Empty,
@@ -99,6 +100,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
   const selectedTask = data.tasks.find((task) => task.id === selected?.taskId)
   return (
     <>
+      <WeeklySubmissionPanel data={data} refresh={refresh} notify={notify} onSelectWeek={value => { setWeek(value); setOwner(manager ? owner : data.user.id); setFilter('all') }} />
       <PageHeader
         eyebrow="EXECUTION / WEEKLY"
         title={manager ? '每周执行' : '我的周计划'}
@@ -299,7 +301,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
                     {!record.monthlyPlanId && (
                       <Badge tone="amber">
                         {record.importSource ? (
-                          '未关联月计划'
+                          '未关联月度目标'
                         ) : (
                           <>
                             临时工作
@@ -322,10 +324,10 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
                   {plan
                     ? `${plan.month} · ${plan.title}`
                     : record.importSource
-                      ? '未关联月计划，保留原资料归属'
+                      ? '未关联月度目标，保留原资料归属'
                       : task?.monthlyPlanId
-                        ? '本周按临时工作记录，任务后续已关联月计划'
-                        : '临时事项，尚未关联月计划'}
+                        ? '本周按临时工作记录，任务后续已关联月度目标'
+                        : '临时事项，尚未关联月度目标'}
                   {task && (
                     <span>
                       任务当前截止{' '}
@@ -442,7 +444,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
         <div className="panel">
           <Empty
             title="当前没有周计划记录"
-            description="从本人负责或参与的月计划拆分任务，也可以提前保存草稿。"
+            description="从本人负责或参与的月度目标拆分任务，也可以提前保存草稿。"
             action={
               <button
                 className="button secondary"
@@ -613,7 +615,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
       {modal === 'relink' && selectedTask && (
         <Modal title="调整任务的月度归属" onClose={close}>
           <p className="modal-intro">
-            任务编号保持不变；以前的周记录继续引用当时的月计划，新周记录采用新的关联。
+            任务编号保持不变；以前的周记录继续引用当时的月度目标，新周记录采用新的关联。
           </p>
           <Form
             onCancel={close}
@@ -629,14 +631,14 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
               await saved('任务月度关联已调整')
             }}
           >
-            <Field label="关联已发布月计划">
+            <Field label="关联已发布月度目标">
               <select
                 name="monthlyPlanId"
                 required
                 defaultValue={selectedTask.monthlyPlanId || ''}
               >
                 <option value="" disabled>
-                  选择任务负责人参与的月计划
+                  选择任务负责人参与的月度目标
                 </option>
                 {data.plans
                   .filter(
@@ -694,6 +696,7 @@ function WeeklyCreate({
     [createdTask, setCreatedTask] = useState<Task | null>(null)
   const plans = data.plans.filter(
     (plan) =>
+      !plan.visibility &&
       (!plan.projectId ||
         data.projects.some(
           (project) =>
@@ -803,7 +806,7 @@ function WeeklyCreate({
                   onChange={(event) => setPlanId(event.target.value)}
                   required
                 >
-                  <option value="">选择本人负责或参与的月计划</option>
+                  <option value="">选择本人负责或参与的月度目标</option>
                   {plans
                     .sort((a, b) => b.month.localeCompare(a.month))
                     .map((item) => (
@@ -858,7 +861,7 @@ function WeeklyCreate({
                   name="temporaryReason"
                   required
                   rows={3}
-                  placeholder="说明来源、紧急性及为什么尚未列入月计划"
+                  placeholder="说明来源、紧急性及为什么尚未列入月度目标"
                 />
               </Field>
             )}
@@ -886,7 +889,7 @@ function WeeklyCreate({
           立即提交管理者查看
         </label>
         <p className="form-hint">
-          未发布月计划下的记录请先保存草稿。完成周工作后，月度成果仍需单独验收。
+          未发布月度目标下的记录请先保存草稿。完成周工作后，月度成果仍需单独验收。
         </p>
       </Form>
     </Modal>

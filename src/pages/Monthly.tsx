@@ -71,7 +71,7 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
   const [modal, setModal] = useState(
       initialPlan
         ? 'detail'
-        : intent?.action === 'create'
+        : manager && intent?.action === 'create'
           ? 'create'
           : readyToPublish
             ? 'publish'
@@ -115,8 +115,8 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
     <>
       <PageHeader
         eyebrow="PLANNING / MONTHLY"
-        title={manager ? '月度计划' : '我的月计划'}
-        description="已有计划可直接导入生效；新计划按提报、审核和发布流程推进，调整保留来源与原因。"
+        title={manager ? '月度目标' : '我参与的月度目标'}
+        description={manager ? '定义团队大项、负责人和参与人员，发布目标后跟进个人任务与整体成果。' : '查看本人负责或参与的目标，关联目标建立自己的任务；个人进展在周计划中维护。'}
         actions={
           <>
             {manager && (
@@ -134,20 +134,20 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
               <GitBranch size={16} />
               发布版本{publications.length > 0 && ` ${publications.length}`}
             </button>
-            <button
+            {manager && <button
               className="button primary"
               onClick={() => setModal('create')}
             >
               <Plus size={17} />
-              新增月度提报
-            </button>
+              新增月度目标
+            </button>}
           </>
         }
       />
       <div className="workflow-strip">
-        <span>新增计划：01 成员提报</span>
+        <span>01 管理员定义目标</span>
         <i>→</i>
-        <span>02 审核整理</span>
+        <span>02 明确负责人与参与人员</span>
         <i>→</i>
         <span>03 发布承诺</span>
         <i>→</i>
@@ -309,12 +309,7 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
                         </td>
                         <td>
                           <div className="row-actions">
-                            {plan.status !== 'merged' &&
-                              (manager ||
-                                (plan.ownerId === data.user.id &&
-                                  ['draft', 'returned'].includes(
-                                    plan.status,
-                                  ))) && (
+                            {plan.status !== 'merged' && manager && (
                                 <button onClick={() => open('edit', plan)}>
                                   编辑
                                 </button>
@@ -322,7 +317,7 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
                             {['draft', 'returned'].includes(plan.status) &&
                               (!plan.projectId ||
                                 !archivedProjectIds.has(plan.projectId)) &&
-                              (manager || plan.ownerId === data.user.id) && (
+                              manager && (
                                 <button
                                   disabled={action.busy}
                                   onClick={() =>
@@ -332,7 +327,7 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
                                           `/plans/${plan.id}/submit`,
                                           json({ version: plan.version }),
                                         ),
-                                      '月计划已提交审核',
+                                      '月度目标已提交审核',
                                     )
                                   }
                                 >
@@ -344,7 +339,7 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
                                 审核
                               </button>
                             )}
-                            {plan.status === 'published' &&
+                            {!plan.visibility && plan.status === 'published' &&
                               (manager ||
                                 (plan.ownerId === data.user.id &&
                                   plan.acceptanceStatus !== 'accepted')) && (
@@ -356,11 +351,12 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
                               plan.acceptanceStatus !== 'accepted' &&
                               (!plan.projectId ||
                                 !archivedProjectIds.has(plan.projectId)) &&
-                              (manager || plan.ownerId === data.user.id) && (
+                              manager && (
                                 <button onClick={() => open('carry', plan)}>
                                   跨月承接
                                 </button>
                               )}
+                            {!manager && !plan.visibility && plan.status !== 'merged' && (plan.ownerId === data.user.id || plan.collaboratorIds.includes(data.user.id)) && <button onClick={() => open('task', plan)}>关联个人任务</button>}
                             <button
                               onClick={() => {
                                 open('history', plan)
@@ -392,22 +388,22 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
             title={
               search || filter !== 'all'
                 ? '没有符合条件的计划'
-                : '这个月的计划，从第一份提报开始'
+                : manager ? '从第一个团队月度目标开始' : '本月暂无你参与的月度目标'
             }
-            description="写清负责人、预期成果和验收标准，审核发布后即可拆分每周工作。"
+            description={manager ? '指定负责人和参与人员，明确预期成果与验收标准。' : '管理员发布目标并将你加入参与人员后，即可关联个人任务。'}
             action={
-              <button
+              manager && <button
                 className="button secondary"
                 onClick={() => setModal('create')}
               >
                 <Plus size={16} />
-                新增月度提报
+                新增月度目标
               </button>
             }
           />
         </div>
       )}
-      {modal === 'merge' && (
+      {manager && modal === 'merge' && (
         <MergeProposals
           data={data}
           month={month}
@@ -415,7 +411,7 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
           onSaved={saved}
         />
       )}
-      {(modal === 'create' || modal === 'edit') && (
+      {manager && (modal === 'create' || modal === 'edit') && (
         <PlanEditor
           data={data}
           month={month}
@@ -424,8 +420,19 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
           onSaved={saved}
         />
       )}
-      {modal === 'publish' && (
-        <Modal title="发布部门月计划" onClose={close}>
+      {modal === 'task' && selected && !selected.visibility && <Modal title="关联目标，建立个人任务" onClose={close}>
+        <p className="modal-intro">月度目标：{selected.title}<br />月份：{selected.month} · 项目：{projectOf(data, selected.projectId)}<br />任务负责人：{data.user.name}</p>
+        <Form onCancel={close} submitLabel="保存个人任务" onSubmit={async event => {
+          await api('/tasks', json({ ...Object.fromEntries(new FormData(event.currentTarget)), monthlyPlanId: selected.id }))
+          await saved('个人任务已建立，可在周计划中安排每周工作')
+        }}>
+          <Field label="个人任务名称"><input name="title" required maxLength={300} /></Field>
+          <Field label="个人交付说明"><textarea name="description" rows={3} /></Field>
+          <Field label="截止日期"><input name="dueDate" type="date" defaultValue={selected.dueDate} required /></Field>
+        </Form>
+      </Modal>}
+      {manager && modal === 'publish' && (
+        <Modal title="发布部门月度目标" onClose={close}>
           <p className="modal-intro">
             将 {month} 有效项目及部门工作中已审核通过的 {approved.length}{' '}
             项成果发布为部门承诺。成员可据此提交正式周计划。
@@ -451,7 +458,7 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
                   reason: form.get('reason'),
                 }),
               )
-              await saved('部门月计划已发布')
+              await saved('部门月度目标已发布')
             }}
           >
             <Field
@@ -580,7 +587,7 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
         </Modal>
       )}
       {modal === 'carry' && selected && (
-        <Modal title="承接到下月计划" onClose={close}>
+        <Modal title="承接到下月度目标" onClose={close}>
           <p className="modal-intro">
             保留 {selected.month} 的承诺和结果，新建有来源关系的月度草稿。
           </p>
@@ -616,7 +623,7 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
               {publications.map((publication) => (
                 <div key={publication.id}>
                   <Badge tone="green">V{publication.revision}</Badge>
-                  <h3>{publication.reason || '月度计划首次发布'}</h3>
+                  <h3>{publication.reason || '月度目标首次发布'}</h3>
                   <p>
                     {dateTime(publication.createdAt)} ·{' '}
                     {nameOf(data, publication.actorId)} ·{' '}
@@ -709,7 +716,7 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
               </p>
             </div>
             <div>
-              <span>负责人 / 协作者</span>
+              <span>负责人 / 参与人员</span>
               <p>
                 {nameOf(data, selected.ownerId)} /{' '}
                 {selected.collaboratorIds
@@ -784,8 +791,8 @@ function PlanEditor({
         plan
           ? plan.status === 'published'
             ? '修订已发布计划'
-            : '编辑月度提报'
-          : '新增月度提报'
+            : '编辑月度目标'
+          : '新增月度目标'
       }
       onClose={onClose}
       wide
@@ -984,7 +991,7 @@ function HistoryDiff({
     acceptanceNote: '验收说明',
     month: '月份',
     ownerId: '负责人',
-    collaboratorIds: '协作者',
+    collaboratorIds: '参与人员',
     projectId: '所属项目',
   }
   if (!after || typeof after !== 'object') return null
@@ -1005,7 +1012,7 @@ function HistoryDiff({
         : key === 'collaboratorIds'
           ? Array.isArray(value) && value.length
             ? value.map((id) => nameOf(data, String(id))).join('、')
-            : '无协作者'
+            : '无参与人员'
           : key === 'projectId'
             ? projectOf(data, String(value))
             : key === 'status'

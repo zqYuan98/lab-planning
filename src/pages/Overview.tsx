@@ -169,7 +169,7 @@ export default function Overview({
   const planAction = () =>
     navigate("monthly", {
       month: view.month,
-      action: manager ? "publish" : "create",
+      ...(manager ? { action: "publish" as const } : {}),
     });
   const weeklyAction = () =>
     navigate("weekly", { action: "create", weekStart: view.weekStart });
@@ -224,7 +224,7 @@ export default function Overview({
             <i />
             {view.published.length
               ? `已发布 ${view.published.length} 项承诺`
-              : "月计划待发布"}
+              : "月度目标待发布"}
           </button>
           <span className="ov-pill">本周 {view.submitted.length} 条已提交</span>
         </div>
@@ -320,7 +320,7 @@ export default function Overview({
           </p>
           <button
             className="ov-card-link"
-            aria-label={manager ? "审核待处理月计划" : "查看等待审核的月计划"}
+            aria-label={manager ? "审核待处理月度目标" : "查看等待审核的月度目标"}
             onClick={reviewAction}
           >
             <ChevronRight size={15} />
@@ -373,13 +373,13 @@ export default function Overview({
               className="ov-text-link"
               onClick={() => navigate("monthly", { month: view.month })}
             >
-              查看月计划 <ChevronRight size={14} />
+              查看月度目标 <ChevronRight size={14} />
             </button>
           </div>
           <div className="ov-chain">
             <div className="ov-chain-column">
               <div className="ov-chain-heading">
-                <h3>月度计划</h3>
+                <h3>月度目标</h3>
                 <span
                   className={`ov-pill ${view.published.length ? "is-blue" : "is-amber"}`}
                 >
@@ -396,8 +396,8 @@ export default function Overview({
                   <h4>先确定本月的交付</h4>
                   <p>
                     {manager
-                      ? "发布月计划，明确成果和责任人。"
-                      : "提报预期成果，和管理者对齐本月承诺。"}
+                      ? "发布月度目标，明确成果和责任人。"
+                      : "关联本人参与的月度目标，安排个人任务。"}
                   </p>
                 </div>
               ) : (
@@ -457,7 +457,7 @@ export default function Overview({
                   <p>
                     {view.published.length
                       ? "把月度成果拆成本周可以交付的任务。"
-                      : "月计划发布后，就可以正式推进。"}
+                      : "月度目标发布后，就可以正式推进。"}
                   </p>
                 </div>
               ) : (
@@ -485,7 +485,7 @@ export default function Overview({
                           {record.monthlyPlanId
                             ? data.plans.find(
                                 (plan) => plan.id === record.monthlyPlanId,
-                              )?.title || "关联月计划"
+                              )?.title || "关联月度目标"
                             : "临时工作"}{" "}
                           · {nameOf(data, record.ownerId)}
                         </small>
@@ -522,8 +522,8 @@ export default function Overview({
               {view.published.length
                 ? "安排本周工作"
                 : manager
-                  ? "去发布月度计划"
-                  : "提报我的月计划"}
+                  ? "去发布月度目标"
+                  : "查看我参与的目标"}
               <ArrowRight size={16} />
             </button>
             {view.published.length > 0 && view.pending.length > 0 && (
@@ -635,7 +635,7 @@ export default function Overview({
               <span>
                 <strong>
                   {view.pending.length
-                    ? `${view.pending.length} 项月计划等待审核`
+                    ? `${view.pending.length} 项月度目标等待审核`
                     : "暂无待审核提报"}
                 </strong>
                 <small>
@@ -657,8 +657,8 @@ export default function Overview({
                   <FilePenLine size={18} />
                 </span>
                 <span>
-                  <strong>{view.returned.length} 项提报退回待修改</strong>
-                  <small>查看退回说明，补充后重新提交</small>
+                  <strong>{view.returned.length} 项目标待管理员调整</strong>
+                  <small>{manager ? '查看退回说明，完善目标后发布' : '管理员调整发布后，可继续安排个人任务'}</small>
                 </span>
                 <ChevronRight size={14} />
               </button>
@@ -717,7 +717,7 @@ export default function Overview({
                 onClick={() => navigate("monthly", { month: view.month })}
               >
                 <UsersRound size={15} />
-                <span>{view.missingMembers.length} 位成员本月待提报</span>
+                <span>{view.missingMembers.length} 位成员尚未关联本月目标</span>
                 <ChevronRight size={14} />
               </button>
             )}
@@ -758,18 +758,18 @@ export default function Overview({
             onClick={() =>
               manager
                 ? navigate("projects", { action: "create" })
-                : navigate("monthly", { action: "create", month: view.month })
+                : navigate("monthly", { month: view.month })
             }
           >
             <span className="ov-shortcut-icon">
               <FolderPlus size={23} />
             </span>
             <span>
-              <strong>{manager ? "建项目" : "提报月计划"}</strong>
+              <strong>{manager ? "建项目" : "查看月度目标"}</strong>
               <small>
                 {manager
                   ? "建立项目，组织下一项交付"
-                  : "写清预期成果与验收标准"}
+                  : "关联参与的目标，安排自己的工作"}
               </small>
             </span>
             <ChevronRight size={17} />
@@ -794,7 +794,7 @@ export default function Overview({
         </div>
       </section>
       <p className="ov-scope-note">
-        统计范围：当前账号可访问的本月计划与本周记录。未提交草稿不计入正式执行；历史记录不足时不作趋势对比。
+        统计范围：当前账号可访问的本月目标与本周记录。未提交草稿不计入正式执行；历史记录不足时不作趋势对比。
       </p>
     </div>
   );

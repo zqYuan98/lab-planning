@@ -316,7 +316,7 @@ test('archived project proposals do not block the active publish batch or appear
       }),
     )
     const publicationDialog =
-      monthly.split('aria-label="发布部门月计划"')[1] || ''
+      monthly.split('aria-label="发布部门月度目标"')[1] || ''
     assert.ok(publicationDialog.includes('正常待发布成果'))
     assert.ok(!publicationDialog.includes('已归档待发布成果'))
     const weekly = renderToStaticMarkup(

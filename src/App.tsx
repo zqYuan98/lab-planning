@@ -43,7 +43,7 @@ const navigation = [
   },
   {
     id: 'monthly' as const,
-    label: '月度计划',
+    label: '月度目标',
     group: '规划',
     icon: CalendarDays,
   },
@@ -236,7 +236,7 @@ export default function App() {
             <div className="auth-steps">
               <span>
                 <CalendarDays size={19} />
-                月度计划<small>明确承诺</small>
+                月度目标<small>明确承诺</small>
               </span>
               <ArrowRight size={15} />
               <span>
@@ -309,7 +309,7 @@ export default function App() {
                       {!manager && item.id === 'overview'
                         ? '我的工作台'
                         : !manager && item.id === 'monthly'
-                          ? '我的月计划'
+                          ? '我的月度目标'
                           : !manager && item.id === 'weekly'
                             ? '我的周计划'
                             : item.label}
@@ -390,7 +390,7 @@ export default function App() {
               }
             >
               {manager ? <Check size={16} /> : <CalendarDays size={16} />}
-              <span>{manager ? '审核月度计划' : '安排本周工作'}</span>
+              <span>{manager ? '审核月度目标' : '安排本周工作'}</span>
             </button>
           </div>
         </div>

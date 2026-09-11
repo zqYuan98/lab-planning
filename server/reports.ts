@@ -4,6 +4,7 @@ import { acceptanceLabels, planOriginLabel, rateLabel, reportMetrics, snapshotWa
 import { markdownToWord } from './report-word.ts'
 import { canUseAccount, registrationApproved } from '../shared/auth-policy.ts'
 import { readAiSettings, resolveAiSettings } from './ai-service.ts'
+import { WeeklySubmissionService } from './weekly-submissions.ts'
 
 function fail(message: string, status = 400): never { throw Object.assign(new Error(message), { status }) }
 export function aiConfigured(store?: Store) {
@@ -62,7 +63,8 @@ export function buildReportSnapshot(store: Store, type: Report['type'], period: 
   const changes = store.list<AuditEvent>('events').filter(e => ['plan', 'plans', 'monthlyPlan'].includes(e.entityType) && relevantPlanIds.has(e.entityId)).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   return structuredClone({ plans, contextPlans, weeklyRecords, tasks, projects: store.list<Project>('projects'),
     users: store.list<User>('users').filter(registrationApproved).map(publicUser), annualGoals: store.list<AnnualGoal>('annualGoals').filter(g => g.year === Number(period.slice(0, 4))),
-    nextPlans, nextWeeklyRecords, publications, changes })
+    nextPlans, nextWeeklyRecords, publications, changes,
+    weeklySubmissions: new WeeklySubmissionService(store).reportSummary(type, period) })
 }
 
 function name(snapshot: ReportSnapshot, id: string) { return snapshot.users.find(u => u.id === id)?.name || '未找到负责人' }
@@ -71,6 +73,7 @@ function fallback(value: string) { return value.trim() || '待补充' }
 function projectName(snapshot: ReportSnapshot, id: string | null) { return snapshot.projects.find(p => p.id === id)?.name || '部门工作' }
 function reportDate(value: string) { return new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) }
 const changeLabels: Record<string, string> = { create: '新增提报', update: '调整计划', submit: '提交审核', approve: '审核通过', return: '退回修改', publish: '发布计划', revise: '修订承诺', result: '更新成果验收', carry: '跨月承接', merge: '合并提报', merged: '并入共同成果' }
+const submissionLabels = { due: '待提交', on_time: '按时提交', missing: '逾期未提交', late: '逾期补交', exempt: '已豁免' }
 
 export function generateNarrative(type: Report['type'], snapshot: ReportSnapshot): string {
   const lines: string[] = ['## 管理者摘要', '请结合以下已记录事实补充管理判断；尚未验收的成果保持原有状态。', '', '## 本期重点与实际成果']
@@ -96,6 +99,10 @@ export function generateNarrative(type: Report['type'], snapshot: ReportSnapshot
   } else {
     for (const p of snapshot.nextPlans) lines.push(`- ${p.title}｜${name(snapshot, p.ownerId)}｜${p.status === 'published' ? '已发布承诺' : '未发布草案，待审核发布'}；预期成果：${fallback(p.expectedOutcome)}；验收标准：${fallback(p.acceptanceCriteria)}；截止：${p.dueDate}${planOriginLabel(snapshot, p) ? `；来源：${planOriginLabel(snapshot, p)}` : ''}`)
     if (!snapshot.nextPlans.length) lines.push('下月暂无计划，待成员提报、管理者审核发布。')
+  }
+  if (snapshot.weeklySubmissions?.length) {
+    const missing = snapshot.weeklySubmissions.filter(row => row.status === 'missing')
+    lines.push('', '## 周提报管理记录', `截至本报告生成时，${new Set(missing.map(row => row.ownerId)).size} 人有缺交，共 ${missing.length} 项；${snapshot.weeklySubmissions.filter(row => row.status === 'late').length} 项已补交。此状态不计入任务完成率。`)
   }
   return lines.join('\n')
 }
@@ -172,6 +179,9 @@ export function exportMarkdown(report: Report): string {
     lines.push('', '## 周记录月归属与风险协调', table(['任务 / 所属周', '当期月归属与后续关联', '阻塞或未完成原因', '下一步措施'], s.weeklyRecords.map(r => [
       `${taskName(s, r.taskId)} / ${r.weekStart}`, weeklyAssociationLabel(s, r), r.blocker || '未填写阻塞或未完成原因', r.nextAction || '未填写下一步措施'
     ])))
+  }
+  if (s.weeklySubmissions?.length) {
+    lines.push('', '## 周五提报状态明细', '以下状态固定于报告生成时，与工作成果完成率分开记录。', table(['成员', '截止周期', '应交项', '状态', '首次提交', '截止时间', '记录说明'], s.weeklySubmissions.map(row => [name(s, row.ownerId), row.cycleWeek, row.kind === 'results' ? '本周完成情况' : '下周计划', submissionLabels[row.status], row.firstSubmittedAt ? reportDate(row.firstSubmittedAt) : '尚未提交', reportDate(row.deadlineAt), [row.missingAtDeadline ? '截止时未提交' : '', row.exemptionReason].filter(Boolean).join('；') || '—'])))
   }
   lines.push('', '## 待补充与待确认')
   const warnings = snapshotWarnings(report)

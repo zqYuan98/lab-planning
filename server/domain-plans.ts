@@ -195,12 +195,12 @@ export class MonthlyService extends DomainBase {
       const acceptanceNote = text(input.acceptanceNote, status === 'not_completed' ? '未完成原因' : '验收说明', false)
       const plan = this.store.update<MonthlyPlan>('plans', id, before.version, { actualOutcome, acceptanceStatus: status, acceptanceNote })
       this.audit(actor, 'plan', id, 'result', before, plan, acceptanceNote)
-      return projectPlan(actor, plan)
+      return projectPlan(actor, plan, this.store)
     })
   }
   history(actor: User, id: string): AuditEvent[] {
     this.visible(actor, this.need<MonthlyPlan>('plans', id))
-    return visiblePlanHistory(actor, id, this.store.list<AuditEvent>('events'))
+    return visiblePlanHistory(actor, id, this.store.list<AuditEvent>('events'), this.store)
   }
   carry(actor: User, id: string, input: Input): MonthlyPlan {
     manager(actor)

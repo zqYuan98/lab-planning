@@ -12,13 +12,21 @@ function planSnapshot(value: unknown, id: string): MonthlyPlan | undefined {
 }
 
 /** Never split legacy merged prose by strings: the source ownership is not recoverable that way. */
-export function projectPlan(actor: User, plan: MonthlyPlan): MonthlyPlan {
+export function projectPlan(actor: User, plan: MonthlyPlan, store?: Store): MonthlyPlan {
   if (actor.role === 'manager') return plan
+  const visited = new Set<string>()
+  let source: MonthlyPlan | undefined = plan
+  let mergedSource = false
+  while (source && !visited.has(source.id)) {
+    visited.add(source.id)
+    if (source.mergedFromIds?.length) { mergedSource = true; break }
+    source = source.sourcePlanId && store ? store.get<MonthlyPlan>('plans', source.sourcePlanId) : undefined
+  }
   const { mergedFromIds: _merged, mergedIntoId: _target, ...safe } = plan
   return {
     ...safe, sourcePlanId: null, reviewComment: '',
     ...(plan.importSource ? { importSource: { ...plan.importSource, sourceStatus: '' } } : {}),
-    ...(plan.mergedFromIds?.length ? { expectedOutcome: '团队合并目标，请按整体成果要求执行', acceptanceCriteria: '由管理者确认整体成果验收要求' } : {}),
+    ...(mergedSource ? { expectedOutcome: '团队合并目标，请按整体成果要求执行', acceptanceCriteria: '由管理者确认整体成果验收要求' } : {}),
     ...(plan.status === 'merged' && plan.ownerId !== actor.id ? {
       title: '已合并的来源提报', expectedOutcome: '来源个人内容不在当前读取范围', acceptanceCriteria: '请参照团队合并目标', actualOutcome: '', acceptanceNote: '',
     } : {}),
@@ -37,7 +45,7 @@ export function planReference(plan: MonthlyPlan): MonthlyPlan {
 
 /** A past membership grants only the snapshots actually visible during that membership. */
 export function visiblePlan(store: Store, actor: User, current: MonthlyPlan): MonthlyPlan | undefined {
-  if (actor.role === 'manager' || participates(current, actor.id)) return projectPlan(actor, current)
+  if (actor.role === 'manager' || participates(current, actor.id)) return projectPlan(actor, current, store)
   const snapshots = store.list<AuditEvent>('events')
     .filter(event => event.entityType === 'plan' && event.entityId === current.id)
     .flatMap(event => [event.before, event.after])
@@ -45,16 +53,16 @@ export function visiblePlan(store: Store, actor: User, current: MonthlyPlan): Mo
     .map(value => planSnapshot(value, current.id))
     .filter((plan): plan is MonthlyPlan => !!plan && participates(plan, actor.id))
     .sort((a, b) => b.version - a.version)
-  return snapshots[0] ? projectPlan(actor, snapshots[0]) : undefined
+  return snapshots[0] ? { ...projectPlan(actor, snapshots[0], store), visibility: 'historical' } : undefined
 }
 
-export function visiblePlanHistory(actor: User, id: string, events: AuditEvent[]): AuditEvent[] {
+export function visiblePlanHistory(actor: User, id: string, events: AuditEvent[], store?: Store): AuditEvent[] {
   const selected = events.filter(event => event.entityType === 'plan' && event.entityId === id)
   if (actor.role === 'manager') return selected
   return selected.flatMap(event => {
     const project = (value: unknown) => {
       const snapshot = planSnapshot(value, id)
-      return snapshot && participates(snapshot, actor.id) ? projectPlan(actor, snapshot) : null
+      return snapshot && participates(snapshot, actor.id) ? projectPlan(actor, snapshot, store) : null
     }
     const before = project(event.before), after = project(event.after)
     // Reason strings and merge source arrays can contain other people's individual submissions.
@@ -62,8 +70,8 @@ export function visiblePlanHistory(actor: User, id: string, events: AuditEvent[]
   })
 }
 
-export function visiblePublications(actor: User, publications: Publication[]): Publication[] {
+export function visiblePublications(actor: User, publications: Publication[], store?: Store): Publication[] {
   if (actor.role === 'manager') return publications
-  return publications.map(item => ({ ...item, reason: '', plans: item.plans.filter(plan => participates(plan, actor.id)).map(plan => projectPlan(actor, plan)) }))
+  return publications.map(item => ({ ...item, reason: '', plans: item.plans.filter(plan => participates(plan, actor.id)).map(plan => projectPlan(actor, plan, store)) }))
     .filter(item => item.plans.length)
 }

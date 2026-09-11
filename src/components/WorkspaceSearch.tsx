@@ -12,7 +12,7 @@ import type { Bootstrap } from '../../shared/types'
 import type { Navigate, NavigationIntent, PageId } from '../navigation'
 import { shanghaiToday, weekMonday } from '../overview-data'
 
-type SearchCategory = '月度计划' | '个人任务' | '项目' | '团队成员'
+type SearchCategory = '月度目标' | '个人任务' | '项目' | '团队成员'
 interface SearchResult {
   key: string
   category: SearchCategory
@@ -25,13 +25,13 @@ interface SearchResult {
   taskWeeks?: { weekStart: string; commitment: string }[]
 }
 const icons = {
-  月度计划: CalendarDays,
+  月度目标: CalendarDays,
   个人任务: ClipboardList,
   项目: FolderKanban,
   团队成员: Users,
 }
 const categories: SearchCategory[] = [
-  '月度计划',
+  '月度目标',
   '个人任务',
   '项目',
   '团队成员',
@@ -44,7 +44,7 @@ export function buildWorkspaceSearchIndex(data: Bootstrap, currentWeek = weekMon
     )
     const entries: SearchResult[] = data.plans.map((plan) => ({
       key: `plan-${plan.id}`,
-      category: '月度计划',
+      category: '月度目标',
       title: plan.title,
       description: `${plan.month} · ${people.get(plan.ownerId) || '未指定负责人'} · ${plan.projectId ? projects.get(plan.projectId) || '项目计划' : plan.category}`,
       keywords: [

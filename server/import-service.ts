@@ -75,7 +75,9 @@ export class ImportService {
   get(actor: User, id: string): ImportBatch {
     const batch = this.batch(actor, id)
     if (actor.role === 'manager') return batch
-    return { ...batch, rows: batch.rows.filter(row => !row.ownerId || row.ownerId === actor.id).map(row => projectImportRow(this.store, actor, row)) }
+    const rows = batch.rows.filter(row => !row.ownerId || row.ownerId === actor.id).map(row => projectImportRow(this.store, actor, row))
+    const selected = rows.filter(row => row.selected)
+    return { ...batch, rows, ...(batch.status === 'parsed' && selected.length > 0 && selected.every(row => row.result) ? { status: 'committed' as const } : {}) }
   }
   list(actor: User): ImportBatchSummary[] {
     return this.store.list<ImportBatch>('importBatches').filter(b => actor.role === 'manager' || b.ownerId === actor.id)
@@ -120,7 +122,7 @@ export class ImportService {
   }
   private mutable(actor: User, id: string, version: unknown) {
     const batch = this.batch(actor, id)
-    if (batch.status === 'committed') throw new HttpError(409, '此批次已保存，可从历史资料或对应计划查看结果')
+    if (this.get(actor, id).status === 'committed') throw new HttpError(409, '此批次已保存，可从历史资料或对应计划查看结果')
     if (batch.version !== version) throw new HttpError(409, '批次已更新，请刷新后重试')
     return batch
   }
@@ -303,18 +305,23 @@ export class ImportService {
       const before = this.mutable(actor, id, input.version)
       const mode = input.mode ?? before.mode
       if (!['history', 'draft', 'existing'].includes(String(mode))) throw new HttpError(400, '导入方式无效')
-      if (!Array.isArray(input.rows) || input.rows.length !== before.rows.length) throw new HttpError(400, '请保留原始解析记录，使用勾选决定是否导入')
+      const authorizedRows = before.rows.filter(row => actor.role === 'manager' || !row.ownerId || row.ownerId === actor.id)
+      if (authorizedRows.length !== before.rows.length && mode !== before.mode) throw new HttpError(403, '包含其他成员资料的批次需由管理员调整整体保存方式')
+      if (!Array.isArray(input.rows) || input.rows.length !== authorizedRows.length) throw new HttpError(400, '请保留原始解析记录，使用勾选决定是否导入')
       const seen = new Set<string>()
       const rows = input.rows.map((value, index) => {
         const row = value as ImportRow
-        const original = before.rows.find(item => item.id === row?.id)
+        const original = authorizedRows.find(item => item.id === row?.id)
         if (!original || seen.has(original.id)) throw new HttpError(400, '记录标识无效或重复')
         seen.add(original.id)
         const normalized = this.normalizeRow(row, index, original)
+        if (actor.role !== 'manager' && normalized.ownerId && normalized.ownerId !== actor.id) throw new HttpError(403, '成员不能将资料归到其他成员名下')
         if (actor.role !== 'manager' && normalized.monthlyResult === 'accepted' && original.monthlyResult !== 'accepted') throw new HttpError(403, '月度成果确认需要管理者权限')
         return normalized
       })
-      const result = this.store.update<ImportBatch>('importBatches', id, before.version, { rows: this.checked(actor, rows, mode as ImportMode), mode: mode as ImportMode, reviewRequestedAt: undefined })
+      const checked = this.checked(actor, rows, mode as ImportMode)
+      const preservedRows = before.rows.map(row => checked.find(value => value.id === row.id) ?? row)
+      const result = this.store.update<ImportBatch>('importBatches', id, before.version, { rows: preservedRows, mode: mode as ImportMode, reviewRequestedAt: undefined })
       this.audit(actor, id, 'edit_preview', { rowCount: rows.length, mode })
       return this.get(actor, result.id)
     })
@@ -350,7 +357,7 @@ export class ImportService {
     return this.store.transaction(() => {
       const batch = this.mutable(actor, id, input.version)
       if (batch.mode !== 'existing' || batch.status !== 'parsed') throw new HttpError(400, '请先解析并选择导入已有计划')
-      const selected = this.checked(actor, batch.rows, 'existing').filter(row => row.selected)
+      const selected = this.checked(actor, batch.rows.filter(row => actor.role === 'manager' || !row.ownerId || row.ownerId === actor.id), 'existing').filter(row => row.selected)
       if (!selected.length) throw new HttpError(400, '请至少选择一条记录')
       const invalid = selected.find(row => row.issues.length)
       if (invalid) throw new HttpError(400, `第${invalid.sourceRow}行：${invalid.issues.join('；')}`)
@@ -376,11 +383,14 @@ export class ImportService {
     if (this.analyzing.has(id)) throw new HttpError(409, '解析进行中，请完成后再保存')
     return this.store.transaction(() => {
       const batch = this.batch(actor, id)
-      if (batch.status === 'committed') return this.get(actor, id) // An uncertain response can safely be retried.
+      if (this.get(actor, id).status === 'committed') return this.get(actor, id) // An uncertain response can safely be retried.
       if (batch.mode === 'existing' && actor.role !== 'manager') throw new HttpError(403, '已有计划请交管理员确认后直接生效，无需重新提报')
       this.mutable(actor, id, input.version)
       if (batch.status !== 'parsed') throw new HttpError(400, '请先解析并核对资料')
-      const rows = this.checked(actor, batch.rows, batch.mode), selected = rows.filter(r => r.selected)
+      const authorizedRows = batch.rows.filter(row => actor.role === 'manager' || !row.ownerId || row.ownerId === actor.id)
+      if (!authorizedRows.length && batch.rows.length) throw new HttpError(403, '没有可提交的本人资料')
+      const checked = this.checked(actor, authorizedRows, batch.mode)
+      const rows = batch.rows.map(row => checked.find(value => value.id === row.id) ?? row), selected = checked.filter(r => r.selected)
       if (!selected.length) throw new HttpError(400, '请至少选择一条记录')
       if (actor.role !== 'manager' && batch.mode !== 'history' && selected.some(row => row.kind === 'monthly')) throw new HttpError(403, '团队月度目标须由管理者创建')
       if (batch.mode !== 'history') {
@@ -449,7 +459,8 @@ export class ImportService {
         else this.store.insert<ImportLink>('importLinks', { id: linkId, ...fields })
       }
       existingWriter?.finish()
-      const result = this.store.update<ImportBatch>('importBatches', id, batch.version, { rows, status: 'committed', committedAt: new Date().toISOString(), committedCount: written, activatedCount: activated, skippedCount: skipped })
+      const pending = rows.some(row => row.selected && !row.result)
+      const result = this.store.update<ImportBatch>('importBatches', id, batch.version, { rows, status: pending ? 'parsed' : 'committed', committedAt: pending ? undefined : new Date().toISOString(), committedCount: written, activatedCount: activated, skippedCount: skipped })
       this.audit(actor, id, 'commit', { mode: batch.mode, count: written, activated, skipped, records: selected.map(r => r.result) })
       return this.get(actor, result.id)
     })

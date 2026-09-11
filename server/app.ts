@@ -11,6 +11,7 @@ import { createReportRouter } from './report-routes.ts'
 import { createAiSettingsRouter, createImportRouter } from './import-routes.ts'
 import { requireIntegrationAuth } from './integration-auth.ts'
 import { createDataRouter } from './data-routes.ts'
+import { createWeeklySubmissionRouter } from './weekly-submission-routes.ts'
 
 interface AppOptions { store?: Store; dbPath?: string; enableScheduler?: boolean }
 /** Trust named loopback or explicit proxy addresses, never a caller-supplied hop count. */
@@ -107,6 +108,7 @@ export function createApp(options: AppOptions = {}) {
   app.get('/api/auth/me', (req, res) => res.json(req.user))
   app.post('/api/auth/logout', (req, res) => { clearSession(store, req.headers.cookie, res); res.json({ ok: true }) })
   app.get('/api/bootstrap', (req, res) => res.json(domain.bootstrap(req.user)))
+  app.use('/api', createWeeklySubmissionRouter(store))
 
   const create = (handler: (actor: User, input: Record<string, unknown>) => unknown): RequestHandler => (req, res) => { res.status(201).json(handler(req.user, req.body)) }
   const mutate = (handler: (actor: User, id: string, input: Record<string, unknown>) => unknown): RequestHandler => (req, res) => { res.json(handler(req.user, String(req.params.id), req.body)) }

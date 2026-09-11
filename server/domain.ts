@@ -71,7 +71,7 @@ export class Domain extends DomainBase {
       const current = this.store.get<MonthlyPlan>('plans', work.monthlyPlanId)
       if (current) { plans.push(planReference(current)); visiblePlanIds.add(current.id) }
     }
-    const publications = visiblePublications(actor, this.store.list<Publication>('publications'))
+    const publications = visiblePublications(actor, this.store.list<Publication>('publications'), this.store)
     const users = this.store.list<User>('users').filter(user => isManager || registrationApproved(user)).map(user => ({ ...safeUser(user), ...(isManager && user.registrationStatus ? { registrationReviewComment: user.registrationReviewComment ?? '' } : {}) }))
     return { user: safeUser(actor), users, projects: this.store.list<Project>('projects'), annualGoals: this.store.list<AnnualGoal>('annualGoals'), plans, tasks, weeklyRecords, publications, reports: isManager ? this.store.list<Report>('reports') : [], aiConfigured: aiConfigured(this.store) }
   }
