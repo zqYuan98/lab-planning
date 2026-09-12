@@ -1,10 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
-  ArrowRight,
-  CalendarDays,
   Check,
-  ClipboardList,
-  FileText,
   LoaderCircle,
 } from 'lucide-react'
 import type { Bootstrap } from '../shared/types'
@@ -133,40 +129,14 @@ export default function App() {
         <section className="auth-story">
           <Brand wordmark />
           <div className="auth-copy">
-            <span className="auth-kicker">
-              <span />
-              一起把计划，变成成果
-            </span>
-            <h1>
-              有方向的计划，
-              <br />
-              有记录的每一步。
-            </h1>
-            <p>
-              从月度共识到每周推进，
-              <br />
-              让每一次协作都有清晰的目标和真实的反馈。
-            </p>
-            <div className="auth-steps">
-              <span>
-                <CalendarDays size={19} />
-                月度目标<small>明确承诺</small>
-              </span>
-              <ArrowRight size={15} />
-              <span>
-                <ClipboardList size={19} />
-                每周执行<small>记录进展</small>
-              </span>
-              <ArrowRight size={15} />
-              <span>
-                <FileText size={19} />
-                成果汇报<small>沉淀价值</small>
-              </span>
-            </div>
+            <h1>部门工作空间</h1>
+            <p>管理实验室的目标、项目与工作记录。</p>
+            <dl className="auth-workflow">
+              <div><dt>月度目标</dt><dd>确定交付内容、负责人和验收标准</dd></div>
+              <div><dt>每周执行</dt><dd>安排本周任务，提交进展与问题</dd></div>
+              <div><dt>成果汇报</dt><dd>汇总执行记录，保存报告版本</dd></div>
+            </dl>
           </div>
-          <small className="auth-story-footer">
-            TIANSHU LAB <span>让团队的工作，连贯而有序。</span>
-          </small>
         </section>
         <AuthAccess initialized={initialized} onLogin={async () => { setInitialized(true); await refresh() }} />
       </div>

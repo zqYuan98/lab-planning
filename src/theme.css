@@ -10,20 +10,20 @@
   font-size: 14px;
   line-height: 1.6;
   -webkit-font-smoothing: auto;
-  color: #172039;
-  background: #f7f8fb;
+  color: #1d2129;
+  background: #f6f7f8;
   --primary: #3b5bff;
   --primary-hover: #2f4de5;
   --primary-soft: #eef2ff;
   --forest: var(--primary);
   --forest-dark: #ffffff;
-  --paper: #f7f8fb;
-  --ink: #172039;
-  --muted: #667085;
-  --border: #e8ecf3;
+  --paper: #f6f7f8;
+  --ink: #1d2129;
+  --muted: #626b78;
+  --border: #e5e6eb;
   --amber: #bf740f;
   --white: #ffffff;
-  --radius: 14px;
+  --radius: 6px;
 }
 body {
   background: var(--paper);
@@ -49,7 +49,7 @@ textarea {
   background: #fff;
   border-color: #e1e6ef;
   color: var(--ink);
-  border-radius: 9px;
+  border-radius: 4px;
 }
 input:focus,
 select:focus,
@@ -62,12 +62,12 @@ textarea::placeholder {
   color: #97a0b2;
 }
 .button {
-  border-radius: 9px;
-  font-weight: 600;
+  border-radius: 4px;
+  font-weight: 500;
 }
 .button.primary {
   background: var(--primary);
-  box-shadow: 0 2px 4px #3b5bff12;
+  box-shadow: none;
 }
 .button.primary:hover:not(:disabled) {
   background: var(--primary-hover);
@@ -95,20 +95,20 @@ textarea::placeholder {
   display: none;
 }
 .page-header h1 {
-  font-size: 26px;
-  font-weight: 650;
-  letter-spacing: -0.5px;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: 0;
   color: #151d33;
   margin-bottom: 7px;
 }
 .page-header p {
-  color: #7c869b;
+  color: var(--muted);
   font-size: 13px;
 }
 .panel,
 .weekly-card {
-  border-radius: 14px;
-  box-shadow: 0 2px 7px #1e355604;
+  border-radius: 6px;
+  box-shadow: none;
 }
 .section-heading {
   border-color: var(--border);
@@ -162,7 +162,7 @@ textarea::placeholder {
 .workflow-strip {
   background: #fff;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 6px;
   color: #72809b;
   padding: 18px 22px;
   font-size: 12px;
@@ -192,7 +192,7 @@ textarea::placeholder {
   background: #fff;
   border-color: #e1e6ef;
   color: #8994ab;
-  border-radius: 9px;
+  border-radius: 4px;
 }
 .search-input input {
   background: transparent;
@@ -229,8 +229,8 @@ table {
   font-size: 13px;
 }
 th {
-  background: #f8faff;
-  color: #7b879e;
+  background: #fafafa;
+  color: #4e5969;
   font-size: 12px;
   border-color: var(--border);
 }
@@ -239,7 +239,7 @@ td {
   color: #44516a;
 }
 tbody tr:hover {
-  background: #fafbff;
+  background: #fafafa;
 }
 .table-title {
   color: #273650;
@@ -270,14 +270,14 @@ tbody tr:hover {
 .note {
   color: #75829b;
   background: #f6f8fd;
-  border-radius: 9px;
+  border-radius: 4px;
   margin: 16px;
 }
 .team-intro,
 .weekly-summary {
   background: #fff;
   border-color: var(--border);
-  border-radius: 12px;
+  border-radius: 6px;
   color: #73819a;
 }
 .team-intro svg,
@@ -290,17 +290,17 @@ tbody tr:hover {
 }
 .avatar.light,
 .project-icon {
-  background: #edf2ff;
+  background: #f2f3f5;
   color: #6380e5;
 }
 .project-icon {
-  border-radius: 10px;
+  border-radius: 6px;
 }
 .week-switcher {
   color: #7a87a1;
 }
 .week-switcher .icon-button:hover {
-  background: #edf2ff;
+  background: #f2f3f5;
 }
 .weekly-card {
   padding: 22px;
@@ -334,7 +334,7 @@ tbody tr:hover {
   color: #4465da;
 }
 .goal-icon {
-  background: #edf3ff;
+  background: #f2f3f5;
   color: #6683e8;
 }
 .label-text,
@@ -356,13 +356,13 @@ tbody tr:hover {
 }
 .modal-backdrop {
   background: #172a4840;
-  backdrop-filter: blur(4px);
+  backdrop-filter: none;
 }
 .modal {
   color: var(--ink);
   background: #fff;
   border-color: #e8ecf3;
-  border-radius: 16px;
+  border-radius: 8px;
   box-shadow: 0 18px 80px #172b5126;
 }
 .modal-heading {
@@ -384,7 +384,7 @@ tbody tr:hover {
 .context-box {
   background: #f6f8ff;
   border-color: #e4eaff;
-  border-radius: 10px;
+  border-radius: 6px;
 }
 .context-box strong {
   color: #5268b2;
@@ -427,7 +427,7 @@ tbody tr:hover {
   gap: 12px;
   padding: 12px 16px;
   border: 1px solid #dde6ff;
-  border-radius: 10px;
+  border-radius: 6px;
   background: #f5f8ff;
   margin: 12px 0 18px;
   color: #5770a2;
@@ -459,14 +459,14 @@ tbody tr:hover {
   border-radius: 8px;
 }
 .report-history {
-  background: #f4f7fc;
+  background: #f7f8fa;
 }
 .report-history-title > span {
   background: #e7edfa;
   color: #7789b2;
 }
 .report-history-item:hover {
-  background: #edf2ff;
+  background: #f2f3f5;
 }
 .report-history-item.is-selected {
   background: #fff;
@@ -514,7 +514,7 @@ tbody tr:hover {
   color: #8b96aa;
 }
 .report-document-footer {
-  background: #f9faff;
+  background: #fafafa;
 }
 .report-facts section h3 {
   border-color: #7394ef;

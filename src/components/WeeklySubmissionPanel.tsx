@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { CalendarCheck, CheckCircle2, Clock3, RefreshCw } from 'lucide-react'
+import { CheckCircle2, Clock3, RefreshCw } from 'lucide-react'
 import type { WeeklyDutyView, WeeklySubmissionView } from '../../shared/weekly-submissions'
 import { api, json } from '../api'
 import { Badge, Field, Form, Modal, nameOf, type PageProps } from '../ui'
@@ -55,7 +55,7 @@ export default function WeeklySubmissionPanel({ data, refresh, notify, onSelectW
   return (
     <section className="weekly-submission-panel" aria-label="周五提报">
       <header className="submission-heading">
-        <div><span className="eyebrow">FRIDAY / WEEKLY CHECK-IN</span><h2><CalendarCheck size={22} /> 周五提报</h2><p>周五 16:00 前更新本周完成情况，并提交下周计划。北京时间。</p></div>
+        <div><h2>周五提报</h2><p>周五 16:00 前更新本周完成情况，并提交下周计划。北京时间。</p></div>
         <div className="submission-tools">
           <Field label="截止周期（周一）"><input aria-label="提报截止周期" type="date" step={7} value={week} onChange={e => {
             if (!e.target.value) return

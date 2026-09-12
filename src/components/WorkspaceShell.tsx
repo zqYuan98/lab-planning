@@ -168,7 +168,6 @@ export default function WorkspaceShell({ data, page, navigate, onLogout, leaveCo
           <div className="workspace-brand-row" aria-label="天枢实验室 · 部门工作空间"><WorkspaceBrand /></div>
           <WorkspaceNavigation manager={manager} collapsed={collapsed} page={page} navigate={navigateFromShell} />
           <div className="workspace-sider-bottom">
-            {!collapsed && <div className="workspace-sider-note"><span />计划有来源，协作有记录</div>}
             <Button type="text" long className="workspace-collapse-button" aria-label={collapsed ? '展开侧栏' : '收起侧栏'}
               aria-expanded={!collapsed} onClick={() => setCollapsed(value => !value)}
               icon={collapsed ? <ArrowRightFromLine size={17} /> : <ArrowLeftToLine size={17} />}>
@@ -202,7 +201,7 @@ export default function WorkspaceShell({ data, page, navigate, onLogout, leaveCo
             {children}
           </Layout.Content>
           <Layout.Footer className="workspace-shell-footer">
-            <span><strong>TIANSHU LAB</strong><span className="workspace-footer-note">计划清晰，协作有序。</span></span>
+            <span>天枢实验室 · 部门工作空间</span>
             <time dateTime={today}>{new Date(`${today}T12:00:00+08:00`).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai', month: 'long', day: 'numeric', weekday: 'long' })}</time>
           </Layout.Footer>
         </Layout>

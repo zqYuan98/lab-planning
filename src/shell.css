@@ -1025,3 +1025,31 @@
 .shell-light .registration-heading h2 { display:flex; align-items:center; gap:12px; font-size:18px; margin:0 0 8px; }
 .shell-light .registration-heading p, .shell-light .registration-empty { font-size:14px; color:#596579; line-height:1.7; }
 .shell-light .registration-empty { padding:0 24px 20px; margin:0; }
+
+/* Login is an entry to the product, with concrete guidance instead of a campaign. */
+.shell-light .auth-story { background: #f6f7f8; border-color: #e5e6eb; padding: 48px 64px; }
+.shell-light .auth-copy { padding: 48px 0; margin: auto 0; }
+.shell-light .auth-copy h1 { color: #1d2129; font-size: 30px; line-height: 1.4; font-weight: 600; letter-spacing: 0; margin: 0 0 16px; }
+.shell-light .auth-copy p { color: #626b78; font-size: 14px; line-height: 1.8; }
+.auth-workflow { margin: 40px 0 0; max-width: 440px; }
+.auth-workflow > div { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 20px; padding: 20px 0; border-top: 1px solid #dfe1e5; font-size: 13px; line-height: 1.8; }
+.auth-workflow dt { color: #1d2129; font-weight: 500; }
+.auth-workflow dd { color: #626b78; margin: 0; }
+.shell-light .auth-form h2 { color: #1d2129; font-weight: 600; letter-spacing: 0; }
+.shell-light .auth-form input { border-radius: 4px; background: #fff; border-color: #c9cdd4; color: #1d2129; }
+.shell-light .auth-form input:focus { border-color: #3b5bff; box-shadow: 0 0 0 2px #3b5bff12; }
+.shell-light .auth-form .field > span { color: #4e5969; }
+.shell-light .auth-form .form-footer .button { border-radius: 4px; box-shadow: none; }
+.shell-light .auth-switch { padding-top: 24px; border-top: 1px solid #e5e6eb; }
+.shell-light .auth-switch .button { min-height: 36px; }
+@media (max-width: 1100px) and (min-width: 701px) {
+  .shell-light .auth-story { padding: 36px; }
+  .auth-workflow > div { grid-template-columns: 1fr; gap: 5px; }
+}
+@media (max-width: 700px) {
+  .shell-light .auth-story { padding: 24px 28px; }
+  .shell-light .auth-copy { padding: 0; margin: 16px 0 0; }
+  .shell-light .auth-copy h1 { font-size: 20px; margin: 0; }
+  .auth-workflow { display: none; }
+  .shell-light .auth-form { padding: 32px 28px 40px; }
+}

@@ -1,13 +1,13 @@
-.weekly-submission-panel { margin: 0 0 28px; padding: 24px; border: 1px solid var(--border, #e2e7e5); border-radius: 16px; background: var(--surface, #fff); }
+.weekly-submission-panel { margin: 0 0 28px; padding: 24px; border: 1px solid var(--border, #e2e7e5); border-radius: 6px; background: var(--surface, #fff); }
 .submission-heading, .submission-tools, .submission-card-top, .submission-actions, .submission-deadline, .submission-summary { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .submission-heading { justify-content: space-between; align-items: flex-start; }
-.submission-heading h2 { display: flex; align-items: center; gap: 9px; margin: 7px 0; font-size: 22px; }
+.submission-heading h2 { margin: 7px 0; font-size: 16px; font-weight: 600; }
 .submission-heading p, .submission-card p, .submission-facts, .submission-cell small { color: var(--text-secondary, #65746e); }
 .submission-tools { align-items: flex-end; }
 .submission-tools .field { margin: 0; }
-.submission-deadline { margin: 18px 0; padding: 12px 16px; border-radius: 8px; background: #f2f6f3; font-size: 13px; }
+.submission-deadline { margin: 18px 0; padding: 12px 16px; border-radius: 4px; background: #f7f8fa; font-size: 13px; }
 .submission-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
-.submission-card { padding: 20px; border: 1px solid var(--border, #e2e7e5); border-radius: 12px; }
+.submission-card { padding: 20px; border: 1px solid var(--border, #e2e7e5); border-radius: 6px; }
 .submission-card-top { justify-content: space-between; }
 .submission-card h3 { margin: 0; font-size: 17px; }
 .submission-card p { font-size: 14px; line-height: 1.65; }
@@ -15,7 +15,7 @@
 .submission-card > small { display: block; margin: 6px 0; }
 .submission-actions { margin-top: 18px; }
 .submission-actions .button { min-height: 36px; font-size: 12px; padding: 8px 12px; }
-.submission-notice { padding: 12px 14px; background: #fff8e9; border-radius: 8px; font-size: 13px; line-height: 1.6; }
+.submission-notice { padding: 12px 14px; background: #fff8e9; border-radius: 4px; font-size: 13px; line-height: 1.6; }
 .submission-summary { font-size: 13px; margin: 18px 0; }
 .submission-cell { display: flex; align-items: flex-start; flex-direction: column; gap: 6px; }
 .submission-preview { max-height: 320px; overflow: auto; margin: 14px 0; }
