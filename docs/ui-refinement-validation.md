@@ -33,3 +33,11 @@
 截图位于 output/playwright：refined-desktop.png、refined-mobile.png、refined-monthly.png、refined-login.png、refined-register-mobile.png、refined-member.png、refined-empty.png。
 
 构建保留原有单包超过 500kB 的提示。此次优化仅完成本地代码和预览，未部署服务器 37。
+
+## 文字颜色调整
+
+根据用户对浅灰文字的反馈，将分散的蓝灰色文字统一为中性墨色：标题 #181818、正文 #282828、辅助文字 #3d3d3d。共享主题、概览、导航、登录、导入、报告及周提报样式使用同一组文字变量，Arco 的文字变量同步映射。输入占位文字为 #595959，禁用态单独保留；功能链接和业务状态色保持原有含义。
+
+本次仅调整样式。生产构建与差异检查通过；浏览器逐页检查 8 个管理员页面，当前可见的非禁用、中性文字计算色仅为上述三种墨色。登录说明和占位文字也符合对应变量。1440、1024、390、320px 的概览无横向溢出，已查看概览和导入页截图。未重复运行与纯颜色修改无关的业务测试。
+
+最新截图：output/playwright/ink-overview.png、ink-monthly.png、ink-imports.png、ink-reports.png、ink-mobile.png、ink-login.png。仍未部署服务器。

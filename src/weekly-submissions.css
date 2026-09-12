@@ -2,7 +2,7 @@
 .submission-heading, .submission-tools, .submission-card-top, .submission-actions, .submission-deadline, .submission-summary { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .submission-heading { justify-content: space-between; align-items: flex-start; }
 .submission-heading h2 { margin: 7px 0; font-size: 16px; font-weight: 600; }
-.submission-heading p, .submission-card p, .submission-facts, .submission-cell small { color: var(--text-secondary, #65746e); }
+.submission-heading p, .submission-card p, .submission-facts, .submission-cell small { color: var(--text-secondary); }
 .submission-tools { align-items: flex-end; }
 .submission-tools .field { margin: 0; }
 .submission-deadline { margin: 18px 0; padding: 12px 16px; border-radius: 4px; background: #f7f8fa; font-size: 13px; }

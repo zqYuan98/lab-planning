@@ -17,19 +17,19 @@
   flex: 1;
   align-items: center;
   gap: 10px;
-  color: #58657c;
+  color: var(--text-body);
   font-size: 12px;
   white-space: nowrap;
 }
 .import-journey > div > span {
-  color: #8996ae;
+  color: var(--text-secondary);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.07em;
 }
 .import-journey > div > svg {
   margin-left: auto;
-  color: #c1cad9;
+  color: var(--text-secondary);
 }
 .import-upload {
   display: flex;
@@ -64,12 +64,12 @@
   font-weight: 650;
 }
 .import-upload p {
-  color: #626f84;
+  color: var(--text-secondary);
   margin: 5px 0 2px;
   font-size: 12px;
 }
 .import-upload small {
-  color: #8993a4;
+  color: var(--text-secondary);
   font-size: 11px;
 }
 .import-upload-actions {
@@ -116,12 +116,12 @@
 }
 .import-section-title h2 span {
   font-weight: 400;
-  color: #939caf;
+  color: var(--text-secondary);
   margin-left: 4px;
 }
 .import-aside-note {
   font-size: 11px;
-  color: #8c96a7;
+  color: var(--text-secondary);
   line-height: 1.6;
   margin: 7px 7px 17px;
 }
@@ -158,13 +158,13 @@
 .import-batch-item span {
   display: block;
   font-size: 11px;
-  color: #74819a;
+  color: var(--text-secondary);
   margin-top: 4px;
 }
 .import-batch-item small {
   display: block;
   font-size: 10px;
-  color: #9da6b7;
+  color: var(--text-secondary);
   margin-top: 2px;
 }
 .import-detail {
@@ -187,7 +187,7 @@
 .import-detail-heading p,
 .import-detail-label {
   font-size: 11px;
-  color: #8793a7;
+  color: var(--text-secondary);
   margin: 4px 0;
 }
 .import-detail-label {
@@ -248,7 +248,7 @@
 }
 .import-sheet-picker legend,
 .import-token-scopes legend {
-  color: #56647b;
+  color: var(--text-body);
   font-size: 12px;
   font-weight: 600;
   margin-bottom: 9px;
@@ -265,7 +265,7 @@
 }
 .import-sheet-picker label small {
   font-size: 10px;
-  color: #98a2b4;
+  color: var(--text-secondary);
   margin-left: 9px;
 }
 .imports-page input[type='checkbox'],
@@ -294,7 +294,7 @@
 .import-parser-footer p {
   flex: 1;
   font-size: 11px;
-  color: #8b94a5;
+  color: var(--text-secondary);
   line-height: 1.7;
 }
 .import-parser-footer button {
@@ -312,7 +312,7 @@
 }
 .import-mode p {
   font-size: 11px;
-  color: #8893a5;
+  color: var(--text-secondary);
   margin: 4px 0 14px;
 }
 .import-mode-options {
@@ -343,7 +343,7 @@
 }
 .import-mode-options small {
   display: block;
-  color: #8b95a7;
+  color: var(--text-secondary);
   margin-top: 3px;
   font-size: 10px;
 }
@@ -353,7 +353,7 @@
   border-bottom: 1px solid var(--import-line);
 }
 .import-bulk .import-section-title > span {
-  color: #8c97a9;
+  color: var(--text-secondary);
   font-size: 11px;
 }
 .import-bulk-fields {
@@ -383,14 +383,14 @@
   padding: 20px 24px 14px;
 }
 .import-rows-heading h3 span {
-  color: #98a2b4;
+  color: var(--text-secondary);
   font-size: 11px;
   font-weight: 400;
   margin-left: 7px;
 }
 .import-rows-heading > span {
   font-size: 10px;
-  color: #8490a4;
+  color: var(--text-secondary);
 }
 .import-table {
   width: 100%;
@@ -436,7 +436,7 @@
 }
 .import-table td > small {
   display: block;
-  color: #8c97a8;
+  color: var(--text-secondary);
   font-size: 10px;
   margin-top: 4px;
 }
@@ -455,7 +455,7 @@
 .import-source {
   margin-top: 7px;
   font-size: 10px;
-  color: #8c97aa;
+  color: var(--text-secondary);
 }
 .import-source summary {
   cursor: pointer;
@@ -468,7 +468,7 @@
   max-height: 220px;
   overflow: auto;
   padding: 10px;
-  color: #6c7890;
+  color: var(--text-secondary);
   background: #f5f7fa;
   border-radius: 6px;
   margin: 7px 0;
@@ -509,7 +509,7 @@
 }
 .import-commit p {
   font-size: 10px;
-  color: #8a95a8;
+  color: var(--text-secondary);
   line-height: 1.8;
   margin: 5px 0 0;
 }
@@ -534,7 +534,7 @@
 }
 .import-tool > summary {
   padding: 18px 22px;
-  color: #7988a1;
+  color: var(--text-secondary);
 }
 .import-tool > summary > span {
   display: flex;
@@ -542,12 +542,12 @@
   gap: 12px;
 }
 .import-tool > summary strong {
-  color: #43516b;
+  color: var(--text-body);
   font-size: 13px;
   font-weight: 600;
 }
 .import-tool > summary small {
-  color: #9aa4b4;
+  color: var(--text-secondary);
   font-size: 11px;
   font-weight: 400;
 }
@@ -557,7 +557,7 @@
 }
 .import-tool-body > p,
 .import-api-guide p {
-  color: #8490a4;
+  color: var(--text-secondary);
   font-size: 12px;
   margin: 0 0 18px;
 }
@@ -569,7 +569,7 @@
 }
 .import-settings-test > span {
   font-size: 11px;
-  color: #8f99ab;
+  color: var(--text-secondary);
 }
 .import-export-fields {
   display: grid;
@@ -591,7 +591,7 @@
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: #69768d;
+  color: var(--text-secondary);
 }
 .import-token-once {
   border: 1px solid #cfddf6;
@@ -633,14 +633,14 @@
 .import-token-list small {
   display: block;
   font-size: 10px;
-  color: #8f99aa;
+  color: var(--text-secondary);
   overflow-wrap: anywhere;
   margin-top: 4px;
 }
 .import-api-guide {
   font-size: 12px;
   padding-top: 16px;
-  color: #6f81a1;
+  color: var(--text-secondary);
 }
 .import-api-guide summary {
   cursor: pointer;
@@ -652,7 +652,7 @@
   line-height: 1.9;
   background: #f7f9fc;
   border-radius: 9px;
-  color: #65768e;
+  color: var(--text-secondary);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -676,7 +676,7 @@
 }
 .import-muted {
   font-size: 12px;
-  color: #98a2b4;
+  color: var(--text-secondary);
   padding: 12px 7px;
 }
 .import-error {
@@ -716,7 +716,7 @@
 .import-analysis p,
 .import-fork p {
   font-size: 11px;
-  color: #8191ac;
+  color: var(--text-secondary);
   line-height: 1.8;
   margin: 5px 0 0;
 }
@@ -748,7 +748,7 @@
 .import-editor-relations h3 {
   margin: 0 0 13px;
   font-size: 13px;
-  color: #60749c;
+  color: var(--text-secondary);
 }
 .import-editor-relations .field + .field {
   margin-top: 12px;
@@ -768,7 +768,7 @@
 }
 .import-history-count,
 .import-restore-file {
-  color: #8c98ab;
+  color: var(--text-secondary);
   font-size: 11px;
   margin: 13px 0;
 }
@@ -778,7 +778,7 @@
 }
 .import-history-table small {
   display: block;
-  color: #919daf;
+  color: var(--text-secondary);
   font-size: 10px;
   margin-top: 3px;
 }
@@ -794,7 +794,7 @@
 }
 .import-history-detail > p,
 .import-history-detail > small {
-  color: #909bad;
+  color: var(--text-secondary);
   font-size: 11px;
 }
 .import-history-detail dl {
@@ -809,11 +809,11 @@
   font-size: 12px;
 }
 .import-history-detail dt {
-  color: #8996ac;
+  color: var(--text-secondary);
 }
 .import-history-detail dd {
   margin: 0;
-  color: #52627a;
+  color: var(--text-body);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -830,7 +830,7 @@
 }
 .import-restore-mapping > p {
   font-size: 11px;
-  color: #8492a8;
+  color: var(--text-secondary);
   margin: 6px 0 15px;
 }
 .import-restore-mapping .field + .field {
@@ -890,7 +890,7 @@
   align-items: center;
   gap: 8px;
   font-size: 11px;
-  color: #8490a5;
+  color: var(--text-secondary);
   margin-top: 15px;
 }
 .import-history-detail-actions {
@@ -903,7 +903,7 @@
   align-items: center;
   gap: 7px;
   padding: 0 7px 14px;
-  color: #7d89a0;
+  color: var(--text-secondary);
   font-size: 10px;
 }
 .import-pending-filter > span {
@@ -932,7 +932,7 @@
   gap: 4px;
   padding-top: 8px;
   font-size: 10px;
-  color: #7b89a2;
+  color: var(--text-secondary);
 }
 .import-row-destination > strong {
   font-size: 10px;
@@ -948,7 +948,7 @@
 }
 .import-source-gap {
   display: block;
-  color: #8a98aa;
+  color: var(--text-secondary);
   font-size: 10px;
   line-height: 1.7;
   margin-top: 6px;
