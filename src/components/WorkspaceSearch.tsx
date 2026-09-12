@@ -8,6 +8,7 @@ import {
   Users,
   X,
 } from 'lucide-react'
+import Input, { type RefInputType } from '@arco-design/web-react/es/Input'
 import type { Bootstrap } from '../../shared/types'
 import type { Navigate, NavigationIntent, PageId } from '../navigation'
 import { shanghaiToday, weekMonday } from '../overview-data'
@@ -134,7 +135,7 @@ export default function WorkspaceSearch({ data, navigate }: { data: Bootstrap; n
   const [query, setQuery] = useState(''),
     [open, setOpen] = useState(false),
     [active, setActive] = useState(0)
-  const root = useRef<HTMLDivElement>(null), input = useRef<HTMLInputElement>(null)
+  const root = useRef<HTMLDivElement>(null), input = useRef<RefInputType>(null)
   const id = useId()
   const index = useMemo(() => buildWorkspaceSearchIndex(data), [data])
   const results = useMemo(() => filterWorkspaceSearch(index, query), [index, query])
@@ -190,8 +191,9 @@ export default function WorkspaceSearch({ data, navigate }: { data: Bootstrap; n
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false)
       }}
     >
-      <Search className="workspace-search-icon" size={17} />
-      <input
+      <Input
+        className="workspace-search-input"
+        prefix={<Search size={17} aria-hidden="true" />}
         ref={input}
         type="search"
         role="combobox"
@@ -205,8 +207,8 @@ export default function WorkspaceSearch({ data, navigate }: { data: Bootstrap; n
         placeholder="搜索计划、任务、项目…"
         value={query}
         onFocus={() => setOpen(true)}
-        onChange={(event) => {
-          setQuery(event.target.value)
+        onChange={(value) => {
+          setQuery(value)
           setOpen(true)
         }}
         onKeyDown={(event) => {

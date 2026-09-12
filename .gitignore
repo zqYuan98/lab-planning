@@ -11,3 +11,4 @@ output/
 *.sqlite*
 test-results/
 playwright-report/
+.playwright-cli/

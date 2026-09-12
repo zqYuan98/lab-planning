@@ -2,26 +2,18 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   ArrowRight,
   CalendarDays,
-  ChartNoAxesCombined,
   Check,
   ClipboardList,
-  FolderKanban,
-  Goal,
-  LogOut,
-  Menu,
-  Users,
   FileText,
-  FileInput,
   LoaderCircle,
-  UserRound,
-  X,
 } from 'lucide-react'
 import type { Bootstrap } from '../shared/types'
 import type { Navigate, NavigationIntent, PageId } from './navigation'
 import { api, ApiError } from './api'
-import { Modal, currentMonth, monday, localDate } from './ui'
+import ArcoModal from '@arco-design/web-react/es/Modal'
 import AuthAccess from './components/AuthAccess'
-import WorkspaceSearch from './components/WorkspaceSearch'
+import WorkspaceShell from './components/WorkspaceShell'
+import Brand from './components/WorkspaceBrand'
 import Overview from './pages/Overview'
 import Monthly from './pages/Monthly'
 import Weekly from './pages/Weekly'
@@ -30,74 +22,8 @@ import Goals from './pages/Goals'
 import Team from './pages/Team'
 import Reports from './pages/Reports'
 import Imports from './pages/Imports'
-import labIcon from './assets/lab-icon.png'
-import labWordmark from './assets/lab-wordmark.png'
 import './shell.css'
 
-const navigation = [
-  {
-    id: 'overview' as const,
-    label: '部门概览',
-    group: '规划',
-    icon: ChartNoAxesCombined,
-  },
-  {
-    id: 'monthly' as const,
-    label: '月度目标',
-    group: '规划',
-    icon: CalendarDays,
-  },
-  {
-    id: 'weekly' as const,
-    label: '每周执行',
-    group: '规划',
-    icon: ClipboardList,
-  },
-  { id: 'goals' as const, label: '年度目标', group: '规划', icon: Goal },
-  {
-    id: 'projects' as const,
-    label: '项目档案',
-    group: '资产',
-    icon: FolderKanban,
-  },
-  {
-    id: 'imports' as const,
-    label: '数据导入',
-    group: '资产',
-    icon: FileInput,
-  },
-  {
-    id: 'reports' as const,
-    label: '报告中心',
-    group: '资产',
-    icon: FileText,
-    manager: true,
-  },
-  {
-    id: 'team' as const,
-    label: '成员管理',
-    group: '团队',
-    icon: Users,
-    manager: true,
-  },
-]
-function Brand({ wordmark = false }: { wordmark?: boolean }) {
-  if (wordmark)
-    return (
-      <div className="brand-wordmark">
-        <img src={labWordmark} alt="天枢实验室 TIANSHU LAB" />
-        <span>部门工作空间</span>
-      </div>
-    )
-  return (
-    <div className="brand">
-      <span className="brand-icon">
-        <img src={labIcon} alt="" />
-      </span>
-      <span>天枢实验室</span>
-    </div>
-  )
-}
 export default function App() {
   const [data, setData] = useState<Bootstrap | null>(null),
     [loading, setLoading] = useState(true),
@@ -106,8 +32,7 @@ export default function App() {
     [intent, setIntent] = useState<NavigationIntent>(),
     [navigationKey, setNavigationKey] = useState(0)
   const [toast, setToast] = useState(''),
-    [fatal, setFatal] = useState(''),
-    [mobileOpen, setMobileOpen] = useState(false)
+    [fatal, setFatal] = useState('')
   const [reportDirty, setReportDirty] = useState(false)
   const [pendingLeave, setPendingLeave] = useState<
     { page: PageId; intent?: NavigationIntent } | 'logout' | null
@@ -119,7 +44,6 @@ export default function App() {
     setPage(next)
     setIntent(nextIntent)
     setNavigationKey((value) => value + 1)
-    setMobileOpen(false)
   }
   const navigate: Navigate = (next, nextIntent) => {
     if (data?.user.role !== 'manager' && ['reports', 'team'].includes(next)) {
@@ -127,7 +51,6 @@ export default function App() {
       return
     }
     if (next === page && !nextIntent) {
-      setMobileOpen(false)
       return
     }
     if (reportDirty) {
@@ -143,7 +66,6 @@ export default function App() {
       setPage('overview')
       setIntent(undefined)
       setReportDirty(false)
-      setMobileOpen(false)
     } catch (e) {
       setToast(e instanceof Error ? e.message : '退出失败')
     }
@@ -186,14 +108,6 @@ export default function App() {
     const timer = window.setTimeout(() => setToast(''), 4500)
     return () => clearTimeout(timer)
   }, [toast])
-  useEffect(() => {
-    if (!mobileOpen) return
-    const handler = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setMobileOpen(false)
-    }
-    document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
-  }, [mobileOpen])
   if (loading)
     return (
       <div className="shell-light app-loading">
@@ -259,9 +173,6 @@ export default function App() {
     )
   const manager = data.user.role === 'manager'
   const props = { data, refresh, notify: setToast, intent }
-  const visibleNavigation = navigation.filter(
-    (item) => !item.manager || manager,
-  )
   const route = {
     overview: <Overview {...props} navigate={navigate} />,
     monthly: <Monthly {...props} />,
@@ -275,157 +186,25 @@ export default function App() {
     team: manager ? <Team {...props} /> : null,
   }[page] || <Overview {...props} navigate={navigate} />
   return (
-    <div className="shell-light app-shell">
-      <aside className={`sidebar ${mobileOpen ? 'open' : ''}`}>
-        <div className="sidebar-brand-row">
-          <Brand />
-          <button
-            type="button"
-            className="icon-button sidebar-close"
-            aria-label="关闭导航"
-            onClick={() => setMobileOpen(false)}
-          >
-            <X size={18} />
-          </button>
-        </div>
-        <nav aria-label="主导航">
-          {['规划', '资产', '团队'].map((group) => {
-            const items = visibleNavigation.filter(
-              (item) => item.group === group,
-            )
-            if (!items.length) return null
-            return (
-              <div className="nav-group" key={group}>
-                <div className="nav-group-label">{group}</div>
-                {items.map((item) => (
-                  <button
-                    key={item.id}
-                    aria-current={page === item.id ? 'page' : undefined}
-                    className={`nav-item ${page === item.id ? 'active' : ''}`}
-                    onClick={() => navigate(item.id)}
-                  >
-                    <item.icon size={18} />
-                    <span>
-                      {!manager && item.id === 'overview'
-                        ? '我的工作台'
-                        : !manager && item.id === 'monthly'
-                          ? '我的月度目标'
-                          : !manager && item.id === 'weekly'
-                            ? '我的周计划'
-                            : item.label}
-                    </span>
-                    {page === item.id && <span className="nav-dot" />}
-                  </button>
-                ))}
-              </div>
-            )
-          })}
-        </nav>
-        <div className="sidebar-note">
-          <span className="status-dot" />
-          计划有来源，协作有记录
-        </div>
-        <div className="profile">
-          <span className="profile-mark">
-            <UserRound size={20} />
-          </span>
-          <div>
-            <strong>{data.user.name}</strong>
-            <small>
-              {manager ? '部门管理员' : data.user.position || '团队成员'}
-            </small>
-          </div>
-          <button
-            className="icon-button"
-            aria-label="退出登录"
-            onClick={() => {
-              if (reportDirty) setPendingLeave('logout')
-              else void logout()
-            }}
-          >
-            <LogOut size={16} />
-          </button>
-        </div>
-      </aside>
-      {mobileOpen && (
-        <button
-          className="mobile-shade"
-          aria-label="关闭导航"
-          onClick={() => setMobileOpen(false)}
-        />
-      )}
-      <div className="main-workspace">
-        <div className="topbar">
-          <div className="topbar-search-area">
-            <button
-              className="icon-button mobile-menu"
-              aria-label="打开导航"
-              onClick={() => setMobileOpen(!mobileOpen)}
-            >
-              <Menu size={21} />
-            </button>
-            <WorkspaceSearch data={data} navigate={navigate} />
-          </div>
-          <div className="topbar-actions">
-            <time dateTime={localDate()}>
-              {new Date().toLocaleDateString('zh-CN', {
-                month: 'long',
-                day: 'numeric',
-                weekday: 'short',
-              })}
-            </time>
-            <button
-              className="button primary topbar-primary"
-              onClick={() =>
-                navigate(
-                  manager ? 'monthly' : 'weekly',
-                  manager
-                    ? {
-                        action: 'review',
-                        month: currentMonth(),
-                        status: 'submitted',
-                      }
-                    : { action: 'create', weekStart: monday() },
-                )
-              }
-            >
-              {manager ? <Check size={16} /> : <CalendarDays size={16} />}
-              <span>{manager ? '审核月度目标' : '安排本周工作'}</span>
-            </button>
-          </div>
-        </div>
-        <main key={`${page}-${navigationKey}`}>{route}</main>
-        <footer className="workspace-footer">
-          TIANSHU LAB <span>计划清晰，协作有序。</span>
-        </footer>
-      </div>
-      {pendingLeave && (
-        <Modal title="汇报编辑尚未保存" onClose={() => setPendingLeave(null)}>
-          <p className="modal-intro">
-            当前汇报包含未保存的修改。继续离开将放弃这些编辑，已经保存的报告版本不受影响。
-          </p>
-          <div className="form-footer">
-            <button
-              className="button secondary"
-              onClick={() => setPendingLeave(null)}
-            >
-              继续编辑
-            </button>
-            <button
-              className="button primary"
-              onClick={() => void leaveWithoutSaving()}
-            >
-              放弃编辑并离开
-            </button>
-          </div>
-        </Modal>
-      )}
+    <>
+      <WorkspaceShell data={data} page={page} navigate={navigate} leaveConfirmationOpen={!!pendingLeave} onLogout={() => {
+        if (reportDirty) setPendingLeave('logout')
+        else void logout()
+      }}>
+        <div key={`${page}-${navigationKey}`}>{route}</div>
+      </WorkspaceShell>
+      <ArcoModal title="汇报编辑尚未保存" visible={!!pendingLeave} className="workspace-leave-modal"
+        onCancel={() => setPendingLeave(null)} onOk={() => void leaveWithoutSaving()}
+        cancelText="继续编辑" okText="放弃编辑并离开" maskClosable={false} focusLock autoFocus
+        style={{ width: 460, maxWidth: 'calc(100vw - 32px)' }}>
+        <p>当前汇报包含未保存的修改。继续离开将放弃这些编辑，已经保存的报告版本不受影响。</p>
+      </ArcoModal>
       {toast && (
         <div className="toast" role="status">
           <Check size={18} />
           {toast}
         </div>
       )}
-    </div>
+    </>
   )
 }

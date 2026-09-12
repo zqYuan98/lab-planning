@@ -15,6 +15,7 @@
     "backup": "tsx scripts/backup.ts"
   },
   "dependencies": {
+    "@arco-design/web-react": "2.66.16",
     "docx": "^9.5.1",
     "dotenv": "^17.4.2",
     "exceljs": "^4.4.0",

@@ -1,0 +1,11 @@
+// Only load the components used by the workspace shell, plus their dependencies.
+import '@arco-design/web-react/es/_util/react-19-adapter'
+import '@arco-design/web-react/es/Layout/style/css'
+import '@arco-design/web-react/es/Menu/style/css'
+import '@arco-design/web-react/es/Button/style/css'
+import '@arco-design/web-react/es/Avatar/style/css'
+import '@arco-design/web-react/es/Breadcrumb/style/css'
+import '@arco-design/web-react/es/Dropdown/style/css'
+import '@arco-design/web-react/es/Drawer/style/css'
+import '@arco-design/web-react/es/Input/style/css'
+import '@arco-design/web-react/es/Modal/style/css'
