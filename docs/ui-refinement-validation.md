@@ -41,3 +41,11 @@
 本次仅调整样式。生产构建与差异检查通过；浏览器逐页检查 8 个管理员页面，当前可见的非禁用、中性文字计算色仅为上述三种墨色。登录说明和占位文字也符合对应变量。1440、1024、390、320px 的概览无横向溢出，已查看概览和导入页截图。未重复运行与纯颜色修改无关的业务测试。
 
 最新截图：output/playwright/ink-overview.png、ink-monthly.png、ink-imports.png、ink-reports.png、ink-mobile.png、ink-login.png。仍未部署服务器。
+
+## UI/UX Pro Max 页面整理
+
+应用 ui-ux-pro-max 的适用建议，并将结合用户偏好确认的规范记录在 design-system/lab-workspace/MASTER.md。统一页面标题、按钮、筛选工具栏、表格、表单和状态标签的尺寸与间距；加大列表及辅助信息字号，保留深色文字；增加清晰的导航选中标识。月度和导入流程使用原生键盘可操作的折叠说明，周执行页的 h1 移到提报面板之前。
+
+验证：TypeScript 与生产构建通过，154 项现有测试通过；8 个页面在 1440、1024、768、375、320px 下无页面横向溢出；月份与搜索控件边界不重叠；流程说明的键盘展开/收起、月度表单、周执行标题顺序通过。搜索、折叠菜单、手机抽屉焦点、未保存报告提示、登录/注册和普通成员周任务入口复查通过。未新增业务接口或生产依赖，未部署服务器。
+
+最新预览：output/playwright/ux-overview.png、ux-monthly.png、ux-weekly.png、ux-mobile.png、ux-form.png。

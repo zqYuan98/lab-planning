@@ -1046,3 +1046,14 @@
     display: none;
   }
 }
+
+.import-upload { padding: 24px; gap: 20px; }
+.import-upload-icon { width: 44px; height: 48px; border: 0; border-radius: 6px; background: var(--surface-subtle); color: var(--text-body); }
+.import-upload h2 { font-size: 18px; font-weight: 600; }
+.import-upload p, .import-upload small { font-size: 13px; line-height: 1.8; }
+.import-aside-note, .import-muted, .import-tools summary small { font-size: 13px; line-height: 1.7; }
+@media (max-width: 700px) {
+  .import-upload { padding: 20px 16px; }
+  .import-upload-copy { gap: 12px; }
+  .import-upload-actions { width: 100%; flex-wrap: wrap; gap: 8px; }
+}

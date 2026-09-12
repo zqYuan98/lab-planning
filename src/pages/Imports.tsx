@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import WorkflowGuide from '../components/WorkflowGuide'
 import {
   Archive,
   ArrowRight,
@@ -481,17 +482,19 @@ export default function Imports({
           </Badge>
         }
       />
-      <div className="import-journey" aria-label="导入流程">
-        {['保存原始资料', '智能识别字段', '校对与批量匹配', '导入已有计划'].map(
-          (label, index) => (
-            <div key={label}>
-              <span>{String(index + 1).padStart(2, '0')}</span>
-              {label}
-              {index < 3 && <ArrowRight size={15} />}
-            </div>
-          ),
-        )}
-      </div>
+      <WorkflowGuide title="资料导入流程说明">
+        <div className="import-journey" aria-label="导入流程">
+          {['保存原始资料', '智能识别字段', '校对与批量匹配', '导入已有计划'].map(
+            (label, index) => (
+              <div key={label}>
+                <span>{String(index + 1).padStart(2, '0')}</span>
+                {label}
+                {index < 3 && <ArrowRight size={15} />}
+              </div>
+            ),
+          )}
+        </div>
+        </WorkflowGuide>
       {error && (
         <div className="error import-error" role="alert">
           {error}

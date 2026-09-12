@@ -11,7 +11,7 @@
 }
 .ov-page-heading h1 {
   margin: 0 0 6px;
-  font-size: 24px;
+  font-size: 26px;
   line-height: 1.4;
   font-weight: 600;
   letter-spacing: 0;
@@ -33,7 +33,7 @@
   font-weight: 500;
 }
 .ov-period span {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
 }
 .ov-metrics {
@@ -41,7 +41,7 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
   background: white;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-panel);
   margin-bottom: 28px;
   overflow: hidden;
 }
@@ -51,7 +51,7 @@
   align-items: flex-start;
   text-align: left;
   min-width: 0;
-  padding: 20px 24px;
+  padding: 20px 24px 18px;
   background: transparent;
   border: 0;
   color: var(--ink);
@@ -80,7 +80,7 @@
   flex-shrink: 0;
 }
 .ov-stat > strong {
-  font-size: 34px;
+  font-size: 36px;
   font-weight: 600;
   line-height: 1.3;
   font-variant-numeric: tabular-nums;
@@ -88,7 +88,7 @@
 }
 .ov-stat > strong small {
   margin-left: 7px;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 400;
   color: var(--muted);
 }
@@ -97,7 +97,7 @@
 }
 .ov-stat-detail,
 .ov-stat-context {
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.8;
 }
 .ov-stat-detail {
@@ -119,7 +119,7 @@
 .ov-section {
   background: white;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-panel);
   overflow: hidden;
   margin-bottom: 20px;
 }
@@ -136,12 +136,12 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   margin: 0;
 }
 .ov-section-heading h2 > span {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   font-weight: 400;
   font-variant-numeric: tabular-nums;
@@ -156,7 +156,7 @@
 }
 .ov-section-heading .arco-btn {
   padding: 0 0 0 8px;
-  height: 28px;
+  height: 36px;
   flex-shrink: 0;
 }
 .ov-list-caption {
@@ -166,7 +166,7 @@
   padding: 9px 48px 9px 20px;
   background: #fafafa;
   border-bottom: 1px solid var(--border);
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
 }
 .ov-work-item {
@@ -179,7 +179,7 @@
   border: 0;
   border-bottom: 1px solid #f0f0f0;
   background: white;
-  padding: 17px 20px;
+  padding: 16px 20px;
   color: var(--ink);
 }
 .ov-work-item:last-child {
@@ -206,12 +206,12 @@
 }
 .ov-item-copy small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
 .ov-state {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-body);
   line-height: 1.6;
 }
@@ -235,7 +235,7 @@
 }
 .ov-section-action > span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 .ov-empty {
   padding: 28px 20px 12px;
@@ -252,7 +252,7 @@
 }
 .ov-fact-note {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   margin: -5px 0 20px;
 }
 .ov-reminder {
@@ -281,7 +281,7 @@
   line-height: 1.6;
 }
 .ov-reminder small {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   line-height: 1.6;
 }
@@ -302,7 +302,7 @@
   border-bottom: 1px solid #f0f0f0;
   background: white;
   text-align: left;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-body);
   font-variant-numeric: tabular-nums;
 }
@@ -344,7 +344,7 @@
 }
 .ov-scope-note {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.8;
   margin: 8px 0 0;
 }
@@ -385,13 +385,13 @@
     margin-bottom: 20px;
   }
   .ov-page-heading h1 {
-    font-size: 22px;
+    font-size: 24px;
   }
   .ov-page-heading p {
     font-size: 13px;
   }
   .ov-period {
-    font-size: 12px;
+    font-size: 13px;
     gap: 4px;
   }
   .ov-period span {
@@ -416,7 +416,7 @@
     margin: 10px 0 8px;
   }
   .ov-stat-label {
-    font-size: 12px;
+    font-size: 13px;
   }
   .ov-side {
     display: block;
@@ -425,12 +425,12 @@
     padding: 12px 16px;
   }
   .ov-list-caption {
-    grid-template-columns: minmax(0, 1fr) 64px;
+    grid-template-columns: minmax(0, 1fr) 76px;
     padding: 8px 36px 8px 16px;
     gap: 8px;
   }
   .ov-work-item {
-    grid-template-columns: minmax(0, 1fr) 64px 12px;
+    grid-template-columns: minmax(0, 1fr) 76px 12px;
     padding: 15px 16px;
     gap: 8px;
   }
@@ -466,3 +466,20 @@
     display: none;
   }
 }
+
+.ov-item-copy strong { font-size: 15px; }
+.ov-period { padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); }
+.ov-section-heading { min-height: 60px; }
+.ov-metrics { border-top: 2px solid var(--text-primary); }
+.ov-stat { transition: background-color 160ms ease; }
+.ov-shortcuts .arco-btn { min-height: 36px; }
+.ov-section-action .arco-btn { min-height: 38px; padding: 0 14px; }
+@media (max-width: 700px) {
+  .overview-page .arco-btn { min-height: 44px; }
+  .ov-page-heading { flex-wrap: wrap; }
+  .ov-period { display: flex; align-items: baseline; gap: 12px; padding: 8px 12px; text-align: left; }
+  .ov-period span { max-width: none; }
+  .ov-item-copy strong { font-size: 14px; }
+  .ov-section-action > span { line-height: 1.6; }
+}
+@media (prefers-reduced-motion: reduce) { .ov-stat { transition: none; } }

@@ -100,7 +100,6 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
   const selectedTask = data.tasks.find((task) => task.id === selected?.taskId)
   return (
     <>
-      <WeeklySubmissionPanel data={data} refresh={refresh} notify={notify} onSelectWeek={value => { setWeek(value); setOwner(manager ? owner : data.user.id); setFilter('all') }} />
       <PageHeader
         eyebrow="EXECUTION / WEEKLY"
         title={manager ? '每周执行' : '我的周计划'}
@@ -124,6 +123,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
           </>
         }
       />
+      <WeeklySubmissionPanel data={data} refresh={refresh} notify={notify} onSelectWeek={value => { setWeek(value); setOwner(manager ? owner : data.user.id); setFilter('all') }} />
       <div className="toolbar">
         <div className="week-switcher">
           <button

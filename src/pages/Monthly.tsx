@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import WorkflowGuide from '../components/WorkflowGuide'
 import {
   Plus,
   Send,
@@ -144,17 +145,19 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
           </>
         }
       />
-      <div className="workflow-strip">
-        <span>01 管理员定义目标</span>
-        <i>→</i>
-        <span>02 明确负责人与参与人员</span>
-        <i>→</i>
-        <span>03 发布承诺</span>
-        <i>→</i>
-        <span>04 每周执行</span>
-        <i>→</i>
-        <span>05 成果验收</span>
-      </div>
+      <WorkflowGuide title="月度目标流转说明">
+        <div className="workflow-strip">
+          <span>01 管理员定义目标</span>
+          <i>→</i>
+          <span>02 明确负责人与参与人员</span>
+          <i>→</i>
+          <span>03 发布承诺</span>
+          <i>→</i>
+          <span>04 每周执行</span>
+          <i>→</i>
+          <span>05 成果验收</span>
+        </div>
+        </WorkflowGuide>
       <div className="toolbar">
         <div className="toolbar-left">
           <Field label="计划月份">
