@@ -22,4 +22,10 @@
 .submission-preview article { padding: 14px; border-bottom: 1px solid var(--border, #e2e7e5); }
 .submission-preview .badge { margin-left: 8px; }
 .submission-preview p { white-space: pre-wrap; }
+.submission-explanation { font-size: 13px; color: var(--text-secondary); line-height: 1.6; }
+.submission-column-week { display: block; margin-top: 6px; font-weight: 400; }
+.submission-cell > span { font-size: 13px; }
+.weekly-record-context { scroll-margin-top: 80px; margin: 22px 0 16px; }
+.weekly-record-context h2 { font-size: 16px; }
+.weekly-record-context > p { color: var(--text-secondary); font-size: 13px; }
 @media (max-width: 800px) { .weekly-submission-panel { padding: 16px; } .submission-cards { grid-template-columns: 1fr; } .submission-tools { width: 100%; } }

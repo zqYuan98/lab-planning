@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
@@ -11,6 +11,7 @@ import {
 import type { Task, WeeklyRecord } from '../../shared/types'
 import { api, json } from '../api'
 import WeeklySubmissionPanel from '../components/WeeklySubmissionPanel'
+import { recordTarget, advanceWeek, type WorkTarget, type ReviewRequest } from '../weekly-submission-flow'
 import {
   Badge,
   Empty,
@@ -48,17 +49,33 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
       record.weekStart === initialWeek,
   )
   const initialTask = data.tasks.find((task) => task.id === intent?.id)
-  const initialOwner = manager
-    ? ''
-    : intent?.id
-      ? initialRecord?.ownerId || initialTask?.ownerId || data.user.id
-      : intent?.action !== 'create' && (intent?.weekStart || intent?.status)
-        ? ''
-        : data.user.id
+  const initialOwner = manager ? initialRecord?.ownerId || initialTask?.ownerId || '' : data.user.id
   const [week, setWeek] = useState(initialWeek),
     [owner, setOwner] = useState(initialOwner),
     [filter, setFilter] = useState(intent?.status || 'all'),
     [search, setSearch] = useState(intent?.query || '')
+  const [cycleWeek, setCycleWeek] = useState(initialWeek)
+  const [workContext, setWorkContext] = useState<WorkTarget | null>(null)
+  const [reviewRequest, setReviewRequest] = useState<ReviewRequest | null>(null)
+  const reviewSequence = useRef(0)
+  const submissionSection = useRef<HTMLDivElement>(null)
+  const recordSection = useRef<HTMLDivElement>(null)
+  function selectRecordWeek(value: string) {
+    setWeek(value); setCycleWeek(value); setWorkContext(null); setReviewRequest(null)
+    setFilter('all'); setSearch('')
+  }
+  function selectWork(target: WorkTarget) {
+    setWorkContext(target); setWeek(target.contentWeek); setOwner(target.ownerId); setFilter('all'); setSearch('')
+    const record = target.recordId ? data.weeklyRecords.find(row => row.id === target.recordId && row.ownerId === target.ownerId && row.weekStart === target.contentWeek) : undefined
+    if (record) { setSelected(record); setModal('edit') }
+    else if (target.create) openCreate(false)
+    else requestAnimationFrame(() => { recordSection.current?.scrollIntoView({block:'start'}); recordSection.current?.focus({preventScroll:true}) })
+  }
+  function reviewWork(target: WorkTarget) {
+    setCycleWeek(target.cycleWeek)
+    setReviewRequest({...target, token:++reviewSequence.current})
+    requestAnimationFrame(() => { submissionSection.current?.scrollIntoView({block:'start'}); submissionSection.current?.focus({preventScroll:true}) })
+  }
   const [modal, setModal] = useState(
       intent?.action === 'create' ? 'create' : '',
     ),
@@ -92,8 +109,11 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
     setSelected(null)
     setCreationTask(undefined)
   }
-  const saved = async (message: string) => {
+  const saved = async (message: string, record?: WeeklyRecord) => {
     await refresh()
+    if (record) {
+      setWorkContext(recordTarget(record, cycleWeek)); setWeek(record.weekStart); setOwner(record.ownerId); setFilter('all'); setSearch('')
+    }
     notify(message)
     close()
   }
@@ -123,24 +143,32 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
           </>
         }
       />
-      <WeeklySubmissionPanel data={data} refresh={refresh} notify={notify} onSelectWeek={value => { setWeek(value); setOwner(manager ? owner : data.user.id); setFilter('all') }} />
+      <div ref={submissionSection} tabIndex={-1}>
+        <WeeklySubmissionPanel data={data} refresh={refresh} notify={notify} week={cycleWeek} onChangeCycle={selectRecordWeek} onSelectWork={selectWork} reviewRequest={reviewRequest} />
+      </div>
+      <div ref={recordSection} tabIndex={-1} className="weekly-record-context">
+        <h2>周工作记录 · {week} ～ {advanceWeek(week,6)}</h2>
+        <p>保存单条记录用于更新工作与周统计；完成填写后，请核对并提交整份提报。</p>
+        {workContext && <div className="navigation-context"><span>正在处理{nameOf(data,workContext.ownerId)}的{workContext.kind === 'results' ? '完成情况' : '下周计划'}（记录周 {workContext.contentWeek}，提报周期 {workContext.cycleWeek}）。</span><button className="button primary" onClick={() => reviewWork(workContext)}>返回核对并提交整份提报</button></div>}
+      </div>
       <div className="toolbar">
         <div className="week-switcher">
           <button
             className="icon-button"
             aria-label="上一周"
-            onClick={() => setWeek(addDays(week, -7))}
+            onClick={() => selectRecordWeek(addDays(week, -7))}
           >
             <ArrowLeft size={17} />
           </button>
           <label>
             <span className="sr-only">选择周</span>
             <input
+              aria-label="周记录所属周"
               type="date"
               value={week}
               onChange={(event) => {
                 if (event.target.value)
-                  setWeek(monday(new Date(`${event.target.value}T12:00:00`)))
+                  selectRecordWeek(monday(new Date(`${event.target.value}T12:00:00`)))
               }}
             />
           </label>
@@ -148,11 +176,11 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
           <button
             className="icon-button"
             aria-label="下一周"
-            onClick={() => setWeek(addDays(week, 7))}
+            onClick={() => selectRecordWeek(addDays(week, 7))}
           >
             <ArrowRight size={17} />
           </button>
-          <button className="text-button" onClick={() => setWeek(monday())}>
+          <button className="text-button" onClick={() => selectRecordWeek(monday())}>
             本周
           </button>
         </div>
@@ -161,7 +189,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
             负责人
             <select
               value={owner}
-              onChange={(event) => setOwner(event.target.value)}
+              onChange={(event) => { setOwner(event.target.value); setWorkContext(null) }}
             >
               <option value="">所有成员</option>
               {data.users.map((user) => (
@@ -195,7 +223,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
       )}
       <div className="weekly-summary">
         <span>
-          已提交 <strong>{official.length}</strong> 项
+          已纳入周统计 <strong>{official.length}</strong> 项
         </span>
         <span>
           成员自报完成{' '}
@@ -376,7 +404,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
                     {record.submitted
                       ? record.importSource
                         ? '已有周记录已导入生效'
-                        : '已提交管理者查看'
+                        : '已保存并纳入周统计，整份提报另行确认'
                       : '草稿仅在提交后计入周统计'}{' '}
                     · 记录 V{record.version}
                   </small>
@@ -407,13 +435,14 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
                                       'PATCH',
                                     ),
                                   ),
-                                '周计划已提交',
+                                '该条记录已纳入周统计；整份提报仍需核对提交',
                               )
                             }
                           >
-                            提交周计划
+                            将该条纳入周统计
                           </button>
                         )}
+                        <button onClick={() => reviewWork(recordTarget(record, cycleWeek))}>核对关联整份提报</button>
                         <button
                           onClick={() => {
                             setSelected(record)
@@ -462,6 +491,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
           data={data}
           week={week}
           temporary={modal === 'temporary'}
+          initialOwnerId={workContext?.ownerId || owner || data.user.id}
           initialTask={creationTask}
           onClose={close}
           onSaved={saved}
@@ -487,7 +517,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
             submitLabel="保存本周进展"
             onSubmit={async (event) => {
               const form = new FormData(event.currentTarget)
-              await api(
+              const updated = await api<WeeklyRecord>(
                 `/weekly-records/${selected.id}`,
                 json(
                   {
@@ -498,7 +528,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
                   'PATCH',
                 ),
               )
-              await saved('本周进展已保存')
+              await saved('该周进展已保存，请返回核对整份提报', updated)
             }}
           >
             <Field label="本周承诺">
@@ -571,7 +601,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
               />
               {selected.importSource
                 ? '保留为生效记录，纳入对应周统计'
-                : '提交管理者查看，纳入本周统计'}
+                : '将该条纳入周统计（不代表已提交整份提报）'}
             </label>
           </Form>
         </Modal>
@@ -585,11 +615,11 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
             onCancel={close}
             submitLabel="创建下一周记录"
             onSubmit={async (event) => {
-              await api(
+              const carried = await api<WeeklyRecord>(
                 `/weekly-records/${selected.id}/carry`,
                 json(Object.fromEntries(new FormData(event.currentTarget))),
               )
-              await saved('新周草稿已创建，原周记录已保留')
+              await saved('新周草稿已创建，原周记录已保留', carried)
             }}
           >
             <Field label="新一周日期">
@@ -674,6 +704,7 @@ function WeeklyCreate({
   week,
   temporary,
   initialTask,
+  initialOwnerId,
   onClose,
   onSaved,
 }: {
@@ -681,8 +712,9 @@ function WeeklyCreate({
   week: string
   temporary: boolean
   initialTask?: Task
+  initialOwnerId: string
   onClose: () => void
-  onSaved: (message: string) => Promise<void>
+  onSaved: (message: string, record?: WeeklyRecord) => Promise<void>
 }) {
   const accessibleTask =
     initialTask &&
@@ -692,7 +724,7 @@ function WeeklyCreate({
       : undefined
   const [taskId, setTaskId] = useState(accessibleTask?.id || ''),
     [planId, setPlanId] = useState(accessibleTask?.monthlyPlanId || ''),
-    [ownerId, setOwnerId] = useState(accessibleTask?.ownerId || data.user.id),
+    [ownerId, setOwnerId] = useState(accessibleTask?.ownerId || initialOwnerId),
     [createdTask, setCreatedTask] = useState<Task | null>(null)
   const plans = data.plans.filter(
     (plan) =>
@@ -722,7 +754,7 @@ function WeeklyCreate({
     >
       <Form
         onCancel={onClose}
-        submitLabel="保存周计划"
+        submitLabel="保存周工作记录"
         onSubmit={async (event) => {
           const form = new FormData(event.currentTarget),
             values = Object.fromEntries(form)
@@ -743,7 +775,7 @@ function WeeklyCreate({
             )
             setCreatedTask(task)
           }
-          await api(
+          const record = await api<WeeklyRecord>(
             '/weekly-records',
             json({
               taskId: task.id,
@@ -753,7 +785,7 @@ function WeeklyCreate({
               submitted: form.has('submitted'),
             }),
           )
-          await onSaved('周任务已保存')
+          await onSaved('周工作记录已保存，请核对整份提报', record)
         }}
       >
         <div className="form-grid">
@@ -886,7 +918,7 @@ function WeeklyCreate({
             name="submitted"
             defaultChecked={temporary || plan?.status === 'published'}
           />
-          立即提交管理者查看
+          将该条纳入周统计（不代表已提交整份提报）
         </label>
         <p className="form-hint">
           未发布月度目标下的记录请先保存草稿。完成周工作后，月度成果仍需单独验收。
