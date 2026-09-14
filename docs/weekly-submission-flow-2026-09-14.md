@@ -25,4 +25,12 @@
 - 填写下周计划会保留9月14日截止周期，定位9月21日记录并清空残留搜索。管理员从另一成员的下周详情跳入后，记录列表仅显示该成员该周工作。
 - 一次隔离HTTP请求遇到502，页面正确显示失败，刷新恢复；浏览器无脚本运行错误。正式库核验均为只读，测试写入仅发生于隔离内存库。
 
-部署记录在上线完成后补充。
+## 正式上线（2026-09-14 15:02，Asia/Shanghai）
+
+- 地址：`http://192.168.0.37:4310/`；应用提交 `b167ef0`，目录 `/home/yzq/apps/lab-planning/releases/b167ef0`。
+- 镜像 `lab-planning:b167ef0`，ID `sha256:56051a45321a492507e3ab43bebf374894d13c9706b13d7a8ce24b81d94c1e32`，正式容器 running/healthy。
+- 原配置和 `lab-planning-37-data` 数据卷继续使用。在线备份为 `backups/lab-planning-20260914T070204.965460416Z-3605178.sqlite`；停服最终备份为 `/home/yzq/apps/lab-planning/backups/before-weekly-b167ef0.sqlite`，完整性检查通过。
+- 切换前后所有实体（包括周提报规则、名单、应交项）的排序哈希相同：`c64d0af242de758be4376c50d084de65ffc8e563001922ce1ad1719a183e9add`。未改写个人内容、填写时间或整份提交事实。
+- 新镜像隔离157项测试通过；独立容器静态资源、登录、Word导出、重启持久化通过，测试容器及匿名卷已清理。
+- 正式浏览器确认加载新状态与跳转代码，内网HTTP下依旧没有randomUUID接口，但已使用getRandomValues兼容路径。未登录提报API返回401，浏览器运行错误为空。
+- 原代码目录 `releases/e3d89cb` 和镜像 `lab-planning:before-weekly-b167ef0` 保留。构建、测试、切换、数据核验日志及脚本在服务器 `ops/` 中以 `b167ef0` 标识。
