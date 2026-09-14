@@ -29,3 +29,5 @@
 .weekly-record-context h2 { font-size: 16px; }
 .weekly-record-context > p { color: var(--text-secondary); font-size: 13px; }
 @media (max-width: 800px) { .weekly-submission-panel { padding: 16px; } .submission-cards { grid-template-columns: 1fr; } .submission-tools { width: 100%; } }
+
+.work-origin { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; overflow-wrap: anywhere; font-size: 12px; }

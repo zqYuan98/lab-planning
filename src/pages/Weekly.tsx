@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import type { Task, WeeklyRecord } from '../../shared/types'
 import { api, json } from '../api'
+import WorkOriginLabel, { workSource } from '../components/WorkOriginLabel'
 import WeeklySubmissionPanel from '../components/WeeklySubmissionPanel'
 import { recordTarget, advanceWeek, type WorkTarget, type ReviewRequest } from '../weekly-submission-flow'
 import {
@@ -54,6 +55,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
     [owner, setOwner] = useState(initialOwner),
     [filter, setFilter] = useState(intent?.status || 'all'),
     [search, setSearch] = useState(intent?.query || '')
+  const [sourceFilter, setSourceFilter] = useState('all')
   const [cycleWeek, setCycleWeek] = useState(initialWeek)
   const [workContext, setWorkContext] = useState<WorkTarget | null>(null)
   const [reviewRequest, setReviewRequest] = useState<ReviewRequest | null>(null)
@@ -62,10 +64,10 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
   const recordSection = useRef<HTMLDivElement>(null)
   function selectRecordWeek(value: string) {
     setWeek(value); setCycleWeek(value); setWorkContext(null); setReviewRequest(null)
-    setFilter('all'); setSearch('')
+    setFilter('all'); setSearch(''); setSourceFilter('all')
   }
   function selectWork(target: WorkTarget) {
-    setWorkContext(target); setWeek(target.contentWeek); setOwner(target.ownerId); setFilter('all'); setSearch('')
+    setWorkContext(target); setWeek(target.contentWeek); setOwner(target.ownerId); setFilter('all'); setSearch(''); setSourceFilter('all')
     const record = target.recordId ? data.weeklyRecords.find(row => row.id === target.recordId && row.ownerId === target.ownerId && row.weekStart === target.contentWeek) : undefined
     if (record) { setSelected(record); setModal('edit') }
     else if (target.create) openCreate(false)
@@ -93,6 +95,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
       record.weekStart === week && (!owner || record.ownerId === owner),
   )
   const records = weekRecords
+    .filter(record => sourceFilter === 'all' || workSource(record) === sourceFilter)
     .filter((record) =>
       `${record.commitment} ${data.tasks.find((task) => task.id === record.taskId)?.title || ''} ${nameOf(data, record.ownerId)}`
         .toLocaleLowerCase()
@@ -112,7 +115,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
   const saved = async (message: string, record?: WeeklyRecord) => {
     await refresh()
     if (record) {
-      setWorkContext(recordTarget(record, cycleWeek)); setWeek(record.weekStart); setOwner(record.ownerId); setFilter('all'); setSearch('')
+      setWorkContext(recordTarget(record, cycleWeek)); setWeek(record.weekStart); setOwner(record.ownerId); setFilter('all'); setSearch(''); setSourceFilter('all')
     }
     notify(message)
     close()
@@ -138,7 +141,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
               onClick={() => openCreate(false)}
             >
               <Plus size={17} />
-              安排周任务
+              {manager ? '下发 / 安排周任务' : '安排周任务'}
             </button>
           </>
         }
@@ -247,7 +250,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
               : '—'}
           </strong>
         </span>
-        <small>按全部已提交周记录统计，筛选不改变口径。</small>
+        <small>按全部已纳入周统计的记录计算，筛选不改变口径。</small>
       </div>
       <div className="tabs" role="group" aria-label="执行状态筛选">
         {[
@@ -265,6 +268,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
         ))}
       </div>
       <div className="toolbar">
+        <label className="inline-field">计划来源<select value={sourceFilter} onChange={event => setSourceFilter(event.target.value)}><option value="all">全部来源</option><option value="assigned">管理员下发</option><option value="self">自行安排</option><option value="proxy">管理员代录</option><option value="imported">已有计划导入</option><option value="unknown">来源未记录</option></select></label>
         <label className="search-input">
           <Search size={17} />
           <input
@@ -311,6 +315,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
                     <span className="task-code">
                       #{record.taskId.slice(-6).toUpperCase()}
                     </span>
+                    <WorkOriginLabel row={record} data={data} />
                     {record.submitted ? (
                       <Badge tone={statusTone[record.status]}>
                         {record.importSource && record.status === 'done'
@@ -318,7 +323,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
                           : statusLabels[record.status]}
                       </Badge>
                     ) : (
-                      <Badge>草稿 · 未提交</Badge>
+                      <Badge>草稿 · 未纳入周统计</Badge>
                     )}
                     {record.importSource && (
                       <Badge tone="blue">已有计划导入</Badge>
@@ -405,7 +410,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
                       ? record.importSource
                         ? '已有周记录已导入生效'
                         : '已保存并纳入周统计，整份提报另行确认'
-                      : '草稿仅在提交后计入周统计'}{' '}
+                      : '草稿尚未纳入周统计，整份提报另行确认'}{' '}
                     · 记录 V{record.version}
                   </small>
                   <div className="row-actions">
@@ -491,7 +496,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
           data={data}
           week={week}
           temporary={modal === 'temporary'}
-          initialOwnerId={workContext?.ownerId || owner || data.user.id}
+          initialOwnerId={workContext?.ownerId || owner || (manager ? '' : data.user.id)}
           initialTask={creationTask}
           onClose={close}
           onSaved={saved}
@@ -726,6 +731,9 @@ function WeeklyCreate({
     [planId, setPlanId] = useState(accessibleTask?.monthlyPlanId || ''),
     [ownerId, setOwnerId] = useState(accessibleTask?.ownerId || initialOwnerId),
     [createdTask, setCreatedTask] = useState<Task | null>(null)
+  const [arrangement, setArrangement] = useState('assigned')
+  const creationKind = ownerId === data.user.id ? 'self' : arrangement
+  const assigning = creationKind === 'assigned' && !!ownerId
   const plans = data.plans.filter(
     (plan) =>
       !plan.visibility &&
@@ -748,22 +756,24 @@ function WeeklyCreate({
   const plan = plans.find((plan) => plan.id === planId)
   return (
     <Modal
-      title={temporary ? '记录临时工作' : '安排个人周任务'}
+      title={temporary ? '记录临时工作' : data.user.role === 'manager' ? '下发 / 安排周任务' : '安排个人周任务'}
       onClose={onClose}
       wide
     >
       <Form
         onCancel={onClose}
-        submitLabel="保存周工作记录"
+        submitLabel={assigning ? '下发给责任人' : creationKind === 'proxy' ? '保存代录记录' : '保存周工作记录'}
         onSubmit={async (event) => {
           const form = new FormData(event.currentTarget),
             values = Object.fromEntries(form)
+          const origin = { creationKind, creationReason: values.creationReason || '' }
           let task =
             createdTask || data.tasks.find((item) => item.id === taskId)
           if (!task) {
             task = await api<Task>(
               '/tasks',
               json({
+                ...origin,
                 title: values.title,
                 monthlyPlanId: temporary ? null : planId,
                 ownerId,
@@ -778,6 +788,7 @@ function WeeklyCreate({
           const record = await api<WeeklyRecord>(
             '/weekly-records',
             json({
+              ...origin,
               taskId: task.id,
               weekStart: values.weekStart,
               commitment: values.commitment,
@@ -785,15 +796,17 @@ function WeeklyCreate({
               submitted: form.has('submitted'),
             }),
           )
-          await onSaved('周工作记录已保存，请核对整份提报', record)
+          await onSaved(assigning ? `已下发给${nameOf(data, record.ownerId)}，请成员在我的周计划中更新并核对整份提报` : '周工作记录已保存，请核对整份提报', record)
         }}
       >
         <div className="form-grid">
           <Field label="所属周">
             <input name="weekStart" type="date" defaultValue={week} required />
           </Field>
-          <Field label="任务负责人">
+          <Field label="任务责任人" hint="保存后进入该责任人的我的周计划，填写人单独留痕。">
             <select
+              aria-label="任务责任人"
+              required
               value={ownerId}
               onChange={(event) => {
                 setOwnerId(event.target.value)
@@ -802,8 +815,9 @@ function WeeklyCreate({
               }}
               disabled={data.user.role !== 'manager' || !!createdTask}
             >
+              <option value="" disabled>请选择责任人</option>
               {data.users
-                .filter((user) => user.active)
+                .filter((user) => user.active && (!user.registrationStatus || user.registrationStatus === 'approved'))
                 .map((user) => (
                   <option key={user.id} value={user.id}>
                     {user.name}
@@ -812,7 +826,12 @@ function WeeklyCreate({
             </select>
           </Field>
         </div>
-        <Field label="任务来源">
+        {data.user.role === 'manager' && ownerId && ownerId !== data.user.id && <>
+          <Field label="安排方式"><select aria-label="安排方式" value={arrangement} onChange={event => setArrangement(event.target.value)} disabled={!!createdTask}><option value="assigned">下发任务</option><option value="proxy">代成员录入</option></select></Field>
+          {creationKind === 'proxy' && <Field label="代录原因"><textarea name="creationReason" required rows={2} maxLength={12000} /></Field>}
+          <p className="form-hint">{assigning ? '下发后成员可直接更新，无需重复创建。' : '保留管理员代录来源及原因。'}此操作不会生成成员的整份提报回执。</p>
+        </>}
+        <Field label="关联个人任务">
           <select
             value={taskId}
             onChange={(event) => setTaskId(event.target.value)}
@@ -838,7 +857,7 @@ function WeeklyCreate({
                   onChange={(event) => setPlanId(event.target.value)}
                   required
                 >
-                  <option value="">选择本人负责或参与的月度目标</option>
+                  <option value="">选择责任人负责或参与的月度目标</option>
                   {plans
                     .sort((a, b) => b.month.localeCompare(a.month))
                     .map((item) => (
@@ -873,7 +892,7 @@ function WeeklyCreate({
                 name="title"
                 required
                 maxLength={200}
-                placeholder="本人具体负责的交付内容"
+                placeholder="责任人具体负责的交付内容"
               />
             </Field>
             <Field label="任务说明">

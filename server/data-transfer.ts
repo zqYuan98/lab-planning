@@ -25,7 +25,7 @@ export function exportBusinessData(store: Store, actor: User, options: ExportOpt
   if (options.month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(options.month)) throw new HttpError(400, '导出月份须为 YYYY-MM')
   for (const filter of [options.ownerId, options.projectId]) if (filter !== undefined && (typeof filter !== 'string' || filter.length > 200)) throw new HttpError(400, '导出筛选条件无效')
   return store.transaction(() => {
-    const visible = new Domain(store).bootstrap(actor)
+    const visible = new Domain(store).bootstrap(actor, false)
     const isManager = actor.role === 'manager'
     const complete = type === 'all' && !options.month && !options.ownerId && !options.projectId
     const sources: BusinessCollections = {

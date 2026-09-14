@@ -1,3 +1,4 @@
+import WorkOriginLabel from '../components/WorkOriginLabel'
 import { ChevronRight } from 'lucide-react'
 import Button from '@arco-design/web-react/es/Button'
 import type { MonthlyPlan, WeeklyRecord } from '../../shared/types'
@@ -77,8 +78,8 @@ export default function Overview({
   const reminders = [
     {
       count: view.drafts.length,
-      title: '条周草稿待提交',
-      note: '提交后纳入本周执行统计',
+      title: '条周草稿待核对',
+      note: '核对后纳入周统计，整份提报另行确认',
       action: () =>
         navigate('weekly', { weekStart: view.weekStart, status: 'draft' }),
     },
@@ -231,7 +232,7 @@ export default function Overview({
             <small>条</small>
           </strong>
           <span id="ov-metric-4-detail" className="ov-stat-detail">
-            本周共 {view.submitted.length} 条已提交
+            本周共 {view.submitted.length} 条已纳入周统计
           </span>
           <span id="ov-metric-4-context" className="ov-stat-context">
             {view.notDone.length
@@ -341,6 +342,7 @@ export default function Overview({
                   }
                 >
                   <span className="ov-item-copy">
+                    <WorkOriginLabel row={record} data={data} />
                     <strong>
                       {data.tasks.find((task) => task.id === record.taskId)
                         ?.title || record.commitment}
@@ -365,7 +367,7 @@ export default function Overview({
                   >
                     {record.submitted
                       ? weekLabels[record.status]
-                      : '未提交草稿'}
+                      : '草稿未纳入周统计'}
                   </span>
                   <ChevronRight size={14} />
                 </button>
@@ -461,7 +463,7 @@ export default function Overview({
                     (week.state === 'empty'
                       ? '暂无记录'
                       : week.submitted +
-                        ' 条已提交，' +
+                        ' 条已纳入周统计，' +
                         week.done +
                         ' 条自报完成，' +
                         week.drafts +
@@ -521,7 +523,7 @@ export default function Overview({
         </Button>
       </nav>
       <p className="ov-scope-note">
-        统计范围：当前账号可访问的本月目标与本周记录。未提交草稿不计入正式执行；历史记录不足时不作趋势对比。
+        统计范围：当前账号可访问的本月目标与本周记录。草稿未纳入周统计不计入正式执行；历史记录不足时不作趋势对比。
       </p>
     </div>
   )

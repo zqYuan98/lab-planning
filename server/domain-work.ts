@@ -1,4 +1,5 @@
 import type { AuditEvent, MonthlyPlan, Task, User, WeeklyRecord } from '../shared/types.ts'
+import { createWorkOrigin } from './work-origin.ts'
 import { HttpError } from './store.ts'
 import { DomainBase, bool, choice, date, manager, monday, own, participates, text, type Input } from './domain-common.ts'
 
@@ -26,7 +27,8 @@ export class WorkService extends DomainBase {
       if (!monthlyPlanId && !isTemporary) throw new HttpError(400, '正式个人任务必须关联月计划')
       if (monthlyPlanId && isTemporary) throw new HttpError(400, '已关联月计划的任务不能标记为临时工作')
       if (monthlyPlanId) this.usablePlan(monthlyPlanId, ownerId)
-      const task = this.store.insert<Task>('tasks', { title: text(input.title, '任务标题', true, 300), monthlyPlanId, ownerId, description: text(input.description, '任务说明', false), dueDate: date(input.dueDate, '任务截止日期'), status: 'todo', isTemporary, temporaryReason })
+      const workOrigin = createWorkOrigin(actor, ownerId, input)
+      const task = this.store.insert<Task>('tasks', { workOrigin, title: text(input.title, '任务标题', true, 300), monthlyPlanId, ownerId, description: text(input.description, '任务说明', false), dueDate: date(input.dueDate, '任务截止日期'), status: 'todo', isTemporary, temporaryReason })
       this.audit(actor, 'task', task.id, 'create', null, task, temporaryReason)
       return task
     })
@@ -103,6 +105,8 @@ export class WorkService extends DomainBase {
     return this.store.transaction(() => {
       const task = this.need<Task>('tasks', text(input.taskId, '个人任务'))
       own(actor, task.ownerId)
+      this.activeUser(task.ownerId)
+      const workOrigin = createWorkOrigin(actor, task.ownerId, input)
       const weekStart = monday(input.weekStart)
       if (this.store.list<WeeklyRecord>('weeklyRecords').some(item => item.taskId === task.id && item.weekStart === weekStart)) throw new HttpError(409, '此任务本周已有记录，请修改已有记录')
       if (!task.monthlyPlanId && (!task.isTemporary || !task.temporaryReason)) throw new HttpError(400, '未关联月计划的任务需要临时工作原因')
@@ -110,7 +114,7 @@ export class WorkService extends DomainBase {
         const plan = this.need<MonthlyPlan>('plans', task.monthlyPlanId)
         if (plan.projectId) this.activeProject(plan.projectId)
       }
-      const data = { taskId: task.id, monthlyPlanId: task.monthlyPlanId, ownerId: task.ownerId, weekStart, ...this.fields(input) }
+      const data = { workOrigin, taskId: task.id, monthlyPlanId: task.monthlyPlanId, ownerId: task.ownerId, weekStart, ...this.fields(input) }
       this.submissionGate(data)
       const record = this.store.insert<WeeklyRecord>('weeklyRecords', data)
       this.audit(actor, 'weeklyRecord', record.id, record.submitted ? 'submit' : 'create', null, record)
@@ -138,7 +142,7 @@ export class WorkService extends DomainBase {
       own(actor, before.ownerId)
       const weekStart = monday(input.weekStart)
       if (weekStart <= before.weekStart) throw new HttpError(400, '承接周必须晚于原周')
-      const record = this.createWeeklyRecord(actor, { taskId: before.taskId, weekStart, commitment: input.commitment ?? (before.nextAction || before.commitment) })
+      const record = this.createWeeklyRecord(actor, { taskId: before.taskId, weekStart, commitment: input.commitment ?? (before.nextAction || before.commitment), creationKind: input.creationKind, creationReason: input.creationReason })
       this.audit(actor, 'weeklyRecord', record.id, 'carry', before, record)
       return record
     })

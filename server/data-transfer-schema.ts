@@ -30,6 +30,7 @@ const weeklyTimestamp = timestamp.refine(v => Number.isFinite(Date.parse(v)) && 
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v => Number.isFinite(Date.parse(`${v}T00:00:00Z`)) && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v)
 const month = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/)
 const entity = { id, version: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER), createdAt: timestamp, updatedAt: timestamp }
+const workOriginSchema = z.object({ kind: z.enum(['self', 'assigned', 'proxy']), actorId: id, reason: line }).strict().refine(row => row.kind !== 'proxy' || !!row.reason.trim(), '代录需要原因')
 const importSourceSchema = z.object({ batchId: id, sourceId: id, rowId: id, sourceStatus: line }).strict()
 export const userSchema = z.object({ ...entity, name: z.string().min(1).max(100), email: z.string().min(3).max(254), role: z.enum(['manager', 'member']), position: z.string().max(100), active: z.boolean() }).strict()
 const projectSchema = z.object({ ...entity, name: z.string().min(1).max(200), code: z.string().min(1).max(50), description: line, ownerId: id, status: z.enum(['active', 'archived']) }).strict()
@@ -42,13 +43,13 @@ const planSchema = z.object({ ...entity, month, title: z.string().min(1).max(300
   if (!row.importSource && !row.visibility && (!row.expectedOutcome.trim() || !row.acceptanceCriteria.trim() || !row.dueDate)) ctx.addIssue({ code: 'custom', message: '普通月计划的预期成果、验收标准和截止日期不可为空' })
 })
 const taskSchema = z.object({ ...entity, title: z.string().min(1).max(300), monthlyPlanId: id.nullable(), ownerId: id, description: z.string().max(20000), dueDate: z.union([day, z.literal('')]),
-  status: z.enum(['todo', 'doing', 'blocked', 'done']), isTemporary: z.boolean(), temporaryReason: line, importSource: importSourceSchema.optional(),
+  status: z.enum(['todo', 'doing', 'blocked', 'done']), isTemporary: z.boolean(), temporaryReason: line, workOrigin: workOriginSchema.optional(), importSource: importSourceSchema.optional(),
 }).strict().superRefine((row, ctx) => {
   if (!row.importSource && (!row.dueDate || row.description.length > 12000)) ctx.addIssue({ code: 'custom', message: '普通任务的截止日期或说明格式无效' })
 })
 const weeklySchema = z.object({ ...entity, taskId: id, monthlyPlanId: id.nullable(), ownerId: id, weekStart: day, commitment: line, actualOutcome: line,
   evidenceUrl: z.string().max(2000).refine(v => { if (!v) return true; try { return ['http:', 'https:'].includes(new URL(v).protocol) } catch { return false } }),
-  blocker: line, nextAction: line, status: z.enum(['planned', 'doing', 'blocked', 'done', 'not_done']), submitted: z.boolean(), importSource: importSourceSchema.optional(),
+  blocker: line, nextAction: line, status: z.enum(['planned', 'doing', 'blocked', 'done', 'not_done']), submitted: z.boolean(), workOrigin: workOriginSchema.optional(), importSource: importSourceSchema.optional(),
 }).strict().superRefine((row, ctx) => {
   if (!row.importSource && !row.commitment.trim()) ctx.addIssue({ code: 'custom', message: '普通周记录的本周承诺不可为空' })
 })
@@ -123,6 +124,7 @@ const auditFields = [...Object.keys(entity), 'entityType', 'entityId', 'actorId'
 export function projectRow(collection: TransferCollection, value: unknown): Record<string, unknown> {
   const schema = schemas[collection]
   const row = pick(value, collection === 'events' ? auditFields : Object.keys((schema as typeof projectSchema).shape))
+  if (row.workOrigin) row.workOrigin = pick(row.workOrigin, ['kind', 'actorId', 'reason'])
   if (row.importSource) row.importSource = pick(row.importSource, Object.keys(importSourceSchema.shape))
   if (collection === 'history') row.row = pick(row.row, Object.keys(importRowSchema.shape))
   if (collection === 'weeklyRules') row.windows = (row.windows as unknown[]).map(item => pick(item, ['fromWeek', 'toWeek']))
@@ -177,6 +179,7 @@ export function rowReferences(collection: TransferCollection, value: unknown): D
     }
     if (target === 'tasks' || target === 'weeklyRecords') add('plans', row.monthlyPlanId)
     if (target === 'weeklyRecords') add('tasks', row.taskId)
+    if ((target === 'tasks' || target === 'weeklyRecords') && row.workOrigin) add('users', (row.workOrigin as { actorId: string }).actorId)
     if (target === 'weeklyCycles') { add('weeklyRules', 'weekly-submission-rule'); add('users', row.confirmedBy); for (const id of row.rosterIds as string[]) add('users', id) }
     if (['weeklyDuties', 'weeklySubmissions', 'weeklyMissing', 'weeklyAdjustments'].includes(target)) { add('users', row.ownerId); add('weeklyCycles', row.cycleWeek) }
     if (['weeklySubmissions', 'weeklyMissing', 'weeklyAdjustments'].includes(target)) add('weeklyDuties', row.dutyId)
@@ -225,6 +228,7 @@ export function remapUsers(collection: TransferCollection, value: unknown, mappi
   const row = structuredClone(value) as Record<string, unknown>
   const replace = (field: string) => { if (typeof row[field] === 'string' && mapping[row[field] as string]) row[field] = mapping[row[field] as string] }
   if (collection === 'users') replace('id')
+  if ((collection === 'tasks' || collection === 'weeklyRecords') && row.workOrigin) { const origin = row.workOrigin as { actorId: string }; origin.actorId = mapping[origin.actorId] ?? origin.actorId }
   if (['projects', 'annualGoals', 'plans', 'tasks', 'weeklyRecords'].includes(collection)) replace('ownerId')
   if (['weeklyDuties', 'weeklySubmissions', 'weeklyMissing', 'weeklyAdjustments'].includes(collection)) replace('ownerId')
   if (collection === 'weeklyCycles') { replace('confirmedBy'); row.rosterIds = (row.rosterIds as string[]).map(id => mapping[id] ?? id) }

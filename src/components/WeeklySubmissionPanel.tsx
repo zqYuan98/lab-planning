@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CheckCircle2, Clock3, RefreshCw } from 'lucide-react'
 import type { WeeklyDutyView, WeeklySubmissionView } from '../../shared/weekly-submissions'
+import WorkOriginLabel from './WorkOriginLabel'
 import { api, json } from '../api'
 import { Badge, Field, Form, Modal, nameOf, type PageProps } from '../ui'
 import { createSubmissionRequestId, submissionProgress, submissionLabels as labels, advanceWeek, type WorkTarget, type ReviewRequest } from '../weekly-submission-flow'
@@ -79,6 +80,7 @@ export default function WeeklySubmissionPanel({ data, refresh, notify, week, onC
   function recordPreview(duty: WeeklyDutyView) {
     return <div className="submission-preview">{duty.records.map(row => <article key={row.id}>
       <strong>{data.tasks.find(t => t.id === row.taskId)?.title ?? '个人任务'}</strong><Badge>{row.submitted ? '已纳入周统计' : '草稿'}</Badge>
+      <WorkOriginLabel row={data.weeklyRecords.find(record => record.id === row.id) ?? row} data={data} />
       <p>{duty.kind === 'results' ? row.actualOutcome || '尚未填写实际进展' : row.commitment || '尚未填写计划'}</p>
       {row.blocker && <p>阻塞 / 未完成原因：{row.blocker}</p>}
       <button className="text-button" onClick={() => selectWork(duty, row.id)}>查看 / 编辑该记录</button>
@@ -148,7 +150,7 @@ export default function WeeklySubmissionPanel({ data, refresh, notify, week, onC
         <h3>当前已保存内容</h3>{recordPreview(selected)}
         <button className="button secondary" onClick={() => selectWork(selected)}>查看该成员该周全部记录</button>
         <h3>整份提报历史</h3>
-        <div className="timeline">{selected.submissions.map((receipt, index) => <article key={receipt.id}><h3>第 {index + 1} 次提交 · {dateTime(receipt.submittedAt)}</h3><p>{receipt.records.length} 项记录 · {receipt.note || '无补充说明'}</p>{receipt.reason && <p>代录：{nameOf(data, receipt.actorId)} · {receipt.reason}</p>}<details><summary>查看本次提交快照</summary>{receipt.records.map(row=><div key={row.id}><strong>{row.commitment}</strong><p>{row.actualOutcome || '未填写实际进展'}</p>{row.blocker && <p>{row.blocker}</p>}</div>)}</details></article>)}{selected.adjustments.map(event => <article key={event.id}><h3>{{ exempt: '豁免', revoke_exemption: '撤销豁免', invalidate: '作废提交', restore: '恢复提交' }[event.action]} · {dateTime(event.occurredAt)}</h3><p>{nameOf(data, event.actorId)} · {event.reason}</p></article>)}{!selected.submissions.length && <p>尚未提交整份提报；上方已保存的周记录仍可查看。</p>}</div>
+        <div className="timeline">{selected.submissions.map((receipt, index) => <article key={receipt.id}><h3>第 {index + 1} 次提交 · {dateTime(receipt.submittedAt)}</h3><p>{receipt.records.length} 项记录 · {receipt.note || '无补充说明'}</p>{receipt.reason && <p>代录：{nameOf(data, receipt.actorId)} · {receipt.reason}</p>}<details><summary>查看本次提交快照</summary>{receipt.records.map(row=><div key={row.id}><strong>{row.commitment}</strong><WorkOriginLabel row={row} data={data} /><p>{row.actualOutcome || '未填写实际进展'}</p>{row.blocker && <p>{row.blocker}</p>}</div>)}</details></article>)}{selected.adjustments.map(event => <article key={event.id}><h3>{{ exempt: '豁免', revoke_exemption: '撤销豁免', invalidate: '作废提交', restore: '恢复提交' }[event.action]} · {dateTime(event.occurredAt)}</h3><p>{nameOf(data, event.actorId)} · {event.reason}</p></article>)}{!selected.submissions.length && <p>尚未提交整份提报；上方已保存的周记录仍可查看。</p>}</div>
         {manager && <div className="submission-actions"><button className="button primary" onClick={() => open(selected, 'submit')}>代录提报</button><button className="button secondary" onClick={() => { setAdjustAction('exempt'); setMode('adjust') }}>豁免 / 纠错</button></div>}
       </Modal>}
 

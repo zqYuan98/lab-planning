@@ -1,4 +1,5 @@
 import type { AnnualGoal, AuditEvent, Bootstrap, MonthlyPlan, Project, Publication, Report, Task, User, WeeklyRecord } from '../shared/types.ts'
+import { workOriginProjector } from './work-origin.ts'
 import { safeUser } from './auth.ts'
 import { registrationApproved } from '../shared/auth-policy.ts'
 import { AdminService } from './domain-admin.ts'
@@ -46,7 +47,7 @@ export class Domain extends DomainBase {
   updateWeeklyRecord = (...args: Parameters<WorkService['updateWeeklyRecord']>) => this.work.updateWeeklyRecord(...args)
   carryWeeklyRecord = (...args: Parameters<WorkService['carryWeeklyRecord']>) => this.work.carryWeeklyRecord(...args)
 
-  bootstrap(actor: User): Bootstrap {
+  bootstrap(actor: User, includeLegacyOrigins = true): Bootstrap {
     const isManager = actor.role === 'manager'
     const plans = this.store.list<MonthlyPlan>('plans').flatMap(plan => {
       const visible = visiblePlan(this.store, actor, plan)
@@ -73,6 +74,7 @@ export class Domain extends DomainBase {
     }
     const publications = visiblePublications(actor, this.store.list<Publication>('publications'), this.store)
     const users = this.store.list<User>('users').filter(user => isManager || registrationApproved(user)).map(user => ({ ...safeUser(user), ...(isManager && user.registrationStatus ? { registrationReviewComment: user.registrationReviewComment ?? '' } : {}) }))
-    return { user: safeUser(actor), users, projects: this.store.list<Project>('projects'), annualGoals: this.store.list<AnnualGoal>('annualGoals'), plans, tasks, weeklyRecords, publications, reports: isManager ? this.store.list<Report>('reports') : [], aiConfigured: aiConfigured(this.store) }
+    const projectOrigin = workOriginProjector(includeLegacyOrigins ? this.store.list<AuditEvent>('events') : [])
+    return { user: safeUser(actor), users, projects: this.store.list<Project>('projects'), annualGoals: this.store.list<AnnualGoal>('annualGoals'), plans, tasks: tasks.map(row => projectOrigin(row, 'task')), weeklyRecords: weeklyRecords.map(row => projectOrigin(row, 'weeklyRecord')), publications, reports: isManager ? this.store.list<Report>('reports') : [], aiConfigured: aiConfigured(this.store) }
   }
 }
