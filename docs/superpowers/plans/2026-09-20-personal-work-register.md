@@ -36,7 +36,7 @@ Files: create `src/pages/WorkRegister.tsx`, `src/components/WorkRegisterCapture.
 
 - [ ] 页面遵循现有浅色工作台视觉，标题「我的工作清单」，清晰显示在手事项、待安排、待协调；视图、搜索、快速记录、汇报预览、条目编辑和周安排入口。
 - [ ] 输入多行后显示逐条预览再提交；复用 `assignmentAttempt` 保存幂等 requestId。正常失败保留输入；HTTP 成功后刷新失败不能重复提交业务。
-- [ ] 编辑使用 PATCH `/tasks/:id` 和 version；总体状态/待反馈、当前进展、交付物、截止待确认、优先级、预计投入、下一步及需要决策均可维护；完成与阻塞必要说明明确。
+- [ ] 编辑使用 PATCH `/tasks/:id` 和 version；workSource、assignedBy、assignedOn、总体状态/待反馈、当前进展、交付物、截止待确认、优先级、预计投入、下一步及需要决策均可维护；完成与阻塞必要说明明确。验证已有正式任务补录领导交办后进入筛选且汇报保留来源。
 - [ ] 复用 `<Weekly>` 导航 `{action:'create', id:task.id, ownerId:task.ownerId, weekStart}`；已有周记录导航记录 id。
 - [ ] 预览支持 CSV 下载与打印，展示筛选范围和生成时间；空结果也清楚说明。
 - [ ] 宽屏表格和窄屏卡片/可滚动区域，控件均有文本标签，错误与忙碌状态可识别。
