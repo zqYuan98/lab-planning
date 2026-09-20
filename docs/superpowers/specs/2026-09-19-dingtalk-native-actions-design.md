@@ -92,6 +92,8 @@ ExternalObjectLink 保存本地 actionId、generation、bindingId、corp/app、u
 
 ## 5. 高级互动卡片
 
+内容复用[通知内容设计](2026-09-20-dingtalk-notification-content-design.md)的事项摘要、变更差异和接收人可见字段；不用等到本阶段才补现有工作通知详情。高级卡片能否编辑展示、接受输入或执行动作分别验证；展示更多内容不改变权限，也不另发一条重复的普通工作通知。原生待办同样复用投影，按其已核实字段及长度预算压缩。
+
 [创建卡片](https://open.dingtalk.com/document/development/interface-for-creating-a-card-instance.md)需要 Card.Instance.Write；每实例保存 outTrackId、模板版本、业务动作/版本、接收人、userIdType、回调方式及到期时间。userIdType=1 为 userid，2 为 unionId。
 
 第一批动作：查看事项、确认收到、更新进度、回应催办、查看审核/验收。查看类打开 H5；“确认收到”在经过授权的单击回调中调用原确认服务。进展/回应可以先打开 H5，租户卡片输入能力验收后再支持有限字段直接提交，必须展示对象和保存内容。
