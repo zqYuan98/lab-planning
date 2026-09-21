@@ -35,6 +35,7 @@ import {
 import { Modal, type PageProps } from "../ui";
 import type { Navigate } from "../navigation";
 import WorkOriginLabel from "../components/WorkOriginLabel";
+import { TaskLegend } from "../components/TaskSignals";
 import { createSubmissionRequestId, weeklyRecordState } from "../weekly-submission-flow";
 import { isEffectiveWeeklyRecord } from "../../shared/weekly-record-state";
 import {
@@ -48,6 +49,8 @@ import {
   StatusPill,
   TaskTable,
   Timeline,
+  WorkRowSignals,
+  workRowClass,
 } from "../components/overview/WorkspaceViews";
 import {
   columnLabels,
@@ -300,12 +303,12 @@ export default function DepartmentOverview({
   }
   const metrics = [
     {
-      label: "可见成员",
+      label: "团队成员",
       icon: Users,
       tone: "neutral",
       value: members.length,
       unit: "人",
-      note: "含所选周期暂无任务的成员",
+      note: "含本期暂无任务成员",
       active: config.view === "members",
       action: () => change({ view: "members" }),
     },
@@ -315,7 +318,7 @@ export default function DepartmentOverview({
       tone: "blue",
       value: summary.total,
       unit: "项",
-      note: "跨周记录按任务去重",
+      note: "跨周任务已去重",
       active: config.view === "tasks" && !config.status && !config.riskOnly,
       action: () => onDrill("当前筛选的全部任务", rows),
     },
@@ -325,7 +328,7 @@ export default function DepartmentOverview({
       tone: "blue",
       value: summary.doing,
       unit: "项",
-      note: "按所选周期最新周记录",
+      note: "本期最新执行状态",
       active: false,
       action: () =>
         onDrill(
@@ -358,12 +361,12 @@ export default function DepartmentOverview({
       action: () => onDrill("需要关注的任务（去重）", riskRows(rows)),
     },
     {
-      label: "草稿待审 / 未排周",
+      label: "草稿·待审 / 未排周",
       icon: FileClock,
       tone: "amber",
       value: `${summary.drafts} / ${summary.unscheduled}`,
       unit: "项",
-      note: "查看尚待完善的工作安排",
+      note: "待完善工作安排",
       active: false,
       action: () =>
         onDrill(
@@ -379,7 +382,7 @@ export default function DepartmentOverview({
       <header className="ow-heading">
         <div className="ow-heading-copy">
           <h1>部门概览</h1>
-          <p>全员任务、项目进展与交付安排，一处看清。</p>
+          <p>团队进展与交付安排</p>
         </div>
         <div className="ow-heading-controls">
           <div className="ow-period-bar">
@@ -498,6 +501,7 @@ export default function DepartmentOverview({
           </button>
         ))}
       </section>
+      <TaskLegend />
       <section className="ow-workspace" aria-label="部门多维工作空间">
         <label className="ow-mobile-view">
           <span>展示视图</span>
@@ -932,8 +936,9 @@ export default function DepartmentOverview({
       )}
       {detail && (
         <Modal wide title={detail.title} onClose={() => setDetail(null)}>
-          <div className="ow-page">
+          <div className={`ow-page ${workRowClass(detail)}`}>
             <div className="ow-detail-meta">
+              <WorkRowSignals row={detail} />
               <span>负责人：{detail.ownerName}</span>
               <StatusPill row={detail} />
               <span className={detail.overdue ? "ow-overdue" : ""}>

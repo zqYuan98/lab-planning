@@ -2,6 +2,7 @@ import type { Bootstrap, Task, User, WeeklyRecord } from '../shared/types'
 import { canUseAccount, registrationApproved } from '../shared/auth-policy'
 import { isActiveWeeklyRecord, isEffectiveWeeklyRecord } from '../shared/weekly-record-state'
 import { addCalendarDays, shanghaiToday, shiftCalendarMonth, weekMonday } from './overview-data'
+import { priorityRank, taskPriority, workKind, type WorkKind } from './task-presentation'
 
 export type WorkPeriod = 'all' | 'month' | 'week'
 export type WorkStatus = WeeklyRecord['status'] | 'draft' | 'unscheduled'
@@ -25,6 +26,8 @@ export interface WorkRow {
   officialCount: number
   overdue: boolean
   isTemporary: boolean
+  priority?: Task['priority']
+  workKind?: WorkKind
 }
 
 export interface WorkFilters {
@@ -119,6 +122,8 @@ export function buildWorkspace(
       // Missing records describe this period only; an already completed task is not overdue.
       overdue: calendarDate(dueDate) && dueDate < today && status !== 'done' && (record !== undefined || task?.status !== 'done'),
       isTemporary: record ? record.monthlyPlanId === null : task?.isTemporary ?? false,
+      priority: taskPriority(task, plan),
+      workKind: workKind({ isTemporary: Boolean(task?.isTemporary || task?.temporaryReason?.trim() || plan?.isTemporary), monthlyPlanId: planId }),
     })
   }
   const represented = new Set(rows.map(row => row.ownerId))
@@ -137,6 +142,17 @@ export function filterWorkRows(rows: WorkRow[], filters: WorkFilters = {}) {
     (!filters.riskOnly || row.status === 'blocked' || row.status === 'not_done' || row.overdue) &&
     (!query || [row.title, row.ownerName, row.projectName, row.planTitle, row.record?.commitment, row.record?.actualOutcome, row.record?.blocker, row.record?.nextAction].filter(Boolean).join(' ').toLocaleLowerCase().includes(query)),
   )
+}
+
+/** Prioritize actionable work in the short member preview without changing its full task list. */
+export function previewWorkRows(rows: WorkRow[], limit = 3) {
+  const completed = (row: WorkRow) => row.status === 'done' || row.status === 'unscheduled' && row.taskStatus === 'done'
+  const risk = (row: WorkRow) => row.overdue || row.status === 'blocked' || row.status === 'not_done'
+  return [...rows].sort((a, b) =>
+    Number(completed(a)) - Number(completed(b)) ||
+    Number(risk(b)) - Number(risk(a)) ||
+    priorityRank[a.priority || 'none'] - priorityRank[b.priority || 'none'],
+  ).slice(0, limit)
 }
 
 export function summarizeWorkRows(rows: WorkRow[]) {

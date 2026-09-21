@@ -23,7 +23,7 @@
 }
 .import-journey > div > span {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.07em;
 }
@@ -116,7 +116,7 @@
 }
 .import-upload small {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 12px;
 }
 .import-upload-actions {
   display: flex;
@@ -166,7 +166,7 @@
   margin-left: 4px;
 }
 .import-aside-note {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-secondary);
   line-height: 1.6;
   margin: 7px 7px 17px;
@@ -203,13 +203,13 @@
 }
 .import-batch-item span {
   display: block;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-secondary);
   margin-top: 4px;
 }
 .import-batch-item small {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--text-secondary);
   margin-top: 2px;
 }
@@ -232,7 +232,7 @@
 }
 .import-detail-heading p,
 .import-detail-label {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-secondary);
   margin: 4px 0;
 }
@@ -310,7 +310,7 @@
   font-size: 12px;
 }
 .import-sheet-picker label small {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--text-secondary);
   margin-left: 9px;
 }
@@ -404,7 +404,7 @@
 }
 .import-parser-footer p {
   flex: 1;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-secondary);
   line-height: 1.7;
 }
@@ -422,7 +422,7 @@
   margin: 0;
 }
 .import-mode p {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-secondary);
   margin: 4px 0 14px;
 }
@@ -456,7 +456,7 @@
   display: block;
   color: var(--text-secondary);
   margin-top: 3px;
-  font-size: 10px;
+  font-size: 12px;
 }
 .import-bulk {
   padding: 19px 24px;
@@ -465,7 +465,7 @@
 }
 .import-bulk .import-section-title > span {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 12px;
 }
 .import-bulk-fields {
   display: grid;
@@ -477,14 +477,14 @@
 .import-bulk-fields input {
   min-width: 0;
   width: 100%;
-  font-size: 11px;
+  font-size: 12px;
   padding: 8px;
 }
 .import-bulk-fields > button {
   grid-column: 2;
   justify-self: end;
   padding: 7px 12px;
-  font-size: 11px;
+  font-size: 12px;
 }
 .import-rows-heading {
   display: flex;
@@ -495,22 +495,22 @@
 }
 .import-rows-heading h3 span {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 400;
   margin-left: 7px;
 }
 .import-rows-heading > span {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--text-secondary);
 }
 .import-table {
   width: 100%;
   min-width: 760px;
   table-layout: fixed;
-  font-size: 11px;
+  font-size: 12px;
 }
 .import-table th {
-  font-size: 10px;
+  font-size: 12px;
   padding: 10px 12px;
 }
 .import-table td {
@@ -542,17 +542,17 @@
   color: #44846a;
 }
 .import-table td > strong {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
 }
 .import-table td > small {
   display: block;
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: 12px;
   margin-top: 4px;
 }
 .import-table .badge {
-  font-size: 9px;
+  font-size: 12px;
   padding: 1px 6px;
 }
 .import-row-title {
@@ -565,7 +565,7 @@
 }
 .import-source {
   margin-top: 7px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--text-secondary);
 }
 .import-source summary {
@@ -575,7 +575,7 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-family: inherit;
-  font-size: 11px;
+  font-size: 12px;
   max-height: 220px;
   overflow: auto;
   padding: 10px;
@@ -587,23 +587,23 @@
 .import-issues {
   margin: 0;
   padding-left: 12px;
-  font-size: 10px;
-  color: #ae7a2b;
+  font-size: 12px;
+  color: #895814;
   line-height: 1.8;
 }
 .import-valid {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 10px;
-  color: #608473;
+  font-size: 12px;
+  color: #256b4b;
 }
 .import-edit-button {
   background: transparent;
   border: 0;
   padding: 2px 0;
   color: #5472c5;
-  font-size: 11px;
+  font-size: 12px;
 }
 .import-commit {
   display: flex;
@@ -619,21 +619,21 @@
   font-weight: 600;
 }
 .import-commit p {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--text-secondary);
   line-height: 1.8;
   margin: 5px 0 0;
 }
 .import-commit > button {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: 12px;
 }
 .import-saved {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 11px;
-  color: #588573;
+  font-size: 12px;
+  color: #256b4b;
   padding: 18px 24px;
   border-top: 1px solid var(--import-line);
   background: #f6fbf9;
@@ -659,7 +659,7 @@
 }
 .import-tool > summary small {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 400;
 }
 .import-tool-body {
@@ -679,7 +679,7 @@
   gap: 12px;
 }
 .import-settings-test > span {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-secondary);
 }
 .import-export-fields {
@@ -743,7 +743,7 @@
 }
 .import-token-list small {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--text-secondary);
   overflow-wrap: anywhere;
   margin-top: 4px;
@@ -759,7 +759,7 @@
 }
 .import-api-guide pre {
   padding: 18px;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.9;
   background: #f7f9fc;
   border-radius: 9px;
@@ -768,8 +768,8 @@
   overflow-wrap: anywhere;
 }
 .import-notice {
-  font-size: 11px;
-  color: #9d7a36;
+  font-size: 12px;
+  color: #895814;
   background: #fffbf1;
   border: 1px solid #f2e8cd;
   padding: 12px 15px;
@@ -783,7 +783,7 @@
   margin: 14px 0 0;
 }
 .import-notice small {
-  font-size: 10px;
+  font-size: 12px;
 }
 .import-muted {
   font-size: 12px;
@@ -826,7 +826,7 @@
 }
 .import-analysis p,
 .import-fork p {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-secondary);
   line-height: 1.8;
   margin: 5px 0 0;
@@ -844,7 +844,7 @@
 }
 .import-fork button {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: 12px;
 }
 .import-editor-fields > .field {
   margin-bottom: 15px;
@@ -867,7 +867,7 @@
 .import-editor-source {
   border-top: 1px solid #e5eaf3;
   padding-top: 13px;
-  font-size: 11px;
+  font-size: 12px;
 }
 .import-history-search {
   display: flex;
@@ -880,7 +880,7 @@
 .import-history-count,
 .import-restore-file {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 12px;
   margin: 13px 0;
 }
 .import-history-table {
@@ -890,7 +890,7 @@
 .import-history-table small {
   display: block;
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: 12px;
   margin-top: 3px;
 }
 .import-history-table strong {
@@ -906,7 +906,7 @@
 .import-history-detail > p,
 .import-history-detail > small {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 12px;
 }
 .import-history-detail dl {
   margin: 20px 0;
@@ -940,7 +940,7 @@
   font-size: 13px;
 }
 .import-restore-mapping > p {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-secondary);
   margin: 6px 0 15px;
 }
@@ -953,7 +953,7 @@
   margin-top: 17px;
 }
 .import-restore-table th {
-  font-size: 11px;
+  font-size: 12px;
 }
 .import-restore-issues {
   padding: 17px;
@@ -961,13 +961,13 @@
   border-radius: 9px;
   margin-top: 17px;
   background: #fffcf5;
-  color: #aa8041;
+  color: #895814;
   font-size: 12px;
 }
 .import-restore-issues ul {
   max-height: 220px;
   overflow: auto;
-  font-size: 11px;
+  font-size: 12px;
   padding-left: 18px;
   line-height: 1.9;
   margin: 10px 0 0;
@@ -977,7 +977,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #528973;
+  color: #256b4b;
   font-size: 12px;
   background: #f4fbf8;
   padding: 14px 17px;
@@ -1000,7 +1000,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-secondary);
   margin-top: 15px;
 }
@@ -1029,7 +1029,7 @@
   gap: 7px;
   padding: 0 7px 14px;
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: 12px;
 }
 .import-pending-filter > span {
   margin-left: auto;
@@ -1041,14 +1041,14 @@
   border: 1px solid #d7e3f6;
   border-radius: 9px;
   background: #f6f9ff;
-  color: #5e78a7;
+  color: #315ba0;
 }
 .import-confirmation-note strong {
   font-size: 12px;
   font-weight: 600;
 }
 .import-confirmation-note p {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.8;
   margin: 5px 0 0;
 }
@@ -1056,13 +1056,13 @@
   display: grid;
   gap: 4px;
   padding-top: 8px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--text-secondary);
 }
 .import-row-destination > strong {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 500;
-  color: #657cad;
+  color: var(--text-body);
 }
 .import-row-destination .import-row-outcome {
   display: -webkit-box;
@@ -1074,7 +1074,7 @@
 .import-source-gap {
   display: block;
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.7;
   margin-top: 6px;
 }
@@ -1083,7 +1083,7 @@
   align-items: center;
   gap: 3px;
   margin-top: 8px;
-  font-size: 10px;
+  font-size: 12px;
 }
 @media (max-width: 1250px) {
   .import-workspace {
@@ -1094,7 +1094,7 @@
     gap: 12px;
   }
   .import-journey > div {
-    font-size: 11px;
+    font-size: 12px;
     gap: 7px;
   }
   .import-commit {
@@ -1134,6 +1134,19 @@
   }
 }
 @media (max-width: 560px) {
+  .import-history-detail dl > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+  .import-history-detail dt {
+    color: var(--text-body);
+    font-weight: 600;
+  }
+  .import-fork,
+  .import-history-search {
+    flex-direction: column;
+    align-items: stretch;
+  }
   .import-detail-heading {
     align-items: flex-start;
     flex-direction: column;

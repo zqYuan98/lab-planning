@@ -1,0 +1,207 @@
+/* Shared task language: urgency, work type and execution state are independent. */
+:root {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --duration-feedback: 160ms;
+  --duration-reveal: 200ms;
+  --priority-high: #c23a46;
+  --priority-medium: #a8660c;
+  --priority-low: #68788e;
+  --priority-none: #c0cad6;
+  --work-monthly: #225aca;
+  --work-temporary: #7547b7;
+}
+
+/* Reading hierarchy comes from weight and spacing, not washed-out blue-gray text. */
+body:has(.workspace-shell) {
+  --tech-canvas: #f4f6fa;
+  --tech-line: #e1e6ee;
+  --tech-ink: #18181b;
+  --tech-body: #27272a;
+  --tech-muted: #414147;
+  --text-metadata: #5e5e67;
+  --text-placeholder: #6b6b73;
+}
+.workspace-shell .workspace-main { padding-top: 30px; }
+.workspace-shell :is(.page-header h1, .ow-heading h1, .ov-page-heading h1) { font-size: 28px; letter-spacing: -.7px; font-weight: 700; }
+.workspace-shell :is(.page-header, .ow-heading, .ov-page-heading) { margin-bottom: 22px; }
+.workspace-shell :is(.page-header > div > p, .ow-heading-copy > p, .ov-page-heading p) { color: var(--tech-muted); font-size: 13px; margin-top: 6px; }
+.workspace-shell :is(.eyebrow, .ow-eyebrow, .ov-eyebrow) { font-size: 10px; letter-spacing: 1.8px; color: var(--text-metadata); font-weight: 650; margin-bottom: 6px; }
+.workspace-shell :is(.button, .ow-button, input, select, textarea) { border-radius: 8px; }
+.workspace-shell .button.primary { box-shadow: 0 2px 3px #1d54a21a, inset 0 1px 0 #ffffff21; }
+.workspace-shell .workspace-header { box-shadow: 0 1px 12px #172d4803; }
+.workspace-navigation .arco-menu-item { border-radius: 8px; }
+.workspace-shell .workspace-body { transition: none; }
+.workspace-shell [role='region'][tabindex='0']:focus-visible,
+body:has(.workspace-shell) .modal [role='region'][tabindex='0']:focus-visible {
+  outline: 2px solid #2458b7;
+  outline-offset: -2px;
+}
+
+/* Text and icons always accompany color; no priority is inferred from a date. */
+.task-signals, .task-legend-items { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.task-signal { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; width: fit-content; max-width: 100%; padding: 3px 7px; border: 1px solid transparent; border-radius: 5px; font-size: 11px; font-weight: 550; line-height: 1.4; white-space: nowrap; letter-spacing: 0; vertical-align: middle; }
+.task-signal svg { flex: 0 0 auto; stroke-width: 2; }
+.workspace-shell .task-signal.task-signal-high { color: #ae2938; background: #fff0f1; border-color: #f3d0d4; }
+.workspace-shell .task-signal.task-signal-medium { color: #905909; background: #fff7e7; border-color: #f0dfb9; }
+.workspace-shell .task-signal.task-signal-low { color: #414147; background: #f1f4f8; border-color: #dce3ec; }
+.workspace-shell .task-signal.task-signal-none { color: #52525b; background: #f6f7f9; border-color: #e5e8ee; }
+.workspace-shell .task-signal.task-signal-monthly { color: #2458b7; background: #edf3ff; border-color: #d2e0fc; }
+.workspace-shell .task-signal.task-signal-temporary { color: #7544ae; background: #f5eeff; border-color: #e3d3f7; }
+.workspace-shell .task-signal.task-signal-routine { color: #414147; background: #eef4f6; border-color: #d9e6eb; }
+.task-priority-high { --task-accent: var(--priority-high); }
+.task-priority-medium { --task-accent: var(--priority-medium); }
+.task-priority-low { --task-accent: var(--priority-low); }
+.task-priority-none { --task-accent: var(--priority-none); }
+.workspace-shell :is(.wr-item, .weekly-card, .collaboration-row, .ow-task-card, .ov-work-item)[class*='task-priority-'] { border-left: 3px solid var(--task-accent); }
+.workspace-shell tr[class*='task-priority-'] > td:first-child { box-shadow: inset 3px 0 var(--task-accent); }
+.workspace-shell .ow-task-preview > button[class*='task-priority-'] { border-left: 2px solid var(--task-accent); padding-left: 9px; }
+.workspace-shell .ow-timeline-row[class*='task-priority-'] > .ow-timeline-label { box-shadow: inset 3px 0 var(--task-accent); }
+.task-preview { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.workspace-shell .wr-overdue { color: #ad303d; font-weight: 600; }
+
+/* Progressive disclosure keeps rules and source context available without filling the list. */
+.context-help { margin: 12px 0; color: var(--tech-muted, #414147); font-size: 12px; min-width: 0; }
+.context-help > summary { display: flex; align-items: center; gap: 7px; width: fit-content; max-width: 100%; cursor: pointer; list-style: none; border-radius: 4px; padding: 4px 0; user-select: none; }
+.context-help > summary::-webkit-details-marker { display: none; }
+.context-help > summary > svg { flex-shrink: 0; }
+.context-help-chevron { transition: transform var(--duration-feedback) var(--ease-out); }
+.context-help[open] > summary { color: var(--tech-ink); }
+.context-help[open] .context-help-chevron { transform: rotate(180deg); }
+.context-help-content { padding: 10px 13px; margin-top: 5px; background: #f6f8fc; border: 1px solid #e7ecf3; border-radius: 8px; line-height: 1.8; overflow-wrap: anywhere; opacity: 1; transition: opacity var(--duration-reveal) var(--ease-out); }
+.context-help-content p { margin: 0; white-space: pre-wrap; color: var(--tech-body); }
+.context-help-content p + p { margin-top: 7px; }
+.context-help-content .note { margin: 0; padding: 0; border: 0; background: none; }
+.task-legend { font-size: 11px; }
+.task-legend > .context-help { margin: 0; }
+.task-legend .context-help-content { max-width: 600px; }
+.task-legend-items { margin-bottom: 8px; }
+
+/* Separate colored metrics create a readable rhythm above the work surface. */
+.workspace-shell :is(.wr-summary > *, .ov-stat)[data-tone='blue'] { --metric-color: #285ebd; --metric-soft: #edf3ff; --metric-line: #d8e5ff; }
+.workspace-shell :is(.wr-summary > *, .ov-stat)[data-tone='red'] { --metric-color: #b23748; --metric-soft: #fff1f2; --metric-line: #f5d8dd; }
+.workspace-shell :is(.wr-summary > *, .ov-stat)[data-tone='amber'] { --metric-color: #986213; --metric-soft: #fff7e9; --metric-line: #efdfc0; }
+.workspace-shell :is(.wr-summary > *, .ov-stat)[data-tone='purple'] { --metric-color: #7948ad; --metric-soft: #f6f0ff; --metric-line: #e7d9f7; }
+.workspace-shell .ov-stat[data-tone='green'] { --metric-color: #19775b; --metric-soft: #edf8f3; --metric-line: #cfeadd; }
+.workspace-shell :is(.wr-summary, .ov-metrics) { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; background: none; border: none; border-radius: 0; overflow: visible; margin-bottom: 24px; }
+.workspace-shell :is(.wr-summary > *, .ov-stat) { min-width: 0; position: relative; overflow: hidden; border: 1px solid var(--metric-line, #e1e6ee); border-radius: 12px; padding: 18px 20px; background: linear-gradient(115deg, #fff 25%, var(--metric-soft, #f7f9fc)); box-shadow: 0 2px 3px #172d4803; }
+.workspace-shell :is(.wr-summary > *, .ov-stat)::after { content: ''; position: absolute; pointer-events: none; width: 80px; height: 80px; border: 14px solid var(--metric-line, #e1e6ee); border-radius: 50%; right: -36px; bottom: -42px; opacity: .38; }
+.workspace-shell .wr-summary > * > span { display: flex; align-items: center; gap: 8px; color: var(--metric-color); font-size: 12px; }
+.workspace-shell :is(.wr-summary strong, .ov-stat > strong) { color: var(--tech-ink); font-size: 34px; font-weight: 650; line-height: 1.35; margin: 8px 0 0; font-variant-numeric: tabular-nums; }
+.workspace-shell :is(.wr-summary strong small, .ov-stat > strong small) { color: var(--tech-muted); font-size: 12px; }
+.workspace-shell .wr-summary p { color: var(--tech-muted); font-size: 12px; margin-top: 4px; }
+.workspace-shell .wr-summary button.is-selected { border-color: var(--metric-color); background: linear-gradient(115deg, #fff 25%, var(--metric-soft)); box-shadow: inset 0 0 0 1px var(--metric-color); }
+.workspace-shell .ov-stat-label { color: var(--metric-color); gap: 8px; }
+.workspace-shell .ov-stat-label svg:first-child { color: var(--metric-color); }
+.workspace-shell .ow-metric { background: linear-gradient(115deg, #fff 20%, var(--ow-metric-bg)); border-color: color-mix(in srgb, var(--ow-metric-color) 19%, white); padding: 14px 16px; box-shadow: none; }
+.workspace-shell .ow-metric.is-active { border-color: var(--ow-metric-color); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ow-metric-color) 35%, transparent); }
+.workspace-shell .ow-metric > strong { font-size: 30px; margin: 8px 0 5px; }
+.workspace-shell .ow-metric-top .ow-metric-icon { border-radius: 8px; }
+.workspace-shell .ow-metric > small { font-size: 12px; }
+
+/* A quiet card surface, strong title, and two semantic signals replace repeated prose. */
+.workspace-shell .wr-workspace { border-radius: 12px; box-shadow: 0 3px 14px #1b2c4104; }
+.wr-signal-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 20px; color: var(--tech-muted); border-bottom: 1px solid var(--wr-line); }
+.wr-signal-filters > label { min-width: 0; }
+.wr-signal-filters select { width: auto; padding: 5px 25px 5px 9px; font-size: 12px; min-height: 31px; border-color: #e2e8f0; background-color: #fbfcfe; }
+.wr-signal-filters > .task-legend { margin-left: auto; }
+.wr-signal-filters:has(details[open]) > .task-legend { flex-basis: 100%; }
+.wr-filter-clear { display: inline-flex; align-items: center; gap: 4px; padding: 5px 8px; border: 0; background: none; color: var(--tech-body); font-size: 12px; border-radius: 5px; }
+.workspace-shell .wr-list-caption { padding: 12px 20px; background: #fff; border-bottom: none; }
+.workspace-shell .wr-list { padding: 0 12px 12px; background: #fff; }
+.workspace-shell .wr-item { grid-template-columns: minmax(240px, 1.25fr) minmax(190px, 1fr) 136px; gap: 20px; padding: 18px; margin-bottom: 8px; border: 1px solid #e4e9f0; border-left: 3px solid var(--task-accent); border-radius: 9px; background: #fff; box-shadow: none; }
+.workspace-shell .wr-item:last-child { margin-bottom: 0; }
+.workspace-shell .wr-item.task-priority-high { background: linear-gradient(90deg, #fffafb, #fff 40%); }
+.workspace-shell .wr-item-title { font-size: 15px; font-weight: 650; line-height: 1.6; }
+.workspace-shell .wr-item-meta { margin-top: 7px; font-size: 12px; color: var(--tech-muted); }
+.workspace-shell .wr-item-progress p { font-size: 13px; line-height: 1.7; margin-bottom: 9px; color: var(--tech-body); }
+.workspace-shell .wr-item-progress p > span { color: var(--tech-body); font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+.workspace-shell .wr-item-progress p.wr-decision { background: #fff8ed; border-color: #d8a452; padding: 7px 9px; border-radius: 0 5px 5px 0; color: #8d5e1d; }
+.workspace-shell .wr-item .context-help { margin: 8px 0 0; font-size: 12px; }
+.workspace-shell .wr-item .context-help-content { background: #f7f9fc; }
+.workspace-shell .wr-schedule { font-size: 12px; color: var(--tech-muted); }
+.workspace-shell .wr-item-actions { justify-content: center; }
+.workspace-shell .wr-view-tabs button { font-size: 12px; padding: 7px 9px; }
+.workspace-shell .wr-toolbar { gap: 10px; padding: 13px 16px; }
+.workspace-shell :is(.weekly-card, .collaboration-row) { border-radius: 10px; }
+.workspace-shell .weekly-card .task-signals { margin: 7px 0; }
+.workspace-shell .ow-task-preview > button:not(.ow-preview-more) { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; }
+.workspace-shell .ow-task-preview .ow-preview-tags { flex-wrap: wrap; max-width: none; justify-content: flex-start; }
+.workspace-shell .ow-task-preview .ow-preview-tags > .task-signal { font-size: 10px; padding: 2px 5px; }
+.workspace-shell .ow-task-preview > button.ow-preview-more { display: block; color: #2a61b8; font-size: 11px; padding: 6px 0 2px; border: none; }
+.workspace-shell .ow-task-card { border-radius: 9px; box-shadow: 0 2px 4px #1b2c4104; }
+.workspace-shell .ow-task-card .task-signals { margin: 8px 0; }
+.workspace-shell .ow-timeline-label { height: auto; min-height: 84px; }
+.workspace-shell .ow-timeline-track { height: auto; min-height: 84px; align-self: stretch; }
+.workspace-shell .ow-card-meta { flex-wrap: wrap; gap: 7px; }
+
+/* Labels and task facts should read as available content, not disabled controls. */
+.workspace-shell :is(.ow-metric-top, .ow-zero, .collaboration-scope-note,
+  .collaboration-status-line > span:first-child, .collaboration-summary span,
+  .report-quiet, .wr-list-caption b) { color: var(--tech-muted); }
+.workspace-shell .ow-page .ow-table thead th { color: var(--tech-body); font-weight: 600; }
+.workspace-shell .ow-lane-heading > :is(span, small):last-child { color: var(--tech-muted); }
+.workspace-shell .collaboration-task-status .collaboration-weekly-outcome { color: var(--tech-body); }
+.workspace-shell :is(.wr-edit-button, .wr-view-tabs button:not(.is-selected)) { color: var(--tech-body); }
+.workspace-shell :is(.wr-list-caption, .wr-item-meta, .wr-schedule,
+  .ow-card-project, .ow-card-owner, .ow-card-meta, .ov-stat-context) { color: var(--tech-muted); }
+.workspace-shell :is(.weekly-facts > div > span, .detail-grid > div > span) { color: var(--tech-body); font-weight: 600; }
+.workspace-shell :is(.task-code, .weekly-card-footer > small, .workspace-shell-footer) { color: var(--text-metadata); }
+.workspace-shell .wr-view-tabs button span { opacity: 1; }
+
+/* Report previews use a portal outside the shell; keep the same readable ink. */
+body:has(.workspace-shell) .wr-report { color: var(--tech-body); }
+body:has(.workspace-shell) :is(.wr-report dt, .wr-report-summary, .wr-report-heading p,
+  .wr-report-controls p, .wr-report-item-type, .wr-report-title b) { color: var(--tech-muted); }
+body:has(.workspace-shell) :is(.wr-report dt, .wr-report-title b) { font-weight: 600; }
+body:has(.workspace-shell) :is(.wr-report-heading small, .wr-report-footnote,
+  .wr-report-title > span) { color: var(--text-metadata); }
+
+/* Feedback, not decoration: reading content stays still during navigation/filtering. */
+.workspace-shell :is(.button, .ow-button, .wr-edit-button, .wr-filter-clear) { transition: transform var(--duration-feedback) var(--ease-out), background-color var(--duration-feedback) ease, border-color var(--duration-feedback) ease, color var(--duration-feedback) ease; }
+.workspace-shell :is(.button, .ow-button):active:not(:disabled):not(:focus-visible) { transform: scale(.97); }
+.workspace-shell :is(.wr-summary button, .ow-metric, .ov-stat) svg { transition: transform var(--duration-feedback) var(--ease-out); }
+.workspace-shell .wr-edit-button > svg { transition: transform var(--duration-feedback) var(--ease-out); }
+@starting-style { .context-help[open] > .context-help-content { opacity: 0; } }
+@media (hover: hover) and (pointer: fine) {
+  .workspace-shell .wr-edit-button:hover > svg { transform: translateX(3px); }
+  .workspace-shell :is(.wr-summary button, .ow-metric, .ov-stat):hover svg { transform: translateY(-2px); }
+  .workspace-shell .wr-item:hover { border-top-color: #c8d4e4; border-right-color: #c8d4e4; border-bottom-color: #c8d4e4; }
+  .context-help > summary:hover { color: #255bb2; }
+}
+/* Keyboard actions are immediate; reduced motion keeps only gentle visual feedback. */
+body[data-workspace-input='keyboard'] .workspace-shell *,
+.context-help:has(summary:focus-visible) * { transition: none !important; animation: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .workspace-shell :is(.button, .ow-button, .wr-edit-button, .wr-filter-clear) { transition: background-color 160ms ease, color 160ms ease !important; }
+  .workspace-shell :is(.button, .ow-button):active, .workspace-shell .wr-edit-button:hover > svg,
+  .workspace-shell :is(.wr-summary button, .ow-metric, .ov-stat):hover svg { transform: none; }
+  .context-help-chevron { transition: none; }
+  .context-help-content { transition: opacity 160ms ease; }
+}
+@media (max-width: 1180px) {
+  .workspace-shell .wr-item { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
+  .workspace-shell .wr-item-actions { grid-column: 1 / -1; flex-direction: row; align-items: center; justify-content: flex-end; padding-top: 10px; border-top: 1px dashed #e4e9f0; }
+  .workspace-shell .wr-schedule { margin-right: auto; }
+}
+@media (max-width: 900px) {
+  .workspace-shell .workspace-main { padding: 22px 18px 30px; }
+  .workspace-shell :is(.page-header h1, .ow-heading h1, .ov-page-heading h1) { font-size: 24px; }
+  .workspace-shell :is(.wr-summary, .ov-metrics) { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+}
+@media (max-width: 600px) {
+  .workspace-shell .workspace-main { padding: 20px 12px 28px; }
+  .workspace-shell :is(.wr-summary > *, .ov-stat) { padding: 14px; }
+  .workspace-shell :is(.wr-summary strong, .ov-stat > strong) { font-size: 29px; }
+  .workspace-shell .wr-item { display: flex; flex-direction: column; gap: 14px; padding: 15px 12px; }
+  .workspace-shell .wr-item-actions { flex-wrap: wrap; }
+  .workspace-shell .wr-item-actions .wr-schedule { flex-basis: 100%; }
+  .wr-signal-filters { padding: 10px 12px; gap: 6px; }
+  .wr-signal-filters > svg { display: none; }
+  .wr-signal-filters select { font-size: 13px; min-height: 44px; padding-left: 9px; }
+  .wr-filter-clear { min-height: 44px; }
+  .workspace-shell .ow-filter-note > .ow-select { white-space: nowrap; }
+  .workspace-shell .wr-list { padding: 0 8px 8px; }
+  .workspace-shell .wr-item .task-signal { font-size: 11px; }
+  .workspace-shell .wr-item-progress { border-left: none; padding-left: 0; }
+}

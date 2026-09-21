@@ -659,3 +659,8 @@
     padding: 10px 17px;
   }
 }
+@media (max-width: 380px) {
+  .report-generator label {
+    flex-basis: 100%;
+  }
+}

@@ -9,6 +9,8 @@ import type { Navigate } from '../navigation'
 import { Badge, Empty, Field, Form, Modal, PageHeader, dateTime, nameOf, type PageProps } from '../ui'
 import WorkTaskPanel from '../components/WorkTaskPanel'
 import TaskProgressSummary from '../components/TaskProgressSummary'
+import { PriorityBadge, WorkTypeBadge, TaskLegend, ContextHelp } from '../components/TaskSignals'
+import { taskPriority, workKind } from '../task-presentation'
 import '../collaboration.css'
 
 interface Dashboard { settings: CollaborationSettings; preference: { version: number; memberActionsEnabled: boolean }; tasks: ({ task: Task; tracking: TaskTracking | null; openFollowup: FollowupRequest | null } & CollaborationTaskStatusSummary)[]; risks: WorkRisk[]; digests: NotificationDigest[] }
@@ -36,15 +38,41 @@ export default function WorkFollowups(props: PageProps & { navigate: Navigate })
   }, [intent?.id, intent?.targetType])
   const rows = (view?.tasks || []).filter(row => (!query || row.task.title.toLowerCase().includes(query.toLowerCase())) && (filter === 'all' || filter === 'unfinished' && row.task.status !== 'done' || filter === 'done' && row.task.status === 'done' || filter === 'risk' && view!.risks.some(r => r.taskId === row.task.id) || filter === 'followup' && row.openFollowup || filter === row.tracking?.state))
   return <div className="collaboration-page">
-    <PageHeader eyebrow="WORK / FOLLOW-UP" title={manager ? '进展与催办' : '我的进展与回应'} description={`${manager ? '全体成员' : '本人'}的跨周期任务总台账，包含历史任务和已完成任务，不限本周或本月。`} actions={<><button className="button secondary" onClick={() => { setError(''); void load().catch(e => setError(e.message)) }}><RefreshCw size={16} />刷新</button>{manager && <button className="button secondary" onClick={() => navigate('notification-settings')}>协作设置</button>}</>} />
+    <PageHeader eyebrow="WORK / FOLLOW-UP" title={manager ? '进展与催办' : '我的进展与回应'} description={manager ? '聚焦关键任务，及时回应风险与阻塞。' : '更新任务进展，集中处理待回应事项。'} actions={<><button className="button secondary" onClick={() => { setError(''); void load().catch(e => setError(e.message)) }}><RefreshCw size={16} />刷新</button>{manager && <button className="button secondary" onClick={() => navigate('notification-settings')}>协作设置</button>}</>} />
     {error && <div className="error" role="alert">{error}</div>}
     {!view ? <p role="status">正在读取工作事项…</p> : <>
       {!view.settings.enabled && <p className="note">进展与催办尚未启用。管理员可在通知设置中选择试点成员、管理接收人和提醒规则。</p>}
       {!manager && view.settings.memberActionsEnabled && <details className="notification-settings-card"><summary>可选行动摘要</summary><Form key={view.preference.version} submitLabel="保存我的摘要偏好" onSubmit={async e => { const f = new FormData(e.currentTarget), body = { version: view.preference.version, memberActionsEnabled: f.has('memberActionsEnabled') }; attempt.current = assignmentAttempt(attempt.current, body); await api('/collaboration/preferences', json({ ...body, requestId: attempt.current.requestId }, 'PUT')); attempt.current = null; await load(); notify('摘要偏好已保存') }}><label className="checkbox-label"><input name="memberActionsEnabled" type="checkbox" defaultChecked={view.preference.memberActionsEnabled} />接收我的下一步行动摘要</label><p className="form-hint">此偏好只影响可选摘要。工作安排、本人待回应的催办和正式提报要求仍可在系统查看。</p></Form></details>}
       <div className="collaboration-summary"><span><strong>{view.risks.length}</strong>项风险</span><span><strong>{view.tasks.filter(r => r.openFollowup).length}</strong>项待回应</span><span><strong>{view.tasks.filter(r => r.tracking?.state === 'active').length}</strong>项督办中</span><span><strong>{view.tasks.filter(r => r.tracking?.state === 'paused').length}</strong>项已暂停</span></div>
-      <p className="collaboration-scope-note">共 {view.tasks.length} 项任务，{view.tasks.filter(row => row.task.status !== 'done').length} 项整体未完成。周执行完成代表当周安排完成，不会自动把整个任务标为完成。</p>
+      <p className="collaboration-scope-note">全部周期 · {view.tasks.length} 项任务 · {view.tasks.filter(row => row.task.status !== 'done').length} 项整体未完成</p>
+      <ContextHelp title="任务范围与完成状态说明">
+        <p>{manager ? '全体成员' : '本人'}的跨周期任务总台账，包含历史任务和已完成任务，不限本周或本月。</p>
+        <p>周执行完成代表当周安排完成，不会自动把整个任务标为完成。</p>
+      </ContextHelp>
       <div className="collaboration-toolbar"><Field label="搜索工作事项"><input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="输入任务标题" /></Field><Field label="筛选范围"><select value={filter} onChange={e => setFilter(e.target.value)}><option value="all">全部周期（含已完成）</option><option value="unfinished">整个任务未完成</option><option value="done">整个任务已自报完成</option><option value="risk">有当前风险</option><option value="followup">待回应催办</option><option value="active">督办中</option><option value="paused">督办已暂停</option></select></Field>{manager && <button className="button primary" disabled={!selected.length || !view.settings.enabled} onClick={() => { setPreview(null); setBatch(true) }}>催办所选 {selected.length ? `(${selected.length})` : ''}</button>}</div>
-      {rows.length ? <div className="collaboration-list">{rows.map(row => <article key={row.task.id}><div className="collaboration-row-heading">{manager && <input aria-label={`选择 ${row.task.title}`} type="checkbox" checked={selected.includes(row.task.id)} onChange={e => setSelected(old => e.target.checked ? [...old, row.task.id] : old.filter(id => id !== row.task.id))} />}<button className="text-button" onClick={() => setTaskId(row.task.id)}>{row.task.title}</button></div><p>{nameOf(data, row.task.ownerId)} · 截止 {row.task.dueDate || '未设置'} · {row.tracking ? ({ active: '督办中', paused: '已暂停', closed: '已结束' })[row.tracking.state] : '未纳入督办'}</p><TaskProgressSummary task={row.task} weeklySummary={row.weeklySummary} overallStatusNeedsConfirmation={row.overallStatusNeedsConfirmation} />{row.openFollowup && <p>待回应：{row.openFollowup.requirement} · 回应期限 {dateTime(row.openFollowup.dueAt)}</p>}<div className="collaboration-risk-tags">{view.risks.filter(risk => risk.taskId === row.task.id).map(risk => <Badge key={risk.key} tone="amber">{risk.detail}</Badge>)}</div><button className="button secondary" onClick={() => setTaskId(row.task.id)}>{row.openFollowup && row.task.ownerId === data.user.id ? '更新进展并回应' : '查看进展与处理'}</button></article>)}</div> : <Empty title="没有符合筛选的工作事项" description="任务发布或纳入督办后，可在这里更新进展和处理催办。" />}
+      <TaskLegend />
+      {rows.length ? <div className="collaboration-list">{rows.map(row => {
+        const plan = data.plans.find(item => item.id === row.task.monthlyPlanId)
+        const priority = taskPriority(row.task, plan)
+        const isTemporary = !!(row.task.isTemporary || row.task.temporaryReason?.trim() || plan?.isTemporary)
+        const kind = workKind({ isTemporary, monthlyPlanId: row.task.monthlyPlanId })
+        return <article key={row.task.id} className={`collaboration-row task-priority-${priority || 'none'} task-kind-${kind}`}>
+          <div className="row-meta">
+            <PriorityBadge priority={priority} />
+            <WorkTypeBadge isTemporary={isTemporary} monthlyPlanId={row.task.monthlyPlanId} />
+            <Badge tone={row.tracking?.state === 'active' ? 'blue' : 'neutral'}>{row.tracking ? ({ active: '督办中', paused: '已暂停', closed: '已结束' })[row.tracking.state] : '未纳入督办'}</Badge>
+          </div>
+          <div className="collaboration-row-heading">
+            {manager && <input aria-label={`选择 ${row.task.title}`} type="checkbox" checked={selected.includes(row.task.id)} onChange={e => setSelected(old => e.target.checked ? [...old, row.task.id] : old.filter(id => id !== row.task.id))} />}
+            <button className="text-button" onClick={() => setTaskId(row.task.id)}>{row.task.title}</button>
+          </div>
+          <p>{nameOf(data, row.task.ownerId)} · 截止 {row.task.dueDate || '未设置'}</p>
+          <TaskProgressSummary task={row.task} weeklySummary={row.weeklySummary} overallStatusNeedsConfirmation={row.overallStatusNeedsConfirmation} />
+          {row.openFollowup && <p>待回应：{row.openFollowup.requirement} · 回应期限 {dateTime(row.openFollowup.dueAt)}</p>}
+          <div className="collaboration-risk-tags">{view.risks.filter(risk => risk.taskId === row.task.id).map(risk => <Badge key={risk.key} tone="amber">{risk.detail}</Badge>)}</div>
+          <button className="button secondary" onClick={() => setTaskId(row.task.id)}>{row.openFollowup && row.task.ownerId === data.user.id ? '更新进展并回应' : '查看进展与处理'}</button>
+        </article>
+      })}</div> : <Empty title="没有符合筛选的工作事项" description="任务发布或纳入督办后，可在这里更新进展和处理催办。" />}
       <section className="notification-settings-card"><h2>我的工作摘要</h2>{view.digests.length ? <div className="collaboration-digests">{view.digests.map(row => <button className="button secondary" key={row.id} onClick={() => { void openDigest(row.id) }}>{dateTime(row.generatedAt)} · {({ risk_member: '工作风险提醒', risk_manager: '管理风险摘要', critical_manager: '重要变化', approval_manager: '待办审批', daily_manager: '每日摘要', weekly_manager: '每周摘要', member_actions: '我的行动摘要', manual_followup: '工作催办' })[row.type]} · {row.itemIds.length} 项</button>)}</div> : <p>暂无摘要。启用相应规则后，摘要将按工作日生成。</p>}</section>
     </>}
     {taskId && <WorkTaskPanel key={taskId} {...props} taskId={taskId} onChanged={load} onClose={() => setTaskId(null)} />}

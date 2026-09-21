@@ -144,6 +144,17 @@ export default function WorkspaceShell({ data, page, navigate, onLogout, onFeedb
   const title = !manager && current.memberLabel ? current.memberLabel : current.label
   const today = shanghaiToday()
   useEffect(() => {
+    const pointer = () => { document.body.dataset.workspaceInput = 'pointer' }
+    const keyboard = () => { document.body.dataset.workspaceInput = 'keyboard' }
+    document.addEventListener('pointerdown', pointer, true)
+    document.addEventListener('keydown', keyboard, true)
+    return () => {
+      document.removeEventListener('pointerdown', pointer, true)
+      document.removeEventListener('keydown', keyboard, true)
+      delete document.body.dataset.workspaceInput
+    }
+  }, [])
+  useEffect(() => {
     try { localStorage.setItem(collapseKey, String(collapsed)) } catch { /* Private browsing can deny storage. */ }
   }, [collapsed])
   useEffect(() => {
@@ -190,8 +201,8 @@ export default function WorkspaceShell({ data, page, navigate, onLogout, onFeedb
               <Button ref={mobileTrigger} className="workspace-mobile-toggle" type="text" icon={<MenuIcon size={20} />}
                 aria-label="打开导航" aria-expanded={mobileOpen} onClick={() => setMobileOpen(true)} />
               <Breadcrumb separator="/" className="workspace-breadcrumb" aria-label="当前位置">
-                <Breadcrumb.Item className="workspace-breadcrumb-group">{current.group}</Breadcrumb.Item>
-                <Breadcrumb.Item>{title}</Breadcrumb.Item>
+                <Breadcrumb.Item key="group" className="workspace-breadcrumb-group">{current.group}</Breadcrumb.Item>
+                <Breadcrumb.Item key="page">{title}</Breadcrumb.Item>
               </Breadcrumb>
             </div>
             <div className="workspace-header-search"><WorkspaceSearch data={data} navigate={navigateFromShell} /></div>

@@ -15,7 +15,7 @@ export default function RegistrationRequests({ data, refresh, notify }: PageProp
   const openDeletion = (user: User) => { setReviewing(null); setDeleting(user) }
   return <section className="panel registration-panel">
     <div className="registration-heading"><div><h2>注册申请 <Badge tone={pending ? 'amber' : 'gray'}>{pending} 待审核</Badge></h2><p>成员在登录页自行申请，审批通过后以普通成员身份加入团队。</p></div></div>
-    {requests.length ? <div className="table-scroll"><table><thead><tr><th>申请人</th><th>岗位</th><th>邮箱</th><th>状态</th><th>操作</th></tr></thead><tbody>{requests.map(user => <tr key={user.id}>
+    {requests.length ? <div className="table-scroll" role="region" aria-label="注册申请表，可横向滚动" tabIndex={0}><table><thead><tr><th>申请人</th><th>岗位</th><th>邮箱</th><th>状态</th><th>操作</th></tr></thead><tbody>{requests.map(user => <tr key={user.id}>
       <td>{user.name}</td><td>{user.position || '未填写'}</td><td>{user.email}</td><td><Badge tone={user.registrationStatus === 'pending' ? 'amber' : 'gray'}>{user.registrationStatus === 'pending' ? '待审核' : '已驳回'}</Badge></td>
       <td><div className="team-account-actions"><button className="button secondary small" onClick={() => { setReviewing(user); setDecision('approve') }}>{user.registrationStatus === 'pending' ? '审核申请' : '重新审核'}</button><button className="text-button team-delete-button" aria-label={`删除账号：${user.name}`} onClick={() => openDeletion(user)}>删除</button></div></td>
     </tr>)}</tbody></table></div> : <p className="registration-empty">暂无待审核的注册申请。</p>}

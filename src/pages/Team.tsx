@@ -90,8 +90,8 @@ export default function Team({ data, refresh, notify, intent }: PageProps) {
       </div>
       {members.length ? (
         <div className="panel">
-          <div className="table-scroll">
-            <table>
+          <div className="table-scroll" role="region" aria-label="团队成员表，可横向滚动" tabIndex={0}>
+            <table className="team-members-table">
               <thead>
                 <tr>
                   <th>成员</th>

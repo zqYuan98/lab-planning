@@ -4,6 +4,7 @@ import { accountDisplayName, assignmentAccounts } from '../account-options'
 import { Plus, Target } from 'lucide-react'
 import type { AnnualGoal } from '../../shared/types'
 import { api, json } from '../api'
+import '../portfolio.css'
 import {
   Badge,
   Empty,
@@ -38,7 +39,7 @@ export default function Goals({ data, refresh, notify }: PageProps) {
           )
         }
       />
-      <div className="toolbar">
+      <div className="toolbar goals-toolbar">
         <label className="inline-field">
           目标年份
           <input

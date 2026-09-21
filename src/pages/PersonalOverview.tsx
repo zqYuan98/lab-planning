@@ -1,5 +1,6 @@
-import WorkOriginLabel from '../components/WorkOriginLabel'
-import { ChevronRight } from 'lucide-react'
+import { Activity, AlertCircle, CalendarDays, ChevronRight, Target } from 'lucide-react'
+import { ContextHelp, PriorityBadge, TaskLegend, WorkTypeBadge } from '../components/TaskSignals'
+import { taskPriority } from '../task-presentation'
 import Button from '@arco-design/web-react/es/Button'
 import type { MonthlyPlan, WeeklyRecord } from '../../shared/types'
 import { isEffectiveWeeklyRecord } from '../../shared/weekly-record-state'
@@ -140,8 +141,8 @@ export default function Overview({
           <h1>{manager ? '部门概览' : '我的工作台'}</h1>
           <p>
             {manager
-              ? '本月目标、每周执行与待处理事项'
-              : '我参与的目标与本周工作进展'}
+              ? '本月目标与本周进展'
+              : '聚焦本周，推进重要的工作'}
           </p>
         </div>
         <div className="ov-period">
@@ -157,6 +158,7 @@ export default function Overview({
       <section className="ov-metrics" aria-label="当前可见范围的工作指标">
         <button
           className="ov-stat"
+          data-tone="blue"
           aria-describedby="ov-metric-1-value ov-metric-1-detail ov-metric-1-context"
           aria-label="查看本月已发布计划"
           onClick={() =>
@@ -164,7 +166,7 @@ export default function Overview({
           }
         >
           <span className="ov-stat-label">
-            本月已发布目标 <ChevronRight size={14} />
+            本月已发布目标 <Target size={17} />
           </span>
           <strong id="ov-metric-1-value">
             {view.published.length}
@@ -179,12 +181,13 @@ export default function Overview({
         </button>
         <button
           className="ov-stat"
+          data-tone="green"
           aria-describedby="ov-metric-2-value ov-metric-2-detail ov-metric-2-context"
           aria-label="查看本周执行记录"
           onClick={() => navigate('weekly', { weekStart: view.weekStart })}
         >
           <span className="ov-stat-label">
-            本周正式统计记录 <ChevronRight size={14} />
+            本周执行 <Activity size={17} />
           </span>
           <strong id="ov-metric-2-value">
             {view.submitted.length}
@@ -192,7 +195,7 @@ export default function Overview({
           </strong>
           <span id="ov-metric-2-detail" className="ov-stat-detail">
             {view.submitted.filter((record) => record.status === 'done').length}{' '}
-            条成员自报完成
+            条自报完成
           </span>
           <span id="ov-metric-2-context" className="ov-stat-context">
             {changeLabel(view.weekChange, '上周')}
@@ -200,12 +203,13 @@ export default function Overview({
         </button>
         <button
           className="ov-stat"
+          data-tone="amber"
           aria-describedby="ov-metric-3-value ov-metric-3-detail ov-metric-3-context"
           aria-label={manager ? '审核待处理月度目标' : '查看等待审核的月度目标'}
           onClick={reviewAction}
         >
           <span className="ov-stat-label">
-            {manager ? '待我审核' : '等待审核'} <ChevronRight size={14} />
+            {manager ? '待我审核' : '等待审核'} <CalendarDays size={17} />
           </span>
           <strong id="ov-metric-3-value">
             {view.pending.length}
@@ -220,6 +224,7 @@ export default function Overview({
         </button>
         <button
           className={'ov-stat' + (view.blocked.length ? ' has-blocker' : '')}
+          data-tone="red"
           aria-describedby="ov-metric-4-value ov-metric-4-detail ov-metric-4-context"
           aria-label="查看本周阻塞记录"
           onClick={() =>
@@ -227,7 +232,7 @@ export default function Overview({
           }
         >
           <span className="ov-stat-label">
-            本周未解除阻塞 <ChevronRight size={14} />
+            待解除阻塞 <AlertCircle size={17} />
           </span>
           <strong id="ov-metric-4-value">
             {view.blocked.length}
@@ -243,13 +248,14 @@ export default function Overview({
           </span>
         </button>
       </section>
+      <TaskLegend />
 
       <div className="ov-workspace">
         <div className="ov-work-lists">
           <section className="ov-section" aria-labelledby="ov-monthly-title">
             <div className="ov-section-heading">
               <h2 id="ov-monthly-title">
-                月度目标<span>{view.plans.length}</span>
+                <Target size={18} aria-hidden="true" /> 月度目标<span>{view.plans.length}</span>
               </h2>
               <Button
                 type="text"
@@ -259,18 +265,18 @@ export default function Overview({
                 <ChevronRight size={14} />
               </Button>
             </div>
-            <div className="ov-list-caption">
-              <span>目标 / 负责人</span>
-              <span>状态</span>
-            </div>
             {view.plans.length ? (
               view.focusPlans.slice(0, 3).map((plan) => (
                 <button
                   key={plan.id}
-                  className="ov-work-item"
+                  className={`ov-work-item task-priority-${plan.priority} task-kind-${plan.isTemporary ? 'temporary' : 'monthly'}`}
                   onClick={() => openPlan(plan)}
                 >
                   <span className="ov-item-copy">
+                    <span className="task-signals">
+                      <PriorityBadge priority={plan.priority} />
+                      <WorkTypeBadge isTemporary={plan.isTemporary} isMonthly />
+                    </span>
                     <strong>{plan.title}</strong>
                     <small>
                       {nameOf(data, plan.ownerId)} · {dateLabel(plan.dueDate)}{' '}
@@ -315,7 +321,7 @@ export default function Overview({
           <section className="ov-section" aria-labelledby="ov-weekly-title">
             <div className="ov-section-heading">
               <h2 id="ov-weekly-title">
-                本周执行<span>{view.records.length}</span>
+                <Activity size={18} aria-hidden="true" /> 本周执行<span>{view.records.length}</span>
               </h2>
               <Button
                 type="text"
@@ -327,15 +333,16 @@ export default function Overview({
                 <ChevronRight size={14} />
               </Button>
             </div>
-            <div className="ov-list-caption">
-              <span>工作 / 关联目标</span>
-              <span>状态</span>
-            </div>
             {focusRecords.length ? (
-              focusRecords.map((record) => (
+              focusRecords.map((record) => {
+                const task = data.tasks.find((item) => item.id === record.taskId)
+                const plan = data.plans.find((item) => item.id === record.monthlyPlanId)
+                const priority = taskPriority(task, plan)
+                const isTemporary = Boolean(task?.isTemporary || task?.temporaryReason?.trim() || plan?.isTemporary)
+                return (
                 <button
                   key={record.id}
-                  className="ov-work-item"
+                  className={`ov-work-item task-priority-${priority || 'none'} task-kind-${isTemporary ? 'temporary' : record.monthlyPlanId ? 'monthly' : 'routine'}`}
                   onClick={() =>
                     navigate('weekly', {
                       id: record.id,
@@ -344,10 +351,12 @@ export default function Overview({
                   }
                 >
                   <span className="ov-item-copy">
-                    <WorkOriginLabel row={record} data={data} />
+                    <span className="task-signals">
+                      <PriorityBadge priority={priority} />
+                      <WorkTypeBadge isTemporary={isTemporary} monthlyPlanId={record.monthlyPlanId} />
+                    </span>
                     <strong>
-                      {data.tasks.find((task) => task.id === record.taskId)
-                        ?.title || record.commitment}
+                      {task?.title || record.commitment}
                     </strong>
                     <small>
                       {nameOf(data, record.ownerId)} ·{' '}
@@ -355,7 +364,7 @@ export default function Overview({
                         ? data.plans.find(
                             (plan) => plan.id === record.monthlyPlanId,
                           )?.title || '关联月度目标'
-                        : '临时工作'}
+                        : '未关联目标'}
                     </small>
                   </span>
                   <span
@@ -373,7 +382,7 @@ export default function Overview({
                   </span>
                   <ChevronRight size={14} />
                 </button>
-              ))
+              )})
             ) : (
               <div className="ov-empty">
                 <strong>本周暂无执行记录</strong>
@@ -391,12 +400,9 @@ export default function Overview({
               >
                 安排本周工作
               </Button>
-              <span>优先显示阻塞、未完成、草稿与待审计划</span>
+              <span>阻塞与待处理优先</span>
             </div>
           </section>
-          <p className="ov-fact-note">
-            周执行由成员自报，月度成果由管理者独立验收。
-          </p>
         </div>
 
         <aside className="ov-side">
@@ -524,9 +530,9 @@ export default function Overview({
           {manager ? '看报告' : '查看项目'}
         </Button>
       </nav>
-      <p className="ov-scope-note">
-        统计范围：当前账号可访问的本月目标与本周记录。草稿和待审核计划不计入正式执行；历史记录不足时不作趋势对比。
-      </p>
+      <ContextHelp title="统计口径与说明">
+        统计范围为当前账号可访问的本月目标与本周记录。草稿和待审核计划不计入正式执行；历史记录不足时不作趋势对比。周执行由成员自报，月度成果由管理者独立验收。
+      </ContextHelp>
     </div>
   )
 }

@@ -10,6 +10,7 @@ import CollaborationSettingsPanel from '../components/CollaborationSettingsPanel
 import NativeCapabilities from '../components/NativeCapabilities'
 import NotificationDiagnostics from '../components/NotificationDiagnostics'
 import '../collaboration.css'
+import '../notification-settings.css'
 
 export default function NotificationSettings({ data, notify, refresh }: PageProps) {
   const [view, setView] = useState<NotificationSettingsView | null>(null)

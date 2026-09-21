@@ -138,3 +138,9 @@
 @media (prefers-reduced-motion: reduce) {
   .feedback-list-item, .feedback-attachments-editor { transition: none; }
 }
+
+/* Names and dates are working information, not disabled text. */
+.feedback-detail-facts dt { color: var(--tech-body, #27272a); font-size: 12px; font-weight: 600; }
+.feedback-event-heading span,
+.feedback-event-heading time { color: var(--tech-muted, #414147); font-size: 12px; }
+.feedback-context > .form-hint { font-size: 12px; }

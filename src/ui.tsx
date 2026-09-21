@@ -48,9 +48,9 @@ export function Modal({
       if (event.key === 'Tab') {
         const nodes = Array.from(
           ref.current?.querySelectorAll<HTMLElement>(
-            'button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled),a[href]',
+            'button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled),a[href],summary,[tabindex]:not([tabindex="-1"])',
           ) || [],
-        )
+        ).filter(node => node.tabIndex >= 0 && node.getClientRects().length > 0 && !node.closest('[hidden],[inert]') && !node.matches(':disabled'))
         const first = nodes[0],
           last = nodes[nodes.length - 1]
         if (event.shiftKey && document.activeElement === first) {

@@ -34,6 +34,8 @@ import { entryAppLink, exchangeDingTalk, identityThenWorkspace, isDingTalk } fro
 import './shell.css'
 import './notifications.css'
 
+const managerPages = new Set<PageId>(['reports', 'team', 'notification-settings'])
+
 export default function App() {
   const [data, setData] = useState<Bootstrap | null>(null),
     [loading, setLoading] = useState(true),
@@ -70,13 +72,15 @@ export default function App() {
     }
   }, [refresh])
   function applyNavigation(next: PageId, nextIntent?: NavigationIntent, writeHistory = true) {
+    // Reset before rendering so destination-specific anchors can still scroll into view.
+    if (next !== page) window.scrollTo({ top: 0, behavior: 'instant' })
     setPage(next)
     setIntent(nextIntent)
     setNavigationKey((value) => value + 1)
     if (writeHistory) window.history.pushState(null, '', navigationUrl(next, nextIntent))
   }
   const navigate: Navigate = (next, nextIntent) => {
-    if (data?.user.role !== 'manager' && ['reports', 'team', 'notification-settings'].includes(next)) {
+    if (data?.user.role !== 'manager' && managerPages.has(next)) {
       setToast('当前账号没有访问此页面的权限。')
       return
     }
@@ -191,6 +195,15 @@ export default function App() {
     window.addEventListener('popstate', back)
     return () => window.removeEventListener('popstate', back)
   }, [reportDirty, page, intent])
+  useEffect(() => {
+    if (!data || data.user.role === 'manager' || !managerPages.has(page)) return
+    // An old bookmark or account switch must not leave an inaccessible page title in the shell.
+    setPage('overview')
+    setIntent(undefined)
+    setNavigationKey(value => value + 1)
+    window.history.replaceState(null, '', navigationUrl('overview'))
+    window.scrollTo({ top: 0, behavior: 'instant' })
+  }, [data?.user.role, page])
   function openFeedback() {
     if (!data) return
     feedbackTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null

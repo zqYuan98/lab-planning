@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildWorkspace, filterWorkRows, summarizeWorkRows } from '../src/overview-workspace-data.ts'
+import { buildWorkspace, filterWorkRows, previewWorkRows, summarizeWorkRows } from '../src/overview-workspace-data.ts'
 import type { Bootstrap, MonthlyPlan, Task, User, WeeklyRecord } from '../shared/types.ts'
 
 const entity = { version: 1, createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z' }
@@ -105,6 +105,54 @@ test('historical month and project follow the record link after the task is reli
   const temporary = buildWorkspace(data, { period: 'month', date: '2026-09' }, '2026-10-10').rows[0]
   assert.equal(temporary.planId, null)
   assert.equal(temporary.isTemporary, true)
+})
+
+test('relinked work retains temporary provenance and inherits priority from each record historical goal', () => {
+  const data = base()
+  data.plans = [plan('september', { priority: 'high' }), plan('october', { month: '2026-10', priority: 'low' })]
+  // Relinking clears the domain flag but retains the original temporary reason.
+  data.tasks = [task('task', { monthlyPlanId: 'october', dueDate: '2026-10-30', isTemporary: false, temporaryReason: '临时支持客户演示' })]
+  data.weeklyRecords = [record('old', { weekStart: '2026-09-28' }), record('new', { weekStart: '2026-10-05', monthlyPlanId: 'october', status: 'doing' })]
+  const rowFor = (month: string) => buildWorkspace(data, { period: 'month', date: month }, '2026-10-10').rows[0]
+  const original = JSON.stringify(data)
+  assert.equal(rowFor('2026-09').workKind, 'temporary')
+  assert.equal(rowFor('2026-10').workKind, 'temporary')
+  assert.equal(rowFor('2026-09').priority, 'high')
+  assert.equal(rowFor('2026-10').priority, 'low')
+  assert.equal(rowFor('2026-09').isTemporary, false, 'presentation does not rewrite the legacy business flag')
+  assert.equal(rowFor('2026-10').isTemporary, false)
+  assert.equal(JSON.stringify(data), original)
+
+  data.tasks[0].priority = 'medium'
+  assert.equal(rowFor('2026-09').priority, 'medium', 'explicit task priority overrides its historical goal')
+  assert.equal(rowFor('2026-10').priority, 'medium', 'explicit task priority overrides its current goal')
+  data.tasks[0].temporaryReason = '  '
+  data.plans[0].isTemporary = true
+  assert.equal(rowFor('2026-09').workKind, 'temporary', 'historical goal retains its own temporary source')
+  assert.equal(rowFor('2026-10').workKind, 'monthly', 'whitespace is not a temporary reason')
+})
+
+test('member previews surface active risks and priority before completed work without changing full row order', () => {
+  const data = base()
+  data.tasks = [
+    task('completed', { priority: 'high' }),
+    task('routine', { priority: 'low' }),
+    task('important', { priority: 'high' }),
+    task('overdue', { priority: 'medium', dueDate: '2026-09-16' }),
+    task('blocked', { priority: 'low' }),
+    task('important-second', { priority: 'high' }),
+  ]
+  data.weeklyRecords = data.tasks.map(item => record(item.id, {
+    taskId: item.id,
+    status: item.id === 'completed' ? 'done' : item.id === 'blocked' ? 'blocked' : 'doing',
+  }))
+  const { rows } = all(data)
+  const initialOrder = rows.map(row => row.id)
+  const summary = summarizeWorkRows(rows)
+  assert.deepEqual(previewWorkRows(rows).map(row => row.id), ['overdue', 'blocked', 'important'])
+  assert.deepEqual(previewWorkRows(rows, 6).map(row => row.id), ['overdue', 'blocked', 'important', 'important-second', 'routine', 'completed'])
+  assert.deepEqual(rows.map(row => row.id), initialOrder, 'full table and drill order remains intact')
+  assert.deepEqual(summarizeWorkRows(rows), summary, 'preview selection does not alter counts')
 })
 
 test('week includes due tasks and missing task references; task status cannot imply weekly completion', () => {

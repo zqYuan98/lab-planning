@@ -20,6 +20,8 @@ import { assignmentAttempt, type SubmissionAttempt } from '../notification-navig
 import WorkOriginLabel, { workSource } from '../components/WorkOriginLabel'
 import WeeklySubmissionPanel from '../components/WeeklySubmissionPanel'
 import NotificationStatus from '../components/NotificationStatus'
+import { PriorityBadge, WorkTypeBadge, TaskLegend, ContextHelp } from '../components/TaskSignals'
+import { taskPriority, workKind } from '../task-presentation'
 import { recordTarget, advanceWeek, weeklyRecordState, type WorkTarget, type ReviewRequest } from '../weekly-submission-flow'
 import {
   Badge,
@@ -165,7 +167,7 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
       <PageHeader
         eyebrow="EXECUTION / WEEKLY"
         title={manager ? '每周执行' : '我的周计划'}
-        description="同一任务可以持续跨周，每周承诺、实际结果和证据分别保存。"
+        description="看清本周重点，记录进展与交付。"
         actions={
           <>
             {navigate && <button className="button secondary" onClick={() => navigate('collaboration')}>进展与催办</button>}
@@ -191,7 +193,11 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
       </div>
       <div ref={recordSection} tabIndex={-1} className="weekly-record-context">
         <h2>周工作记录 · {week} ～ {advanceWeek(week,6)}</h2>
-        <p>保存单条记录用于更新工作；适用审核的计划通过后纳入周统计。完成填写后，请核对并提交整份提报。</p>
+        <p>完成记录后，请核对并提交整份提报。</p>
+        <ContextHelp title="周记录与整份提报有什么区别">
+          <p>保存单条记录用于更新工作；适用审核的计划通过后纳入周统计。完成填写后，请核对并提交整份提报。</p>
+          <p>同一任务可以持续跨周，每周承诺、实际结果和证据分别保存。</p>
+        </ContextHelp>
         {workContext && <div className="navigation-context"><span>正在处理{nameOf(data,workContext.ownerId)}的{workContext.kind === 'results' ? '完成情况' : '下周计划'}（记录周 {workContext.contentWeek}，提报周期 {workContext.cycleWeek}）。</span><button className="button primary" onClick={() => reviewWork(workContext)}>返回核对并提交整份提报</button></div>}
       </div>
       {deletedRecord && <DeletedWeeklyRecordNotice data={data} record={deletedRecord} onRelink={() => { setSelected(deletedRecord); setModal('relink') }} onRecreate={task => {
@@ -331,6 +337,7 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
           />
         </label>
       </div>
+      <TaskLegend />
       {initialTask && !initialRecord && (
         <div className="navigation-context">
           <div>
@@ -366,15 +373,20 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
               canEdit = manager || record.ownerId === data.user.id
             const temporaryReason = task?.temporaryReason?.trim() || ''
             const temporaryRecord = !record.monthlyPlanId && !!(task?.isTemporary || temporaryReason)
+            const priority = taskPriority(task, plan)
+            const isTemporary = !!(task?.isTemporary || temporaryReason || plan?.isTemporary)
+            const kind = workKind({ isTemporary, monthlyPlanId: record.monthlyPlanId })
             const recordState = weeklyRecordState(record)
             return (
               <article
-                className={`weekly-card ${record.status === 'blocked' ? 'has-blocker' : ''} ${record.id === initialRecord?.id ? 'navigation-highlight' : ''}`}
+                className={`weekly-card task-priority-${priority || 'none'} task-kind-${kind} ${record.status === 'blocked' ? 'has-blocker' : ''} ${record.id === initialRecord?.id ? 'navigation-highlight' : ''}`}
                 key={record.id}
                 id={`weekly-record-${record.id}`}
               >
                 <div className="weekly-card-top">
                   <div className="row-meta">
+                    <PriorityBadge priority={priority} />
+                    <WorkTypeBadge isTemporary={isTemporary} monthlyPlanId={record.monthlyPlanId} />
                     <span className="task-code">
                       #{record.taskId.slice(-6).toUpperCase()}
                     </span>
@@ -395,11 +407,9 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
                     {record.importSource?.sourceStatus && (
                       <span>原文：{record.importSource.sourceStatus}</span>
                     )}
-                    {temporaryRecord ? (
-                      <Badge tone="amber">
-                        临时交办{task?.monthlyPlanId ? ' · 原周记录' : ''}
-                      </Badge>
-                    ) : !record.monthlyPlanId && (
+                    {temporaryRecord && task?.monthlyPlanId ? (
+                      <Badge tone="amber">临时交办 · 原周记录</Badge>
+                    ) : !temporaryRecord && !record.monthlyPlanId && (
                       <Badge tone="amber">未关联月度目标</Badge>
                     )}
                   </div>

@@ -1,0 +1,38 @@
+/* Long diagnostic identifiers must wrap within the settings card. */
+.workspace-shell .notifications-page .notification-deliveries > article {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.workspace-shell .notifications-page .notification-delivery-title > * {
+  min-width: 0;
+}
+.workspace-shell .notifications-page .notification-deliveries p {
+  color: var(--tech-muted);
+  font-size: 13px;
+}
+.workspace-shell .notifications-page .notification-deliveries .notification-delivery-error {
+  color: #8a591d;
+}
+.workspace-shell .notifications-page .notification-deliveries small {
+  color: var(--text-metadata);
+  font-size: 12px;
+}
+.workspace-shell .notifications-page .notification-pilots small {
+  color: var(--tech-muted);
+  font-size: 12px;
+}
+.workspace-shell .notifications-page .notification-pilots .badge {
+  font-size: 12px;
+}
+.workspace-shell .notifications-page .collaboration-native-status p {
+  color: var(--tech-muted);
+}
+@media (max-width: 600px) {
+  .workspace-shell .notifications-page .notification-config-status > div {
+    min-width: 0;
+    flex-basis: calc(100% - 38px);
+  }
+  .workspace-shell .notifications-page fieldset {
+    min-width: 0;
+  }
+}

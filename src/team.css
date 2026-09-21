@@ -152,6 +152,28 @@
 .account-delete-dialog .button.danger:hover:not(:disabled) {
   background: #92283c;
 }
+.workspace-shell .team-members-table {
+  min-width: 900px;
+}
+.workspace-shell .team-members-table td:not(:nth-child(2)),
+.workspace-shell .registration-panel table td:not(:nth-child(2)) {
+  white-space: nowrap;
+}
+.workspace-shell .registration-panel table {
+  min-width: 760px;
+}
+.workspace-shell :is(.team-members-table, .registration-panel table) td:nth-child(2) {
+  min-width: 120px;
+  max-width: 240px;
+  overflow-wrap: anywhere;
+}
+.workspace-shell :is(.team-members-table, .registration-panel table) .team-account-actions {
+  flex-wrap: nowrap;
+}
+.workspace-shell :is(.registration-panel .table-scroll, .table-scroll:has(.team-members-table)):focus-visible {
+  outline: 2px solid var(--tech-focus);
+  outline-offset: -2px;
+}
 @media (max-width: 600px) {
   .toolbar.team-toolbar {
     flex-direction: column;

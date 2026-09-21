@@ -56,3 +56,31 @@
 @media(prefers-reduced-motion:reduce){.notification-detail{scroll-behavior:auto}}
 @media(max-width:700px){.notification-workspace.has-selection>.notification-detail{grid-row:1}.notification-detail .notification-back-to-list{display:inline-flex;margin-bottom:16px;min-height:44px}.notification-inbox{scroll-margin-top:12px}}
 @media(max-width:700px){.notification-content-item,.notification-preview-card{padding:15px}.notification-source-action .button{width:100%;min-height:46px}.notification-preview-actions .button{flex:1;min-height:46px}.notification-preview-facts>div{grid-template-columns:88px 1fr;gap:8px}.notification-status-actions .button{min-height:42px}}
+
+/* Message content and delivery facts use the same readable ink as work pages. */
+.notification-excerpt,
+.notification-body,
+.notification-content-intro,
+.notification-content-footer,
+.notification-content-more,
+.notification-content-item li,
+.notification-source-action p,
+.notification-acknowledgement p,
+.notification-binding p,
+.notification-preview-eligibility { color: var(--tech-body, #27272a); }
+.notification-detail > time,
+.notification-footnote,
+.notification-facts dt,
+.binding-confirm dt,
+.notification-binding small,
+.notification-loading,
+.notification-object-status dt,
+.notification-object-status small,
+.notification-preview-facts dt { color: var(--tech-muted, #414147); }
+.notification-facts dt,
+.notification-preview-facts dt { font-weight: 600; }
+.notification-item-meta,
+.notification-pilots small,
+.notification-deliveries p,
+.notification-deliveries small { color: var(--text-metadata, #5e5e67); font-size: 12px; }
+.notification-inbox .tabs button span { color: var(--tech-muted, #414147); font-size: 12px; }

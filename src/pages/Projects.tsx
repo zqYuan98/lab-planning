@@ -4,6 +4,7 @@ import { accountDisplayName, assignmentAccounts } from '../account-options'
 import { Archive, FolderKanban, Plus, Search } from 'lucide-react'
 import type { Project } from '../../shared/types'
 import { api, json } from '../api'
+import '../portfolio.css'
 import {
   Badge,
   Empty,
@@ -73,8 +74,8 @@ export default function Projects({ data, refresh, notify, intent }: PageProps) {
       </div>
       {projects.length ? (
         <div className="panel">
-          <div className="table-scroll">
-            <table>
+          <div className="table-scroll" role="region" aria-label="项目档案表，可横向滚动" tabIndex={0}>
+            <table className="projects-table">
               <thead>
                 <tr>
                   <th>项目名称 / 编号</th>
@@ -147,10 +148,10 @@ export default function Projects({ data, refresh, notify, intent }: PageProps) {
       ) : (
         <div className="panel">
           <Empty
-            title="暂无项目"
-            description="新建项目后，可将月度成果归入项目；部门工作也可以独立提报。"
+            title={search ? '未找到匹配项目' : '暂无项目'}
+            description={search ? '试试其他名称或编号，也可以勾选显示已归档项目。' : '新建项目后，可将月度成果归入项目；部门工作也可以独立提报。'}
             action={
-              manager && (
+              manager && !search && (
                 <button
                   className="button secondary"
                   onClick={() => setEditing('new')}

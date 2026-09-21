@@ -2,7 +2,9 @@ import { Fragment } from "react";
 import { ChevronRight, Inbox, AlertCircle, CalendarDays } from "lucide-react";
 import type { User } from "../../../shared/types";
 import { addCalendarDays, shanghaiToday } from "../../overview-data";
-import { summarizeWorkRows, type WorkRow } from "../../overview-workspace-data";
+import { previewWorkRows, summarizeWorkRows, type WorkRow } from "../../overview-workspace-data";
+import { PriorityBadge, WorkTypeBadge } from "../TaskSignals";
+import { priorityLabels, workKindLabels } from "../../task-presentation";
 import {
   columnLabels,
   type ColumnId,
@@ -51,6 +53,16 @@ export function NoRows({
 }
 type RowAction = (row: WorkRow) => void;
 type DrillAction = (title: string, rows: WorkRow[]) => void;
+export const workRowClass = (row: WorkRow) =>
+  `task-priority-${row.priority || "none"} task-kind-${row.workKind || "routine"}`;
+export function WorkRowSignals({ row }: { row: WorkRow }) {
+  return (
+    <span className="task-signals">
+      <PriorityBadge priority={row.priority} />
+      <WorkTypeBadge isTemporary={row.workKind === "temporary"} isMonthly={row.workKind === "monthly"} />
+    </span>
+  );
+}
 function TaskCount({
   rows,
   label,
@@ -72,20 +84,21 @@ function TaskCount({
     <span className="ow-zero">0</span>
   );
 }
-function TaskPreview({ rows, onOpen }: { rows: WorkRow[]; onOpen: RowAction }) {
+function TaskPreview({ rows, onOpen, onExpand }: { rows: WorkRow[]; onOpen: RowAction; onExpand: () => void }) {
   return (
     <div className="ow-task-preview">
       {rows.length ? (
-        rows.map((row) => (
+        previewWorkRows(rows).map((row) => (
           <button
             key={row.id}
-            className="ow-title-button"
+            className={`ow-title-button ${workRowClass(row)}`}
             title={row.title}
-            aria-label={`${row.title}，${statusLabels[row.status]}${row.overdue ? "，逾期" : ""}`}
+            aria-label={`${row.title}，${priorityLabels[row.priority || "none"]}，${workKindLabels[row.workKind || "routine"]}，${statusLabels[row.status]}${row.overdue ? "，逾期" : ""}`}
             onClick={() => onOpen(row)}
           >
             <span className="ow-preview-title">{row.title}</span>
             <span className="ow-preview-tags">
+              <WorkRowSignals row={row} />
               <StatusPill row={row} />
               {row.overdue && (
                 <small className="ow-overdue">
@@ -98,6 +111,11 @@ function TaskPreview({ rows, onOpen }: { rows: WorkRow[]; onOpen: RowAction }) {
         ))
       ) : (
         <span className="ow-empty-member">本期暂无任务安排</span>
+      )}
+      {rows.length > 3 && (
+        <button className="ow-title-button ow-preview-more" onClick={onExpand}>
+          查看全部 {rows.length} 项 <ChevronRight size={13} aria-hidden="true" />
+        </button>
       )}
     </div>
   );
@@ -261,7 +279,7 @@ export function MemberTable({
                         <span className="ow-muted">暂无任务</span>
                       )
                     ) : (
-                      <TaskPreview rows={work} onOpen={onOpen} />
+                      <TaskPreview rows={work} onOpen={onOpen} onExpand={() => onDrill(`${user.name}的全部任务`, work)} />
                     )}
                   </td>
                 ))}
@@ -312,7 +330,7 @@ export function MemberTable({
                 )}
               </div>
             )}
-            <TaskPreview rows={work} onOpen={onOpen} />
+            <TaskPreview rows={work} onOpen={onOpen} onExpand={() => onDrill(`${user.name}的全部任务`, work)} />
           </article>
         ))}
       </div>
@@ -328,7 +346,7 @@ export function TaskTable({
 }) {
   if (!rows.length) return <NoRows />;
   return (
-    <div className="ow-table-wrap">
+    <div className="ow-table-wrap" role="region" aria-label="任务明细，可横向滚动" tabIndex={0}>
       <table className="ow-table" aria-label="任务明细">
         <thead>
           <tr>
@@ -338,7 +356,7 @@ export function TaskTable({
               "项目 / 月度目标",
               "执行状态",
               "截止日期",
-              "周记录（纳入统计 / 草稿）",
+              "生效记录 / 草稿待审",
             ].map((label) => (
               <th key={label} scope="col">
                 {label}
@@ -348,15 +366,13 @@ export function TaskTable({
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.id}>
+            <tr key={row.id} className={workRowClass(row)}>
               <td className="ow-title-cell">
                 <button className="ow-title-button" onClick={() => onOpen(row)}>
                   {row.title}
                   <ChevronRight size={13} />
                 </button>
-                {row.isTemporary && (
-                  <small className="ow-muted">临时工作</small>
-                )}
+                <WorkRowSignals row={row} />
               </td>
               <td>{row.ownerName}</td>
               <td className="ow-title-cell">
@@ -387,13 +403,15 @@ export function TaskTable({
 }
 export function TaskCard({ row, onOpen }: { row: WorkRow; onOpen: RowAction }) {
   return (
-    <button className="ow-task-card" onClick={() => onOpen(row)}>
+    <button className={`ow-task-card ${workRowClass(row)}`} onClick={() => onOpen(row)}>
       <div className="ow-card-meta">
-        <StatusPill row={row} />
-        {row.isTemporary && <small>临时</small>}
+        <WorkRowSignals row={row} />
       </div>
       <strong>{row.title}</strong>
-      <small className="ow-card-project">{row.projectName}</small>
+      <div className="ow-card-meta">
+        <small className="ow-card-project">{row.projectName}</small>
+        <StatusPill row={row} />
+      </div>
       <div className="ow-card-meta">
         <span className="ow-card-owner">
           <span
@@ -443,7 +461,7 @@ export function Board({
   }
   if (!rows.length) return <NoRows />;
   return (
-    <div className="ow-board">
+    <div className="ow-board" role="region" aria-label="任务看板，可横向滚动" tabIndex={0}>
       {[...groups].map(([key, item]) => (
         <section
           className="ow-lane"
@@ -575,10 +593,10 @@ export function Timeline({
   return (
     <>
       <p className="ow-filter-note">
-        按任务截止日期定位，点击查看交付内容。排期点不代表实际完成时间。
+        按截止日期排期 · 点击查看任务 · 排期点不代表实际完成
       </p>
       {dated.length > 0 && (
-        <div className="ow-timeline">
+        <div className="ow-timeline" role="region" aria-label="任务时间排期，可横向滚动" tabIndex={0}>
           <div className="ow-timeline-row">
             <div className="ow-timeline-label">任务 / 负责人</div>
             <div className="ow-timeline-ticks">
@@ -596,9 +614,10 @@ export function Timeline({
             </div>
           </div>
           {dated.map((row) => (
-            <div className="ow-timeline-row" key={row.id}>
+            <div className={`ow-timeline-row ${workRowClass(row)}`} key={row.id}>
               <button className="ow-timeline-label" onClick={() => onOpen(row)}>
                 <strong>{row.title}</strong>
+                <WorkRowSignals row={row} />
                 <small>
                   {row.ownerName} · {row.dueDate}
                 </small>
@@ -619,7 +638,7 @@ export function Timeline({
                     transform: "translateX(-50%)",
                   }}
                   onClick={() => onOpen(row)}
-                  aria-label={`${row.title}，${row.ownerName}，截止 ${row.dueDate}，${statusLabels[row.status]}`}
+                  aria-label={`${row.title}，${row.ownerName}，${priorityLabels[row.priority || "none"]}，${workKindLabels[row.workKind || "routine"]}，截止 ${row.dueDate}，${statusLabels[row.status]}`}
                   title={`${row.dueDate} · ${statusLabels[row.status]}`}
                 />
               </div>
@@ -635,8 +654,9 @@ export function Timeline({
           <div className="ow-detail-list">
             {undated.map((row) => (
               <Fragment key={row.id}>
-                <button className="ow-title-button" onClick={() => onOpen(row)}>
+                <button className={`ow-title-button ${workRowClass(row)}`} onClick={() => onOpen(row)}>
                   {row.title} · {row.ownerName}
+                  <WorkRowSignals row={row} />
                   <StatusPill row={row} />
                 </button>
               </Fragment>

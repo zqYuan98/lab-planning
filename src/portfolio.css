@@ -1,0 +1,54 @@
+/* Keep compact administrative tables readable when scrolled on small screens. */
+.workspace-shell .projects-table {
+  min-width: 720px;
+}
+.workspace-shell .projects-table td:not(:first-child) {
+  white-space: nowrap;
+}
+.workspace-shell .projects-table td:first-child {
+  min-width: 240px;
+  max-width: 480px;
+  overflow-wrap: anywhere;
+}
+.workspace-shell .table-scroll:has(.projects-table):focus-visible {
+  outline: 2px solid var(--tech-focus);
+  outline-offset: -2px;
+}
+.workspace-shell .goal-body p {
+  color: var(--tech-body);
+}
+.workspace-shell .goals-toolbar .inline-field {
+  white-space: nowrap;
+}
+.workspace-shell .goals-toolbar .inline-field input {
+  width: 115px;
+}
+.workspace-shell .goal-body .label-text {
+  color: var(--tech-body);
+  font-size: 13px;
+  font-weight: 600;
+}
+.workspace-shell .goal-heading > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.workspace-shell .goal-body > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .workspace-shell .goal-heading {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    align-items: start;
+  }
+  .workspace-shell .goal-heading h2 {
+    font-size: 16px;
+    line-height: 1.6;
+  }
+  .workspace-shell .goal-heading .button {
+    grid-column: 2;
+    justify-self: end;
+    min-height: 44px;
+  }
+}

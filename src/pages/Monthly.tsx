@@ -3,6 +3,8 @@ import { canUseAccount } from '../../shared/auth-policy'
 import { accountDisplayName, assignmentAccounts, visibleMonthlyPlan } from '../account-options'
 import WorkflowGuide from '../components/WorkflowGuide'
 import NotificationStatus from '../components/NotificationStatus'
+import { PriorityBadge, WorkTypeBadge, TaskLegend, ContextHelp } from '../components/TaskSignals'
+import { taskPriority, workKind } from '../task-presentation'
 import {
   Plus,
   Send,
@@ -130,7 +132,7 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
       <PageHeader
         eyebrow="PLANNING / MONTHLY"
         title={manager ? '月度目标' : '我参与的月度目标'}
-        description={manager ? '定义团队目标，审核临时目标，并按月发布阶段承诺。' : '查看参与目标，提报本人临时目标，并拆成每周个人任务。'}
+        description={manager ? '聚焦月度交付，让团队优先级清晰可见。' : '追踪参与目标，将月度成果拆成每周行动。'}
         actions={
           <>
             {manager && (
@@ -234,6 +236,7 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
           ),
         )}
       </div>
+      <TaskLegend />
       {action.error && (
         <div className="error" role="alert">
           {action.error}
@@ -247,7 +250,7 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
                 <h2>{group}</h2>
                 <span className="muted">{plans.length} 项成果</span>
               </div>
-              <div className="table-scroll">
+              <div className="table-scroll" role="region" aria-label={`${group}月度目标，可横向滚动`} tabIndex={0}>
                 <table>
                   <thead>
                     <tr>
@@ -260,7 +263,7 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
                   </thead>
                   <tbody>
                     {plans.map((plan) => (
-                      <tr key={plan.id}>
+                      <tr key={plan.id} className={`task-priority-${taskPriority(undefined, plan) || 'none'} task-kind-${workKind({ isTemporary: plan.isTemporary, isMonthly: true })}`}>
                         <td>
                           <button
                             className="table-title"
@@ -268,13 +271,14 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
                           >
                             {plan.title}
                           </button>
-                          <p className="cell-description">
+                          <p className="cell-description task-preview" title={plan.expectedOutcome}>
                             {plan.expectedOutcome ||
                               (plan.importSource ? '预期成果：原表未注明' : '')}
                           </p>
                           <div className="row-meta">
+                            <PriorityBadge priority={plan.priority} />
+                            <WorkTypeBadge isTemporary={plan.isTemporary} isMonthly />
                             <span>{plan.category}</span>
-                            {plan.isTemporary && <Badge tone="amber">临时目标</Badge>}
                             {plan.importSource && (
                               <Badge tone="blue">已有计划导入</Badge>
                             )}
@@ -282,9 +286,6 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
                               <span>
                                 原文：{plan.importSource.sourceStatus}
                               </span>
-                            )}
-                            {plan.priority === 'high' && (
-                              <Badge tone="amber">高优先级</Badge>
                             )}
                             {plan.sourcePlanId && <Badge>跨月承接</Badge>}
                             {plan.projectId &&
@@ -737,12 +738,15 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
       )}
       {modal === 'detail' && selected && (
         <Modal title={selected.title} onClose={close} wide>
+          <div className="row-meta"><PriorityBadge priority={selected.priority} /><WorkTypeBadge isTemporary={selected.isTemporary} isMonthly /></div>
           {manager && <NotificationStatus type="plan" id={selected.id} data={data} />}
           {selected.isTemporary && (
             <div className="context-box">
               <Badge tone="amber">临时目标 · 本月阶段成果</Badge>
               <p>临时原因：{selected.temporaryReason}</p>
-              <p>可拆成多周执行；未完成时由管理者跨月承接，保留每月承诺和结果。</p>
+              <ContextHelp title="临时目标如何跨周与跨月">
+                <p>可拆成多周执行；未完成时由管理者跨月承接，保留每月承诺和结果。</p>
+              </ContextHelp>
             </div>
           )}
           {selected.importSource && (
