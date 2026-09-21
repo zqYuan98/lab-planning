@@ -14,6 +14,20 @@ server {
     ssl_protocols TLSv1.2 TLSv1.3;
     client_max_body_size 256k;
 
+    # Complete JSON restore packets may contain Word assets (32 MiB plus envelope).
+    location ~* ^/api/data/restore/(?:preview|commit)/?$ {
+        client_max_body_size 35m;
+        proxy_pass http://127.0.0.1:4310;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 90s;
+        proxy_send_timeout 90s;
+    }
+
     # One <=12 MiB DOCX, base64 encoded; application authenticates a manager first.
     location ~* ^/api/report-agent/assets/?$ {
         client_max_body_size 18m;
