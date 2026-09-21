@@ -6,6 +6,7 @@ import { Domain } from './domain.ts'
 import { HttpError, Store } from './store.ts'
 import { businessEventCollections, collectionNames, emptyCollections, parsePacket, projectRow, rowReferences, type BusinessCollections, type BusinessDataPacket, type TransferCollection, type TransferType } from './data-transfer-schema.ts'
 import { collaborationCollectionNames, emptyCollaborationCollections } from './collaboration-transfer.ts'
+import { reportAgentTransferCollections, emptyReportAgentCollections } from './report-agent-transfer.ts'
 
 export type { BusinessDataPacket, BusinessCollections, TransferType } from './data-transfer-schema.ts'
 export { previewRestore, restoreBusinessData } from './data-restore.ts'
@@ -31,6 +32,7 @@ export function exportBusinessData(store: Store, actor: User, options: ExportOpt
     const complete = type === 'all' && !options.month && !options.ownerId && !options.projectId
     const sources: BusinessCollections = {
       ...emptyCollaborationCollections(),
+      ...emptyReportAgentCollections(),
       users: visible.users, projects: visible.projects, annualGoals: visible.annualGoals, plans: visible.plans, tasks: visible.tasks, weeklyRecords: visible.weeklyRecords,
       history: visibleImportHistory(store, actor),
       publications: visible.publications, reports: visible.reports,
@@ -44,12 +46,14 @@ export function exportBusinessData(store: Store, actor: User, options: ExportOpt
       weeklyAdjustments: store.list<BusinessCollections['weeklyAdjustments'][number]>('weeklyAdjustments').filter(row => isManager || row.ownerId === actor.id),
       weeklyPlanReviews: store.list<BusinessCollections['weeklyPlanReviews'][number]>('weeklyPlanReviews').filter(row => isManager || row.ownerId === actor.id),
     }
+    if (isManager) for (const name of reportAgentTransferCollections) (sources[name] as Entity[]) = store.list<Entity>(name)
     for (const name of collaborationCollectionNames) (sources[name] as Entity[]) = store.list<Entity & { ownerId: string; taskId?: string; parentTaskId?: string }>(name)
       .filter(row => (isManager || row.ownerId === actor.id) && visible.tasks.some(task => task.id === (row.taskId ?? row.parentTaskId)))
     const plans = new Map(visible.plans.map(row => [row.id, row]))
     const matches = (name: TransferCollection, value: Entity) => {
       const row = value as unknown as Record<string, unknown>
       if (name === 'users' || name === 'events') return complete
+      if ((reportAgentTransferCollections as readonly string[]).includes(name)) return complete
       if ((collaborationCollectionNames as readonly string[]).includes(name)) {
         const task = visible.tasks.find(task => task.id === (row.taskId ?? row.parentTaskId))
         return !!task && (!options.ownerId || task.ownerId === options.ownerId) && (!options.projectId || plans.get(String(task.monthlyPlanId))?.projectId === options.projectId)
@@ -103,7 +107,7 @@ export function exportBusinessData(store: Store, actor: User, options: ExportOpt
     }
     const collections = emptyCollections()
     for (const name of collectionNames) (collections[name] as unknown[]) = (sources[name] as Entity[]).filter(row => selected[name].has(row.id)).map(row => projectRow(name, row))
-    return parsePacket({ application: 'lab-planning', formatVersion: collaborationCollectionNames.some(name => collections[name].length) ? 3 : 2, exportedAt: new Date().toISOString(), collections })
+    return parsePacket({ application: 'lab-planning', formatVersion: reportAgentTransferCollections.some(name => collections[name].length) || collections.reports.some(report => report.agent) ? 4 : collaborationCollectionNames.some(name => collections[name].length) ? 3 : 2, exportedAt: new Date().toISOString(), collections })
   })
 }
 
@@ -113,8 +117,14 @@ function cellText(value: unknown): string {
   return /^[\s]*[=+\-@]/u.test(text) || /^[\t\r\n]/.test(text) ? `'${text}` : text
 }
 function csvRows(packet: BusinessDataPacket, type: TransferType): Record<string, unknown>[] {
-  if (type === 'all') return collectionNames.flatMap(name => (packet.collections[name] as Entity[]).map(row => ({ collection: name, ...row })))
+  if (type === 'all') return collectionNames.flatMap(name => (packet.collections[name] as Entity[]).map(row => ({ collection: name, ...readableRow(name, row) })))
   return packet.collections[type] as unknown as Record<string, unknown>[]
+}
+function readableRow(name: TransferCollection, row: unknown): Record<string, unknown> {
+  const value = row as Record<string, unknown>
+  if (name !== 'reportAssets') return value
+  const { contentBase64: _bytes, inspection: _inspection, ...metadata } = value
+  return metadata
 }
 
 export function exportCsv(input: BusinessDataPacket, type: TransferType = 'all'): string {
@@ -136,12 +146,12 @@ export async function exportXlsx(input: BusinessDataPacket): Promise<Buffer> {
   meta.addRows([
     ['应用', packet.application], ['数据格式版本', packet.formatVersion], ['导出时间', packet.exportedAt],
     ['恢复说明', '跨系统完整恢复请使用 JSON 迁移包；Excel 用于阅读、筛选和整理。'],
-    ['关联资料', '各表包含必要关联记录。历史资料保留原文和来源标识，原始附件及账号密码不在业务导出范围内。'],
+    ['关联资料', '各表包含必要关联记录。周报 Word 文件在 JSON 包中保留原件，Excel 仅列文件信息；其他导入原始附件及账号密码不在业务导出范围内。'],
     ['长字段', '超过 Excel 单元格限制的内容按 __part2、__part3 等列拆分，按列顺序拼接即可还原文字。'],
   ])
   meta.columns = [{ width: 22 }, { width: 100 }]
   for (const name of collectionNames) {
-    const values = packet.collections[name] as unknown as Record<string, unknown>[]
+    const values = (packet.collections[name] as unknown[]).map(row => readableRow(name, row))
     if (!values.length) continue
     const sheet = workbook.addWorksheet(name)
     const expanded = values.map(row => Object.fromEntries(Object.entries(row).flatMap(([key, value]): Array<[string, string | number | boolean]> => {

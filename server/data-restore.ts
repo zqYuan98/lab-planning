@@ -9,6 +9,7 @@ import { reportSubmissionIssues, weeklyTransferIssues } from './weekly-submissio
 import type { WeeklyReportSubmission, WeeklyRule } from '../shared/weekly-submissions.ts'
 import type { CollaborationSettings, TaskTracking } from '../shared/collaboration.ts'
 import { collaborationTransferIssues } from './collaboration-transfer.ts'
+import { reportAgentHashIssues, reportAgentTransferIssues } from './report-agent-transfer.ts'
 import { businessEventCollections, canonical, collectionNames, emptyCollections, parsePacket, projectRow, remapUsers, rowReferences, storedCollection, type BusinessCollections, type BusinessDataPacket, type TransferCollection } from './data-transfer-schema.ts'
 
 export interface RestoreCount { total: number; insert: number; skip: number; replace: number }
@@ -79,7 +80,7 @@ function semanticIssues(name: TransferCollection, input: unknown, issue: (messag
   if (name === 'weeklySubmissions') for (const record of (input as BusinessCollections['weeklySubmissions'][number]).records) semanticIssues('weeklyRecords', record, issue, true)
   if (name === 'events') {
     const target = businessEventCollections[String(row.entityType)]
-    if (target !== 'reports') for (const field of ['before', 'after']) {
+    if (target !== 'reports' && target !== 'reportTemplates') for (const field of ['before', 'after']) {
       const snapshots = row[field] === null ? [] : Array.isArray(row[field]) ? row[field] as unknown[] : [row[field]]
       for (const snapshot of snapshots) semanticIssues(target, snapshot, issue, true)
     }
@@ -94,6 +95,8 @@ function inspectRestore(store: Store, packet: BusinessDataPacket, requestedMappi
   let unusedRule: WeeklyRule | undefined
   const issueSet = new Set<string>()
   const issue = (message: string) => { if (!issueSet.has(message)) { issueSet.add(message); issues.push(message) } }
+  // Verify source fingerprints before account mapping changes the frozen snapshot.
+  for (const report of packet.collections.reports) reportAgentHashIssues(report, issue)
   if (!requestedMapping || typeof requestedMapping !== 'object' || Array.isArray(requestedMapping) || Object.values(requestedMapping).some(value => typeof value !== 'string' || !value || value.length > 200)) throw new HttpError(400, '账号映射格式无效')
   const sourceUsers = new Map(packet.collections.users.map(user => [user.id, user]))
   const currentUsers = store.list<User>('users')
@@ -231,6 +234,8 @@ function inspectRestore(store: Store, packet: BusinessDataPacket, requestedMappi
   unique<Report>('reports', row => `${row.type}/${row.period}/${row.revision}`)
   weeklyTransferIssues(rows, available, issue)
   collaborationTransferIssues(rows, available, issue)
+  reportAgentTransferIssues(rows, available, issue)
+  if (rows.reportTemplates.length) notices.push('周报模板、冻结事实和定稿 Word 原件会一同恢复；自动生成任务与定时设置不会重放，请核对后重新配置。')
   if (pendingLegacyRecords) notices.push(`将 ${pendingLegacyRecords} 条适用审批周期但缺少审批元数据的成员周安排标记为待审核；历史提交、报告及审计快照保持原样。`)
   if (rows.taskTrackings.length) notices.push('恢复的有效督办将暂停，需管理者核对后显式恢复；协作规则保持关闭，历史事件不产生新通知。')
   return {

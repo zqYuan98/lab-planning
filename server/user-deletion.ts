@@ -15,6 +15,7 @@ const labels: Record<TransferCollection, string> = {
   weeklyRules: '周提报规则', weeklyCycles: '已冻结的周提报名单', weeklyDuties: '周提报义务',
   weeklySubmissions: '已提交的周报', weeklyMissing: '周提报缺交记录', weeklyAdjustments: '周提报调整记录', weeklyPlanReviews: '下周计划审核记录',
   taskTrackings: '督办纳入记录', progressEvents: '进展时间线', followupRequests: '催办请求', followupResponses: '催办回应', blockerEpisodes: '阻塞阶段', blockerActions: '阻塞支持处理', deadlineChangeRequests: '延期申请',
+  reportAssets: '周报模板与 Word 文件', reportTemplates: '周报模板版本',
 }
 
 /** Keep exactly the user dependencies required by business export/restore, including nested snapshots. */
@@ -52,5 +53,7 @@ export function userDeletionPreview(store: Store, actor: User, user: User): User
   add('feedbackEvents', '问题反馈历史操作和改派记录', store.list<FeedbackEvent>('feedbackEvents').filter(row => row.actorId === user.id || row.assigneeId === user.id).length)
   add('feedbackAttachments', '问题反馈截图', store.list<FeedbackAttachment>('feedbackAttachments').filter(row => row.actorId === user.id).length)
   add('feedbackCommands', '问题反馈请求历史', store.list<{ actorId: string }>('feedbackCommands').filter(row => row.actorId === user.id).length)
+  add('reportAgentJobs', '周报生成任务', store.list<{ actorId: string }>('reportAgentJobs').filter(row => row.actorId === user.id).length)
+  add('reportAgentSchedule', '周报定时负责人', Number(store.get<{ actorId: string }>('settings', 'report-agent-schedule')?.actorId === user.id))
   return { user: safeUser(user), canDelete: blockers.length === 0, blockers, retainedHistory: true }
 }

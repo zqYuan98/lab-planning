@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import {
   CalendarClock,
   CheckCheck,
@@ -36,6 +36,10 @@ import {
   weeklyStatusLabel,
 } from '../../server/report-metrics'
 import '../reports.css'
+import '../report-agent.css'
+import { allowDraftLeave } from '../draft-recovery'
+const ReportAgentCenter = lazy(() => import('../components/ReportAgentCenter'))
+const ReportAgentEditor = lazy(() => import('../components/ReportAgentEditor'))
 import type { NavigationIntent } from '../navigation'
 
 type Props = {
@@ -72,6 +76,7 @@ export default function Reports({
   const [schedule, setSchedule] = useState<ReportSchedule | null>(null),
     [scheduleOpen, setScheduleOpen] = useState(false)
   const [finalizeOpen, setFinalizeOpen] = useState(false)
+  const [agentOpen, setAgentOpen] = useState(false)
   const history = useMemo(
     () =>
       [...data.reports].sort(
@@ -81,7 +86,7 @@ export default function Reports({
     [data.reports],
   )
   const unsaved = Boolean(
-    selected && (title !== selected.title || narrative !== selected.narrative),
+    selected && !selected.agent && (title !== selected.title || narrative !== selected.narrative),
   )
   const editable = selected?.status === 'draft'
   const metrics = selected ? reportMetrics(selected.snapshot) : null
@@ -136,7 +141,7 @@ export default function Reports({
     }
   }
   const canLeave = () =>
-    !unsaved || window.confirm('当前汇报正文尚未保存。继续将放弃这些编辑。')
+    allowDraftLeave() && (!unsaved || window.confirm('当前汇报正文尚未保存。继续将放弃这些编辑。'))
   async function generate(reportType = type, reportPeriod = period) {
     if (!canLeave()) return
     await action(async () => {
@@ -199,6 +204,12 @@ export default function Reports({
         description="你的周计划和实际成果会进入管理者汇报。"
       />
     )
+  if (agentOpen) return (
+    <div className="reports-page">
+      <PageHeader eyebrow="MANAGEMENT / REPORTS" title="报告中心" description="沿用公司模板，生成有据可查的周报。" actions={<button className="button secondary" onClick={() => { if (canLeave()) setAgentOpen(false) }}>返回汇报档案</button>} />
+      <Suspense fallback={<p role="status">正在加载周报智能体…</p>}><ReportAgentCenter key={data.user.id} data={data} refresh={refresh} notify={notify} onOpenReport={report => { choose(report); setAgentOpen(false) }} /></Suspense>
+    </div>
+  )
   return (
     <div className="reports-page">
       <PageHeader
@@ -206,6 +217,7 @@ export default function Reports({
         title="报告中心"
         description="让计划、成果与管理判断各有依据。"
         actions={
+          <><button className="button primary" disabled={busy} onClick={() => { if (canLeave()) setAgentOpen(true) }}><Sparkles size={17} />周报模板与生成</button>
           <button
             className="button secondary"
             disabled={busy}
@@ -213,7 +225,7 @@ export default function Reports({
           >
             <CalendarClock size={17} />
             自动草稿设置
-          </button>
+          </button></>
         }
       />
       {intent?.action === 'write-weekly' && !selected && (
@@ -304,7 +316,9 @@ export default function Reports({
           )}
         </aside>
         <section className="report-document">
-          {!selected || !metrics ? (
+          {selected?.agent ? (
+            <Suspense fallback={<p role="status">正在加载周报编辑器…</p>}><ReportAgentEditor key={`${data.user.id}:${selected.id}`} report={selected} accountId={data.user.id} aiConfigured={data.aiConfigured} refresh={refresh} notify={notify} onSaved={choose} /></Suspense>
+          ) : !selected || !metrics ? (
             <Empty
               title="准备好本期汇报"
               description="选择周报或月报与周期，系统会读取全量计划和实际进展，形成可编辑、可追溯的中文草稿。"

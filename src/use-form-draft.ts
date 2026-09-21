@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { collectDraftValues, draftStorageKey, parseFormDraft, setActiveDraft, type DraftValues } from './draft-recovery'
+import { collectDraftValues, draftStorageFailureNotice, draftStorageKey, parseFormDraft, persistFormDraft, setActiveDraft, type DraftValues } from './draft-recovery'
 
 function controls(form: HTMLFormElement) {
   return Array.from(form.elements).filter((node): node is HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement =>
@@ -47,13 +47,18 @@ export function useFormDraft(key: string | undefined, context?: DraftValues, onR
     cached.current = values
     state.current.dirty = JSON.stringify(values) !== baseline.current
     try {
-      if (state.current.dirty) sessionStorage.setItem(draftStorageKey(key), JSON.stringify({ schema: 2, savedAt: Date.now(), values }))
-      else sessionStorage.removeItem(draftStorageKey(key))
-      state.current.persisted = true
-      setNotice(state.current.dirty ? '草稿已保存在当前标签页，尚未提交。' : '')
+      if (state.current.dirty) {
+        const result = persistFormDraft(sessionStorage, key, values)
+        state.current.persisted = result.persisted
+        setNotice(result.notice)
+      } else {
+        sessionStorage.removeItem(draftStorageKey(key))
+        state.current.persisted = true
+        setNotice('')
+      }
     } catch {
       state.current.persisted = false
-      setNotice('浏览器无法保存草稿，请保留此页面并及时提交。')
+      setNotice(draftStorageFailureNotice)
     }
     publish()
   }
@@ -67,12 +72,15 @@ export function useFormDraft(key: string | undefined, context?: DraftValues, onR
   useEffect(() => {
     if (!key || !formRef.current) return
     ready.current = false
+    state.current.dirty = false
+    state.current.persisted = false
     cached.current = {}
     visibleControls.current = new WeakMap()
     baseline.current = JSON.stringify(value())
     let frame = 0
     try {
-      const draft = parseFormDraft(sessionStorage.getItem(draftStorageKey(key)))
+      const raw = sessionStorage.getItem(draftStorageKey(key))
+      const draft = parseFormDraft(raw)
       if (draft) {
         cached.current = draft.values
         callbacks.current.onRestore?.(draft.values)

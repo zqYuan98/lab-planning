@@ -23,6 +23,8 @@ import { nativeRouter } from './native-routes.ts'
 import { workRegisterRouter } from './work-register-routes.ts'
 import type { DingTalkNativeClient } from './dingtalk-native.ts'
 import { feedbackRouter } from './feedback-routes.ts'
+import { createReportAgentRouter } from './report-agent-routes.ts'
+import { requireReportManager } from './reports.ts'
 
 interface AppOptions { store?: Store; dbPath?: string; enableScheduler?: boolean; dingtalkClient?: DingTalkClient; nativeClient?: DingTalkNativeClient }
 /** Trust named loopback or explicit proxy addresses, never a caller-supplied hop count. */
@@ -59,10 +61,17 @@ export function createApp(options: AppOptions = {}) {
     res.set('X-Request-Id', res.locals.requestId)
     next()
   })
-  const regularJson = express.json({ limit: '256kb' }), importJson = express.json({ limit: '16mb' }), restoreJson = express.json({ limit: '35mb' }), feedbackJson = express.json({ limit: '9mb' })
+  const regularJson = express.json({ limit: '256kb' }), importJson = express.json({ limit: '16mb' }), restoreJson = express.json({ limit: '35mb' }), feedbackJson = express.json({ limit: '9mb' }), reportAssetJson = express.json({ limit: '18mb' }), reportEditJson = express.json({ limit: '4mb' })
   app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next() }, createOriginGuard(canonical), (req, res, next) => {
     const large = /^\/(?:v1\/)?imports(?:\/|$)/i.test(req.path)
     const feedbackUpload = req.method === 'POST' && /^\/feedback(?:\/[^/]+\/actions)?\/?$/i.test(req.path)
+    const reportUpload = req.method === 'POST' && /^\/report-agent\/assets\/?$/i.test(req.path)
+    const reportEdit = req.method === 'PATCH' && /^\/report-agent\/(?:reports|templates)\/[^/]+\/?$/i.test(req.path)
+    if (reportUpload || reportEdit) return requireAuth(store)(req, res, error => {
+      if (error) return next(error)
+      try { requireReportManager(store, req.user.id) } catch (failure) { return next(failure) }
+      return (reportUpload ? reportAssetJson : reportEditJson)(req, res, next)
+    })
     if (feedbackUpload) return requireAuth(store)(req, res, error => error ? next(error) : feedbackJson(req, res, next))
     return (req.path.toLowerCase().startsWith('/data/restore/') ? restoreJson : large ? importJson : regularJson)(req, res, next)
   })
@@ -166,6 +175,7 @@ export function createApp(options: AppOptions = {}) {
   app.delete('/api/weekly-records/:id', mutate(domain.deleteWeeklyRecord))
   app.post('/api/weekly-records/:id/carry', mutate(domain.carryWeeklyRecord))
   app.use('/api', createReportRouter(store))
+  app.use('/api', createReportAgentRouter(store))
   app.use('/api', createImportRouter(store), createAiSettingsRouter(store), createDataRouter(store))
   app.use('/api', (_req, _res, next) => next(new HttpError(404, '接口不存在')))
 

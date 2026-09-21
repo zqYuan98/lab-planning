@@ -37,7 +37,10 @@ export function runScheduledReports(store: Store, now = new Date()): string[] {
   const actor = store.list<User>('users').find(u => u.active && u.role === 'manager')
   if (!actor) return []
   const due: { type: 'weekly' | 'monthly'; period: string }[] = []
-  if (dayOfWeek === schedule.weeklyDay && time >= schedule.weeklyTime) due.push({ type: 'weekly', period: normalizeReportPeriod('weekly', date) })
+  // Enabling the reviewed Word-template schedule explicitly takes over weekly generation.
+  // Keep the old monthly schedule and all historical scheduleRuns untouched.
+  const agentWeekly = store.get<{ enabled: boolean }>('settings', 'report-agent-schedule')?.enabled === true
+  if (!agentWeekly && dayOfWeek === schedule.weeklyDay && time >= schedule.weeklyTime) due.push({ type: 'weekly', period: normalizeReportPeriod('weekly', date) })
   if (Number(part('day')) === (schedule.monthlyDay || lastDay.getUTCDate()) && time >= schedule.monthlyTime) {
     due.push({ type: 'monthly', period: schedule.monthlyDay === 0 ? date.slice(0, 7) : shiftMonth(date.slice(0, 7), -1) })
   }

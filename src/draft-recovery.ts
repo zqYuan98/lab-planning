@@ -1,6 +1,8 @@
 export type DraftValues = Record<string, string | string[]>
 export interface DraftControl { name: string; type: string; value: string; checked?: boolean; selectedValues?: string[] }
 export interface SavedFormDraft { schema: 2; savedAt: number; values: DraftValues }
+// The full serialized envelope must fit this limit on both write and restore.
+export const FORM_DRAFT_MAX_CHARS = 4 * 1024 * 1024
 const lifetime = 7 * 24 * 60 * 60 * 1000
 export const draftStorageKey = (key: string) => `workspace-draft:v2:${key}`
 
@@ -19,7 +21,7 @@ export function collectDraftValues(controls: Iterable<DraftControl>): DraftValue
 }
 
 export function parseFormDraft(raw: string | null, now = Date.now()): SavedFormDraft | null {
-  if (!raw || raw.length > 256 * 1024) return null
+  if (!raw || raw.length > FORM_DRAFT_MAX_CHARS) return null
   try {
     const draft = JSON.parse(raw)
     if (draft?.schema !== 2 || typeof draft.savedAt !== 'number' || draft.savedAt > now + 60000 || now - draft.savedAt > lifetime || !draft.values || typeof draft.values !== 'object' || Array.isArray(draft.values)) return null
@@ -28,6 +30,29 @@ export function parseFormDraft(raw: string | null, now = Date.now()): SavedFormD
     }
     return draft as SavedFormDraft
   } catch { return null }
+}
+
+export interface DraftPersistence { persisted: boolean; notice: string }
+type DraftStorage = Pick<Storage, 'setItem' | 'removeItem'>
+export const draftStorageFailureNotice = '草稿未备份到浏览器，请保留此页面并及时保存；离开可能丢失输入。'
+/** Never claim recovery for bytes the reader would reject, or for a stale backup. */
+export function persistFormDraft(storage: DraftStorage, key: string, values: DraftValues, now = Date.now()): DraftPersistence {
+  const storageKey = draftStorageKey(key)
+  const removeStaleBackup = () => { try { storage.removeItem(storageKey) } catch { /* Storage may be unavailable altogether. */ } }
+  try {
+    const raw = JSON.stringify({ schema: 2, savedAt: now, values })
+    if (!parseFormDraft(raw, now)) {
+      removeStaleBackup()
+      return { persisted: false, notice: raw.length > FORM_DRAFT_MAX_CHARS
+        ? '草稿内容超过浏览器备份上限，尚未备份。请保留此页面并及时保存；离开可能丢失输入。'
+        : draftStorageFailureNotice }
+    }
+    storage.setItem(storageKey, raw)
+    return { persisted: true, notice: '草稿已保存在当前标签页，尚未提交。' }
+  } catch {
+    removeStaleBackup()
+    return { persisted: false, notice: draftStorageFailureNotice }
+  }
 }
 
 export const draftText = (values: DraftValues, key: string) => typeof values[key] === 'string' ? values[key] as string : ''

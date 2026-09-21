@@ -10,6 +10,7 @@ import { drainServices, SHUTDOWN_TIMEOUT_MS } from './shutdown.ts'
 import { createDingTalkNativeClient } from './dingtalk-native.ts'
 import { startNativeWorker } from './native-worker.ts'
 import { startNativeStream } from './native-stream.ts'
+import { startReportAgentWorker } from './report-agent-jobs.ts'
 
 const store = new Store(resolve(process.env.DATABASE_PATH || 'data/lab-planning.sqlite'))
 const dingtalkClient = createDingTalkClient()
@@ -22,12 +23,14 @@ let stopScheduler = () => {}
 let stopNotifications = async () => {}
 let stopNative = async () => {}
 let stopStream = async () => {}
+let stopReportAgent = async () => {}
 server.once('listening', () => {
   if (stopping) return
   stopScheduler = startScheduler(store)
   stopNotifications = startNotificationWorker(store, dingtalkClient)
   stopNative = startNativeWorker(store, nativeClient)
   stopStream = startNativeStream(store, nativeClient)
+  stopReportAgent = startReportAgentWorker(store)
   console.log(`部门计划系统已启动：http://${host}:${port}`)
 })
 let stopping = false
@@ -38,7 +41,7 @@ function shutdown() {
   deadline.unref()
   void drainServices({
     stopScheduling: () => { stopScheduler(); closeImportServices(store) },
-    stopWorkers: async () => { await Promise.all([stopNotifications(), stopNative(), stopStream()]) },
+    stopWorkers: async () => { await Promise.all([stopNotifications(), stopNative(), stopStream(), stopReportAgent()]) },
     closeHttp: () => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())),
     closeStore: () => store.close(),
   }).then(() => { clearTimeout(deadline); process.exitCode = 0 }).catch(() => { console.error('服务退出未完成，保留发送租约供重启核查'); process.exitCode = 1 })

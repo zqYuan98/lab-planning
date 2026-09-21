@@ -3,6 +3,7 @@ import type { Report, User } from '../shared/types.ts'
 import type { Store } from './store.ts'
 import { editReport, exportMarkdown, exportWord, finalizeReport, generateReport, polishReport, requireReportManager } from './reports.ts'
 import { getReportSchedule, updateReportSchedule } from './scheduler.ts'
+import { downloadAgentReport } from './report-agent-service.ts'
 
 function actorId(req: Request) { return (req as Request & { user?: User }).user?.id || '' }
 export function createReportRouter(store: Store) {
@@ -18,6 +19,12 @@ export function createReportRouter(store: Store) {
     if (!report) return res.status(404).json({ error: '报告不存在。' })
     const format = req.query.format || 'docx'
     if (format !== 'md' && format !== 'docx') return res.status(400).json({ error: '仅支持 Markdown 或 Word 格式。' })
+    if (report.agent && format === 'docx') {
+      const archived = await downloadAgentReport(store, actorId(req), report.id, report.version)
+      res.setHeader('Content-Disposition', `attachment; filename="report-${report.period}.docx"; filename*=UTF-8''${encodeURIComponent(archived.filename)}`)
+      res.type('application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+      return res.send(archived.bytes)
+    }
     const fileName = `${report.type === 'weekly' ? '人工智能实验室周报' : '人工智能实验室月报'}_${report.period}_v${report.revision}.${format}`
     res.setHeader('Content-Disposition', `attachment; filename="report-${report.period}.${format}"; filename*=UTF-8''${encodeURIComponent(fileName)}`)
     res.type(format === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'text/markdown; charset=utf-8')

@@ -153,6 +153,8 @@ const collectionLabels: Record<string, string> = {
   history: '历史资料',
   publications: '发布快照',
   reports: '报告',
+  reportAssets: '周报 Word 文件与范例',
+  reportTemplates: '周报模板与确认规则',
   events: '变更记录',
   weeklyRules: '周提报规则',
   weeklyCycles: '周提报名单',
@@ -1885,7 +1887,7 @@ export default function Imports({
           </summary>
           <div className="import-tool-body">
             <p>
-              导出项目、计划、执行记录与历史资料，用于整理、备份业务内容或迁移到其他系统。
+              导出项目、计划、执行记录与历史资料，用于整理、备份业务内容或迁移到其他系统。管理者选择「全部业务数据」与 JSON 时，版本 4 数据包同时包含周报模板、Word 原件、范例和归档文件；自动生成任务与定时设置不会随恢复重新执行。
             </p>
             <div className="import-export-fields">
               <Field label="数据范围">
@@ -1947,7 +1949,7 @@ export default function Imports({
             <div className="import-tool-body">
               <p>
                 选择本系统此前导出的 JSON
-                数据包，先预览新增记录、相同记录和冲突。已存在的不同内容不会被覆盖，来源账号按邮箱匹配，也可明确指定现有账号。
+                数据包，先预览新增记录、相同记录和冲突。已存在的不同内容不会被覆盖，来源账号按邮箱匹配，也可明确指定现有账号。支持旧版和版本 4 数据包；含 Word 文件后超过 32 MB 的完整备份，请使用数据库备份恢复。
               </p>
               <Field label="选择业务数据包（JSON，最大 32 MB）">
                 <input
