@@ -58,3 +58,7 @@
 截图、浏览器步骤和构建/测试日志位于本机忽略目录 [page-audit](../output/playwright/page-audit/)。核心页面证据为 `core/`，其余分为 `admin/`、`reports-imports/`、`access-feedback/`。截图只含虚构验收数据。
 
 详细检查记录：[项目/目标/成员/设置](../output/playwright/page-audit/admin/acceptance.md)、[登录/消息/反馈/协作](../output/playwright/page-audit/access-feedback/README.md)、[报告/导入](../output/playwright/page-audit/reports-imports/acceptance.md)。代表截图：[部门概览](../output/playwright/page-audit/core/overview-0-1440.png)、[个人工作台](../output/playwright/page-audit/core/personal-1440.png)、[手机工作清单](../output/playwright/page-audit/core/work-register-final-320.png)、[手机报告](../output/playwright/page-audit/reports-imports/reports-agent-final-320.png)。
+
+## 正式发布跟进
+
+本清单覆盖的版本已于 2026-09-21 20:00 发布至正式站点。线上匿名桌面／手机检查和完整发布证据见[正式发布记录](deployment-aliyun-saas-ui-2026-09-21.md)。
