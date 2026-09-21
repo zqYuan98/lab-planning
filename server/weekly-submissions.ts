@@ -1,10 +1,16 @@
-import type { AuditEvent, Entity, User, WeeklyRecord } from '../shared/types.ts'
+import type { AuditEvent, Entity, MonthlyPlan, Task, User, WeeklyRecord } from '../shared/types.ts'
 import type { WeeklyRule, WeeklyCycle, WeeklyDuty, WeeklySubmission, WeeklyMissing, WeeklyAdjustment, WeeklyDutyView, WeeklySubmissionView, WeeklyReportSubmission } from '../shared/weekly-submissions.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
 import { DomainBase, manager, own, text, bool, type Input } from './domain-common.ts'
 import { WorkService } from './domain-work.ts'
 import { Store, HttpError } from './store.ts'
 import { addWeekDays, cycleWeek, shanghaiWeek, mondayInstant, fridayDeadline } from './weekly-submission-clock.ts'
+import { projectWeeklyDuty, submissionProgressEvents, weeklyDutyHistory } from './weekly-duty-view.ts'
+import type { ProgressEvent } from '../shared/collaboration.ts'
+import { notifyFormalSubmission } from './collaboration-notifications.ts'
+import { ensureWeeklyPlanReviewRule, syncWeeklyPlanReviewPolicy, weeklyPlanApprovalMetadata, WeeklyPlanReviewService } from './weekly-plan-review.ts'
+import { isActiveWeeklyRecord, weeklyPlanFingerprint, weeklyPlanManifest } from '../shared/weekly-record-state.ts'
+import type { WeeklyPlanReview } from '../shared/weekly-submissions.ts'
 
 const RULE = 'weekly-submission-rule'
 const manifest = (rows: WeeklyRecord[]) => rows.map(({ id, version }) => ({ id, version })).sort((a, b) => a.id.localeCompare(b.id))
@@ -38,12 +44,7 @@ export class WeeklySubmissionService extends DomainBase {
   }
 
   getRule(): WeeklyRule {
-    return this.snapshot(() => this.store.transaction(() => {
-      const existing = this.store.get<WeeklyRule>('weeklyRules', RULE)
-      if (existing) return existing
-      const effectiveWeek = addWeekDays(shanghaiWeek(this.clock()), 7)
-      return this.insert<WeeklyRule>('weeklyRules', { id: RULE, enabled: true, effectiveWeek, timezone: 'Asia/Shanghai', windows: [{ fromWeek: effectiveWeek, toWeek: null }] })
-    }))
+    return ensureWeeklyPlanReviewRule(this.store, this.clock())
   }
 
   updateRule(actor: User, input: Input): WeeklyRule {
@@ -58,6 +59,7 @@ export class WeeklySubmissionService extends DomainBase {
       if (enabled) windows.push({ fromWeek: next, toWeek: null })
       else { const open = [...windows].reverse().find(window => window.toWeek === null); if (open) open.toWeek = next }
       const rule = this.update<WeeklyRule>('weeklyRules', RULE, before.version, { enabled, windows })
+      syncWeeklyPlanReviewPolicy(this.store, rule, next, actor.id, this.clock())
       this.audit(actor, 'weeklyRule', RULE, 'update', before, rule, '从下一个完整周生效')
       return rule
     }))
@@ -109,18 +111,7 @@ export class WeeklySubmissionService extends DomainBase {
   }
 
   private history(duty: WeeklyDuty) {
-    const submissions = this.rows<WeeklySubmission>('weeklySubmissions').filter(row => row.dutyId === duty.id)
-    const adjustments = this.rows<WeeklyAdjustment>('weeklyAdjustments').filter(row => row.dutyId === duty.id)
-    const invalid = new Set<string>()
-    let exemptionReason = ''
-    for (const event of adjustments) {
-      if (event.action === 'exempt') exemptionReason = event.reason
-      if (event.action === 'revoke_exemption') exemptionReason = ''
-      if (event.action === 'invalidate' && event.submissionId) invalid.add(event.submissionId)
-      if (event.action === 'restore' && event.submissionId) invalid.delete(event.submissionId)
-    }
-    const valid = submissions.filter(row => !invalid.has(row.id)).sort((a, b) => a.submittedAt.localeCompare(b.submittedAt) || a.createdAt.localeCompare(b.createdAt))
-    return { submissions, adjustments, valid, exemptionReason }
+    return weeklyDutyHistory(duty, this.rows<WeeklySubmission>('weeklySubmissions'), this.rows<WeeklyAdjustment>('weeklyAdjustments'))
   }
 
   private recordMissing(duty: WeeklyDuty, now: string) {
@@ -138,20 +129,13 @@ export class WeeklySubmissionService extends DomainBase {
   }
 
   private records(duty: WeeklyDuty) {
-    return this.rows<WeeklyRecord>('weeklyRecords').filter(row => row.ownerId === duty.ownerId && row.weekStart === duty.contentWeek).sort((a, b) => a.id.localeCompare(b.id))
+    return this.rows<WeeklyRecord>('weeklyRecords').filter(row => isActiveWeeklyRecord(row) && row.ownerId === duty.ownerId && row.weekStart === duty.contentWeek).sort((a, b) => a.id.localeCompare(b.id))
   }
 
   private dutyView(duty: WeeklyDuty): WeeklyDutyView {
-    const { submissions, adjustments, valid, exemptionReason } = this.history(duty)
-    const records = this.records(duty), first = valid[0], latest = valid.at(-1)
-    const official = records.filter(row => row.submitted)
-    const latestDrafts = manifest(records.filter(row => !row.submitted))
-    return { ...duty,
-      status: exemptionReason ? 'exempt' : first ? first.submittedAt < duty.deadlineAt ? 'on_time' : 'late' : this.clock().toISOString() >= duty.deadlineAt ? 'missing' : 'due',
-      firstSubmittedAt: first?.submittedAt ?? null, latestSubmittedAt: latest?.submittedAt ?? null,
-      latestSubmission: latest ?? null, exemptionReason, records, manifest: manifest(records), submissions, adjustments,
-      missingAtDeadline: this.rows<WeeklyMissing>('weeklyMissing').some(row => row.dutyId === duty.id),
-      changedSinceSubmission: !!latest && (!equal(manifest(official), manifest(latest.records)) || !equal(latestDrafts, latest.retainedDraftManifest)) }
+    return projectWeeklyDuty(duty, { submissions: this.rows<WeeklySubmission>('weeklySubmissions'), adjustments: this.rows<WeeklyAdjustment>('weeklyAdjustments'),
+      records: this.rows<WeeklyRecord>('weeklyRecords'), missing: this.rows<WeeklyMissing>('weeklyMissing'), progressEvents: this.rows<ProgressEvent>('progressEvents'),
+      rule: this.store.get<WeeklyRule>('weeklyRules', RULE), planReviews: this.rows<WeeklyPlanReview>('weeklyPlanReviews') }, this.clock())
   }
 
   view(actor: User, requestedWeek: unknown): WeeklySubmissionView {
@@ -163,6 +147,18 @@ export class WeeklySubmissionService extends DomainBase {
     const safeCycle = cycle && actor.role !== 'manager' ? { ...cycle, rosterIds: cycle.rosterIds.filter(id => id === actor.id), confirmationReason: '', confirmedBy: null } : cycle
     return { rule, week, nextWeek: addWeekDays(week, 7), deadlineAt: fridayDeadline(week), serverNow: this.clock().toISOString(), cycle: safeCycle,
       duties: this.rows<WeeklyDuty>('weeklyDuties').filter(d => d.cycleWeek === week && (actor.role === 'manager' || d.ownerId === actor.id)).map(d => this.dutyView(d)) }
+    })
+  }
+
+  /** Notification preview must not initialize cycles, duties or missed-deadline facts. */
+  preview(actor: User, requestedWeek: unknown): WeeklySubmissionView | undefined {
+    return this.snapshot(() => {
+      const rule = this.store.get<WeeklyRule>('weeklyRules', RULE)
+      if (!rule) return
+      const week = cycleWeek(requestedWeek), cycle = this.store.get<WeeklyCycle>('weeklyCycles', week) ?? null
+      const safeCycle = cycle && actor.role !== 'manager' ? { ...cycle, rosterIds: cycle.rosterIds.filter(id => id === actor.id), confirmationReason: '', confirmedBy: null } : cycle
+      return { rule, week, nextWeek: addWeekDays(week, 7), deadlineAt: fridayDeadline(week), serverNow: this.clock().toISOString(), cycle: safeCycle,
+        duties: this.rows<WeeklyDuty>('weeklyDuties').filter(duty => duty.cycleWeek === week && (actor.role === 'manager' || duty.ownerId === actor.id)).map(duty => this.dutyView(duty)) }
     })
   }
 
@@ -183,6 +179,8 @@ export class WeeklySubmissionService extends DomainBase {
       if (week > shanghaiWeek(this.clock()) || !this.activeWeek(rule, week) || cycle.needsReview || !cycle.rosterIds.includes(duty.ownerId)) throw new HttpError(400, '该周期尚未开始、生效或应交名单待核对')
       const rows = this.records(duty)
       if (!Array.isArray(input.manifest) || !equal(input.manifest, manifest(rows))) throw new HttpError(409, '周记录已变化，请刷新核对后重新提交')
+      const currentProgressIds = submissionProgressEvents(duty, rows, this.store.list<ProgressEvent>('progressEvents')).map(event => event.id).sort()
+      if ((currentProgressIds.length || input.progressEventIds !== undefined) && (!Array.isArray(input.progressEventIds) || !equal(input.progressEventIds, currentProgressIds))) throw new HttpError(409, '关联任务进展已变化，请刷新核对后重新提交')
       const drafts = rows.filter(row => !row.submitted)
       if (drafts.length && !['include', 'retain'].includes(String(input.draftAction))) throw new HttpError(400, '请选择将草稿纳入提交或继续保留')
       const selected = rows.filter(row => row.submitted || input.draftAction === 'include')
@@ -190,21 +188,35 @@ export class WeeklySubmissionService extends DomainBase {
       const reason = text(input.reason, '管理员代录原因', actor.id !== duty.ownerId)
       const work = new WorkService(this.store)
       const snapshots: WeeklyRecord[] = []
-      for (const row of selected) {
+      for (let row of selected) {
         if (duty.kind === 'results') {
           text(row.actualOutcome, '每项本周实际进展')
           if (['blocked', 'not_done'].includes(row.status)) text(row.blocker, '未完成或阻塞原因')
         } else text(row.commitment, '每项下周承诺')
+        const approval = !row.planApproval ? weeklyPlanApprovalMetadata(this.store, row.ownerId, row.weekStart, row.workOrigin, this.clock()) : undefined
+        if (approval) row = this.update<WeeklyRecord>('weeklyRecords', row.id, row.version, { planApproval: approval })
         // Reuse publication/date/status gates even for imported records and existing official rows.
-        snapshots.push(work.updateWeeklyRecord(actor, row.id, { version: row.version, submitted: true }))
+        snapshots.push(work.updateWeeklyRecord(actor, row.id, { version: row.version, submitted: true }, { formalSubmission: true }))
       }
+      const planDetails = duty.kind === 'plan' ? {
+        planManifest: weeklyPlanManifest(this.store.list<WeeklyRecord>('weeklyRecords').filter(row => row.ownerId === duty.ownerId && row.weekStart === duty.contentWeek)),
+        planTaskSnapshots: this.store.list<Task>('tasks').filter(task => snapshots.some(row => row.taskId === task.id)).map(({ id, title, dueDate, description }) => ({ id, title, dueDate, description })),
+        planGoalSnapshots: this.store.list<MonthlyPlan>('plans').filter(plan => snapshots.some(row => row.monthlyPlanId === plan.id)).map(({ id, month, title }) => ({ id, month, title })),
+      } : {}
       const submittedAt = this.clock().toISOString()
       const receipt = this.insert<WeeklySubmission>('weeklySubmissions', { dutyId: duty.id, ownerId: duty.ownerId, cycleWeek: duty.cycleWeek, kind: duty.kind,
-        submittedAt, actorId: actor.id, reason, note, requestId, records: snapshots, retainedDraftIds: drafts.filter(row => input.draftAction !== 'include').map(row => row.id).sort(), retainedDraftManifest: manifest(drafts.filter(row => input.draftAction !== 'include')) })
+        submittedAt, actorId: actor.id, reason, note, requestId, records: snapshots, ...planDetails, retainedDraftIds: drafts.filter(row => input.draftAction !== 'include').map(row => row.id).sort(), retainedDraftManifest: manifest(drafts.filter(row => input.draftAction !== 'include')), progressEventIds: submissionProgressEvents(duty, snapshots, this.store.list<ProgressEvent>('progressEvents')).map(event => event.id).sort() })
       this.update<WeeklyDuty>('weeklyDuties', duty.id, duty.version, {})
-      this.recordMissing(duty, submittedAt)
-      return receipt
+        this.recordMissing(duty, submittedAt)
+        notifyFormalSubmission(this.store, receipt)
+        return receipt
     }))
+  }
+
+  review(actor: User, input: Input): WeeklyPlanReview {
+    manager(actor)
+    this.reconcile()
+    return new WeeklyPlanReviewService(this.store, this.clock).review(actor, input)
   }
 
   adjust(actor: User, input: Input): WeeklyAdjustment {
@@ -218,6 +230,21 @@ export class WeeklySubmissionService extends DomainBase {
       const submissionId = ['invalidate', 'restore'].includes(action) ? text(input.submissionId, '提交记录') : null
       if (submissionId && this.need<WeeklySubmission>('weeklySubmissions', submissionId).dutyId !== duty.id) throw new HttpError(400, '提交记录不属于此提报项')
       const adjustment = this.insert<WeeklyAdjustment>('weeklyAdjustments', { dutyId: duty.id, ownerId: duty.ownerId, cycleWeek: duty.cycleWeek, kind: duty.kind, action, submissionId, actorId: actor.id, reason, occurredAt: this.clock().toISOString() })
+      if (submissionId && duty.kind === 'plan') {
+        const receipt = this.need<WeeklySubmission>('weeklySubmissions', submissionId)
+        const approved = this.store.list<WeeklyPlanReview>('weeklyPlanReviews').some(review => review.submissionId === submissionId && review.decision === 'approved')
+        for (const snapshot of receipt.records) {
+          const row = this.store.get<WeeklyRecord>('weeklyRecords', snapshot.id)
+          if (!row?.planApproval?.required) continue
+          if (action === 'invalidate' && row.planApproval.approvedSubmissionId === submissionId) {
+            const updated = this.update<WeeklyRecord>('weeklyRecords', row.id, row.version, { planApproval: { required: true, approvedSubmissionId: null, approvedFingerprint: null } })
+            this.audit(actor, 'weeklyRecord', row.id, 'plan_approval_invalidated', row, updated, reason)
+          } else if (action === 'restore' && approved && isActiveWeeklyRecord(row) && row.submitted && !row.planApproval.approvedSubmissionId && weeklyPlanFingerprint(row) === weeklyPlanFingerprint(snapshot)) {
+            const updated = this.update<WeeklyRecord>('weeklyRecords', row.id, row.version, { planApproval: { required: true, approvedSubmissionId: submissionId, approvedFingerprint: weeklyPlanFingerprint(row) } })
+            this.audit(actor, 'weeklyRecord', row.id, 'plan_approve', row, updated, reason)
+          }
+        }
+      }
       this.update<WeeklyDuty>('weeklyDuties', duty.id, duty.version, {})
       this.recordMissing(duty, this.clock().toISOString())
       return adjustment

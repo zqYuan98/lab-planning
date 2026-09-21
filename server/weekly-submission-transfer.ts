@@ -1,6 +1,7 @@
-import type { Entity, WeeklyRecord } from '../shared/types.ts'
-import type { WeeklyRule, WeeklyCycle, WeeklyDuty, WeeklySubmission, WeeklyMissing, WeeklyAdjustment, WeeklyReportSubmission } from '../shared/weekly-submissions.ts'
-import type { BusinessCollections, TransferCollection } from './data-transfer-schema.ts'
+import type { Entity, WeeklyRecord, Report, AuditEvent } from '../shared/types.ts'
+import type { WeeklyRule, WeeklyCycle, WeeklyDuty, WeeklySubmission, WeeklyMissing, WeeklyAdjustment, WeeklyReportSubmission, WeeklyPlanReview } from '../shared/weekly-submissions.ts'
+import { planFingerprintParts, type BusinessCollections, type TransferCollection } from './data-transfer-schema.ts'
+import { isWeeklyPlanReviewCycle, weeklyPlanFingerprint } from '../shared/weekly-record-state.ts'
 import { addWeekDays, fridayDeadline, mondayInstant } from './weekly-submission-clock.ts'
 
 const time = (value: string) => Date.parse(value)
@@ -20,6 +21,12 @@ export function weeklyTransferIssues(rows: BusinessCollections, available: Recor
   const duties = available.weeklyDuties as Map<string, WeeklyDuty>
   const receipts = available.weeklySubmissions as Map<string, WeeklySubmission>
   const records = available.weeklyRecords as Map<string, WeeklyRecord>
+  const reviews = [...available.weeklyPlanReviews.values()] as WeeklyPlanReview[]
+  const invalidReceipts = new Set<string>()
+  for (const adjustment of available.weeklyAdjustments.values() as Iterable<WeeklyAdjustment>) {
+    if (adjustment.action === 'invalidate' && adjustment.submissionId) invalidReceipts.add(adjustment.submissionId)
+    if (adjustment.action === 'restore' && adjustment.submissionId) invalidReceipts.delete(adjustment.submissionId)
+  }
   const unique = <T extends Entity>(name: TransferCollection, key: (row: T) => string) => {
     const seen = new Map<string, string>()
     for (const row of available[name].values() as Iterable<T>) {
@@ -32,6 +39,8 @@ export function weeklyTransferIssues(rows: BusinessCollections, available: Recor
   unique<WeeklyDuty>('weeklyDuties', row => `${row.ownerId}/${row.cycleWeek}/${row.kind}`)
   unique<WeeklySubmission>('weeklySubmissions', row => `${row.dutyId}/${row.requestId}`)
   unique<WeeklyMissing>('weeklyMissing', row => row.dutyId)
+  unique<WeeklyPlanReview>('weeklyPlanReviews', row => row.submissionId)
+  unique<WeeklyPlanReview>('weeklyPlanReviews', row => `${row.reviewedBy}/${row.requestId}`)
   for (const rule of rows.weeklyRules) {
     if (!rule.windows.length || rule.windows[0].fromWeek !== rule.effectiveWeek) issue('weeklyRules：生效周与启用窗口不一致')
     for (let index = 0; index < rule.windows.length; index++) {
@@ -75,6 +84,53 @@ export function weeklyTransferIssues(rows: BusinessCollections, available: Recor
       const current = records.get(item.id)
       if (seen.has(item.id) || current && (current.ownerId !== row.ownerId || duty && current.weekStart !== duty.contentWeek || current.version < item.version)) issue(`weeklySubmissions/${row.id}：保留草稿身份或版本不一致`)
     }
+    if (row.planManifest) {
+      const ids = row.planManifest.map(item => item.id)
+      const expectedIds = [...seen, ...row.retainedDraftIds].sort()
+      if (row.kind !== 'plan' || new Set(ids).size !== ids.length || [...ids].sort().join('\0') !== expectedIds.join('\0') || ids.join('\0') !== [...ids].sort((a, b) => a.localeCompare(b)).join('\0')) issue(`weeklySubmissions/${row.id}：计划审核清单与提交或草稿清单不一致`)
+      for (const item of row.planManifest) {
+        const snapshot = row.records.find(record => record.id === item.id)
+        const parts = planFingerprintParts(item.fingerprint), current = records.get(item.id)
+        if (item.submitted !== !!snapshot || snapshot && item.fingerprint !== weeklyPlanFingerprint(snapshot) || parts && (parts[1] !== row.ownerId || duty && parts[2] !== duty.contentWeek || current && parts[0] !== current.taskId)) issue(`weeklySubmissions/${row.id}：计划审核指纹与记录身份或冻结内容不一致`)
+      }
+    }
+    for (const [name, snapshots, expectedIds] of [
+      ['任务', row.planTaskSnapshots, row.records.map(record => record.taskId)],
+      ['月目标', row.planGoalSnapshots, row.records.flatMap(record => record.monthlyPlanId ? [record.monthlyPlanId] : [])],
+    ] as const) if (snapshots) {
+      const ids = snapshots.map(item => item.id)
+      if (row.kind !== 'plan' || new Set(ids).size !== ids.length || [...ids].sort().join('\0') !== [...new Set(expectedIds)].sort().join('\0')) issue(`weeklySubmissions/${row.id}：${name}审核上下文与提交条目不一致`)
+    }
+  }
+  for (const row of rows.weeklyPlanReviews) {
+    const duty = duties.get(row.dutyId), receipt = receipts.get(row.submissionId), rule = rules.get('weekly-submission-rule')
+    if (duty && (duty.kind !== 'plan' || duty.ownerId !== row.ownerId || duty.cycleWeek !== row.cycleWeek)
+      || receipt && (receipt.kind !== 'plan' || receipt.dutyId !== row.dutyId || receipt.ownerId !== row.ownerId || receipt.cycleWeek !== row.cycleWeek || !receipt.planManifest)) issue(`weeklyPlanReviews/${row.id}：审核与计划提交身份或清单不一致`)
+    if (receipt && time(row.reviewedAt) < time(receipt.submittedAt)) issue(`weeklyPlanReviews/${row.id}：审核时间早于提交时间`)
+    if (rule && (!rule.planReviewEffectiveWeek || row.cycleWeek < rule.planReviewEffectiveWeek)) issue(`weeklyPlanReviews/${row.id}：审核发生在审批规则生效前`)
+  }
+  const approvalIssues = (row: WeeklyRecord, current = false) => {
+    const approval = row.planApproval
+    if (current && !row.deletion && approval?.suspended) {
+      const rule = rules.get('weekly-submission-rule'), cycleWeek = addWeekDays(row.weekStart, -7)
+      if (!rule?.planReviewEffectiveWeek || cycleWeek < rule.planReviewEffectiveWeek || isWeeklyPlanReviewCycle(rule, cycleWeek)) issue(`weeklyRecords/${row.id}：当前暂停审核标记与规则生效窗口不一致`)
+    }
+    if (!approval?.approvedSubmissionId) return
+    const receipt = receipts.get(approval.approvedSubmissionId)
+    const snapshot = receipt?.records.find(record => record.id === row.id)
+    if (!receipt || receipt.kind !== 'plan' || !snapshot || approval.approvedFingerprint !== weeklyPlanFingerprint(snapshot)
+      || !reviews.some(review => review.submissionId === receipt.id && review.decision === 'approved')) issue(`weeklyRecords/${row.id}：批准依据缺少对应通过审核的提交快照或计划指纹不一致`)
+    if (current && !row.deletion && invalidReceipts.has(approval.approvedSubmissionId)) issue(`weeklyRecords/${row.id}：当前批准依据指向已作废的提交；历史快照可以保留原批准记录`)
+  }
+  const auditApprovals = (event: AuditEvent) => {
+    if (event.entityType === 'weeklyRecord') for (const value of [event.before, event.after]) if (value) approvalIssues(value as WeeklyRecord)
+  }
+  for (const row of rows.weeklyRecords) approvalIssues(row, true)
+  for (const row of rows.weeklySubmissions) for (const snapshot of row.records) approvalIssues(snapshot)
+  for (const event of rows.events) auditApprovals(event)
+  for (const report of rows.reports as Report[]) {
+    for (const row of [...report.snapshot.weeklyRecords, ...report.snapshot.nextWeeklyRecords]) approvalIssues(row)
+    for (const event of report.snapshot.changes) auditApprovals(event)
   }
   for (const row of rows.weeklyMissing) {
     const duty = identity('weeklyMissing', row)

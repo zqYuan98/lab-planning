@@ -1,4 +1,5 @@
 import express, { type ErrorRequestHandler, type RequestHandler } from 'express'
+import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -12,8 +13,18 @@ import { createAiSettingsRouter, createImportRouter } from './import-routes.ts'
 import { requireIntegrationAuth } from './integration-auth.ts'
 import { createDataRouter } from './data-routes.ts'
 import { createWeeklySubmissionRouter } from './weekly-submission-routes.ts'
+import { ensureWeeklyPlanReviewRule } from './weekly-plan-review.ts'
+import { createDingTalkClient, type DingTalkClient } from './dingtalk.ts'
+import { dingtalkRouter } from './dingtalk-routes.ts'
+import { notificationRouter } from './notification-routes.ts'
+import { collaborationRouter } from './collaboration-routes.ts'
+import { notificationDiagnosticsRouter } from './notification-diagnostics.ts'
+import { nativeRouter } from './native-routes.ts'
+import { workRegisterRouter } from './work-register-routes.ts'
+import type { DingTalkNativeClient } from './dingtalk-native.ts'
+import { feedbackRouter } from './feedback-routes.ts'
 
-interface AppOptions { store?: Store; dbPath?: string; enableScheduler?: boolean }
+interface AppOptions { store?: Store; dbPath?: string; enableScheduler?: boolean; dingtalkClient?: DingTalkClient; nativeClient?: DingTalkNativeClient }
 /** Trust named loopback or explicit proxy addresses, never a caller-supplied hop count. */
 function trustedProxies(value = process.env.TRUST_PROXY): false | string[] {
   if (!value || value === 'false') return false
@@ -31,8 +42,10 @@ export function createApp(options: AppOptions = {}) {
   const canonical = appOrigin()
   const proxies = trustedProxies()
   const store = options.store ?? new Store(options.dbPath ?? process.env.DATABASE_PATH ?? resolve('data/lab-planning.sqlite'))
+  ensureWeeklyPlanReviewRule(store)
   const domain = new Domain(store)
   const app = express()
+  const dingtalk = options.dingtalkClient ?? createDingTalkClient()
   app.locals.store = store
   app.disable('x-powered-by')
   app.set('trust proxy', proxies)
@@ -41,9 +54,16 @@ export function createApp(options: AppOptions = {}) {
     if (process.env.NODE_ENV === 'production') res.set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
     next()
   })
-  const regularJson = express.json({ limit: '256kb' }), importJson = express.json({ limit: '16mb' }), restoreJson = express.json({ limit: '35mb' })
+  app.use('/api', (_req, res, next) => {
+    res.locals.requestId = randomUUID()
+    res.set('X-Request-Id', res.locals.requestId)
+    next()
+  })
+  const regularJson = express.json({ limit: '256kb' }), importJson = express.json({ limit: '16mb' }), restoreJson = express.json({ limit: '35mb' }), feedbackJson = express.json({ limit: '9mb' })
   app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next() }, createOriginGuard(canonical), (req, res, next) => {
     const large = /^\/(?:v1\/)?imports(?:\/|$)/i.test(req.path)
+    const feedbackUpload = req.method === 'POST' && /^\/feedback(?:\/[^/]+\/actions)?\/?$/i.test(req.path)
+    if (feedbackUpload) return requireAuth(store)(req, res, error => error ? next(error) : feedbackJson(req, res, next))
     return (req.path.toLowerCase().startsWith('/data/restore/') ? restoreJson : large ? importJson : regularJson)(req, res, next)
   })
   app.use('/api', (req, _res, next) => {
@@ -104,16 +124,25 @@ export function createApp(options: AppOptions = {}) {
     res.status(202).json(domain.register(req.body))
   })
   app.use('/api/v1', requireIntegrationAuth(store), createImportRouter(store), createDataRouter(store, true), (_req, _res, next) => next(new HttpError(404, '集成接口不存在')))
+  app.use('/api', dingtalkRouter(store, dingtalk))
   app.use('/api', requireAuth(store))
   app.get('/api/auth/me', (req, res) => res.json(req.user))
   app.post('/api/auth/logout', (req, res) => { clearSession(store, req.headers.cookie, res); res.json({ ok: true }) })
   app.get('/api/bootstrap', (req, res) => res.json(domain.bootstrap(req.user)))
   app.use('/api', createWeeklySubmissionRouter(store))
+  app.use('/api', notificationRouter(store, dingtalk))
+  app.use('/api', collaborationRouter(store))
+  app.use('/api', notificationDiagnosticsRouter(store, dingtalk))
+  app.use('/api', nativeRouter(store, options.nativeClient))
+  app.use('/api', workRegisterRouter(store))
+  app.use('/api', feedbackRouter(store))
 
   const create = (handler: (actor: User, input: Record<string, unknown>) => unknown): RequestHandler => (req, res) => { res.status(201).json(handler(req.user, req.body)) }
   const mutate = (handler: (actor: User, id: string, input: Record<string, unknown>) => unknown): RequestHandler => (req, res) => { res.json(handler(req.user, String(req.params.id), req.body)) }
   app.post('/api/users', create(domain.createUser))
   app.patch('/api/users/:id', mutate(domain.updateUser))
+  app.get('/api/users/:id/deletion-preview', (req, res) => res.json(domain.userDeletionPreview(req.user, String(req.params.id))))
+  app.delete('/api/users/:id', mutate(domain.deleteUser))
   app.post('/api/users/:id/registration-review', mutate(domain.reviewRegistration))
   app.post('/api/projects', create(domain.createProject))
   app.patch('/api/projects/:id', mutate(domain.updateProject))
@@ -132,7 +161,9 @@ export function createApp(options: AppOptions = {}) {
   app.patch('/api/tasks/:id', mutate(domain.updateTask))
   app.post('/api/tasks/:id/relink', mutate(domain.relinkTask))
   app.post('/api/weekly-records', create(domain.createWeeklyRecord))
+  app.post('/api/weekly-assignments', create(domain.createWeeklyAssignment))
   app.patch('/api/weekly-records/:id', mutate(domain.updateWeeklyRecord))
+  app.delete('/api/weekly-records/:id', mutate(domain.deleteWeeklyRecord))
   app.post('/api/weekly-records/:id/carry', mutate(domain.carryWeeklyRecord))
   app.use('/api', createReportRouter(store))
   app.use('/api', createImportRouter(store), createAiSettingsRouter(store), createDataRouter(store))
@@ -143,13 +174,18 @@ export function createApp(options: AppOptions = {}) {
     app.use(express.static(dist, { index: false, maxAge: 0 }))
     app.use((req, res, next) => req.method === 'GET' && req.accepts('html') ? res.sendFile(resolve(dist, 'index.html')) : next())
   }
-  const errors: ErrorRequestHandler = (error, _req, res, next) => {
+  const errors: ErrorRequestHandler = (error, req, res, next) => {
     if (res.headersSent) return next(error)
     const status = Number.isInteger(error?.status) && error.status >= 400 && error.status < 600 ? error.status : 500
-    if (status === 500) console.error('API error:', error instanceof Error ? error.message : 'unknown error')
+    const requestId = res.locals.requestId || randomUUID()
+    res.set('X-Request-Id', requestId)
+    if (status >= 500) console.error(JSON.stringify({ event: 'api_error', requestId, status, method: req.method,
+      route: typeof req.route?.path === 'string' ? req.route.path : '/api',
+      errorType: error instanceof Error ? error.name : 'Error',
+      frames: error instanceof Error ? error.stack?.split('\n').slice(error.message.split('\n').length).filter(frame => /^\s+at\s/.test(frame)).slice(0, 6) : undefined }))
     if (status === 503) res.set('Retry-After', '1')
     const message = error?.type === 'entity.parse.failed' ? 'JSON 格式无效，请检查请求内容' : error?.type === 'entity.too.large' ? '请求内容超过大小限制' : status === 500 ? '服务暂时无法处理请求，请稍后重试' : error.message ?? '请求失败'
-    res.status(status).json({ error: message })
+    res.status(status).json({ error: message, requestId })
   }
   app.use(errors)
   return app

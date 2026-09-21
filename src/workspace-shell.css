@@ -96,6 +96,14 @@ body {
 .workspace-search .workspace-search-input { height: 40px; border-radius: var(--radius-control); background: #f5f6f9; border: 1px solid transparent; padding: 0 11px; }
 .workspace-search .workspace-search-input:hover { border-color: #dce3f3; }
 .workspace-search .workspace-search-input:focus-within { border-color: #7187ff; background: #fff; box-shadow: 0 0 0 3px #3b5bff0a; }
+/* The outer search control owns the border and focus ring, including its prefix. */
+.workspace-search .workspace-search-input .arco-input-inner-wrapper {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
 .workspace-search .workspace-search-input input {
   min-height: 38px;
   height: 38px;
@@ -108,6 +116,7 @@ body {
   color: var(--text-primary);
 }
 .workspace-search .workspace-search-input .arco-input-group-prefix { color: var(--text-secondary); }
+.workspace-search .workspace-search-input input:focus { outline: none; box-shadow: none; }
 .workspace-search .workspace-search-input input::placeholder { color: var(--text-placeholder); opacity: 1; }
 .workspace-search kbd { top: 8px; right: 10px; font-size: 12px; height: 19px; }
 .workspace-search .search-clear { top: 5px; right: 6px; }

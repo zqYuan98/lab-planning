@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
@@ -7,12 +7,20 @@ import {
   ExternalLink,
   AlertTriangle,
   Search,
+  Trash2,
 } from 'lucide-react'
 import type { Task, WeeklyRecord } from '../../shared/types'
-import { api, json } from '../api'
+import { isActiveWeeklyRecord, isEffectiveWeeklyRecord } from '../../shared/weekly-record-state'
+import type { Navigate } from '../navigation'
+import { canUseAccount, registrationApproved } from '../../shared/auth-policy'
+import { accountDisplayName, visibleAccounts } from '../account-options'
+import { api, json, finishSaved } from '../api'
+import { draftText, draftChecked } from '../draft-recovery'
+import { assignmentAttempt, type SubmissionAttempt } from '../notification-navigation'
 import WorkOriginLabel, { workSource } from '../components/WorkOriginLabel'
 import WeeklySubmissionPanel from '../components/WeeklySubmissionPanel'
-import { recordTarget, advanceWeek, type WorkTarget, type ReviewRequest } from '../weekly-submission-flow'
+import NotificationStatus from '../components/NotificationStatus'
+import { recordTarget, advanceWeek, weeklyRecordState, type WorkTarget, type ReviewRequest } from '../weekly-submission-flow'
 import {
   Badge,
   Empty,
@@ -41,34 +49,51 @@ const statusTone: Record<string, string> = {
   done: 'green',
   not_done: 'red',
 }
-export default function Weekly({ data, refresh, notify, intent }: PageProps) {
+export default function Weekly({ data, refresh, notify, intent, navigate }: PageProps & { navigate?: Navigate }) {
   const manager = data.user.role === 'manager'
   const initialWeek = intent?.weekStart || monday()
   const initialRecord = data.weeklyRecords.find(
     (record) =>
+      isActiveWeeklyRecord(record) &&
       (record.taskId === intent?.id || record.id === intent?.id) &&
       record.weekStart === initialWeek,
   )
   const initialTask = data.tasks.find((task) => task.id === intent?.id)
-  const initialOwner = manager ? initialRecord?.ownerId || initialTask?.ownerId || '' : data.user.id
+  const initialOwner = initialRecord?.ownerId || initialTask?.ownerId || intent?.ownerId || (manager ? '' : data.user.id)
+  const [includeInactive, setIncludeInactive] = useState(data.users.some(user => user.id === initialOwner && registrationApproved(user) && !user.active))
+  const visibleOwners = visibleAccounts(data.users, includeInactive)
+  const availableOwner = (id: string) => data.users.some(user => user.id === id && canUseAccount(user))
+  function showOwner(id: string) {
+    if (data.users.some(user => user.id === id && registrationApproved(user) && !user.active)) setIncludeInactive(true)
+    setOwner(id)
+  }
   const [week, setWeek] = useState(initialWeek),
     [owner, setOwner] = useState(initialOwner),
     [filter, setFilter] = useState(intent?.status || 'all'),
     [search, setSearch] = useState(intent?.query || '')
   const [sourceFilter, setSourceFilter] = useState('all')
-  const [cycleWeek, setCycleWeek] = useState(initialWeek)
+  const [cycleWeek, setCycleWeek] = useState(intent?.cycleWeek || initialWeek)
   const [workContext, setWorkContext] = useState<WorkTarget | null>(null)
-  const [reviewRequest, setReviewRequest] = useState<ReviewRequest | null>(null)
-  const reviewSequence = useRef(0)
+  const [reviewRequest, setReviewRequest] = useState<ReviewRequest | null>(() => intent?.kind ? {
+    cycleWeek: intent.cycleWeek || initialWeek,
+    contentWeek: intent.kind === 'plan' ? advanceWeek(intent.cycleWeek || initialWeek, 7) : intent.cycleWeek || initialWeek,
+    ownerId: data.user.id, kind: intent.kind, token: 1,
+  } : null)
+  const reviewSequence = useRef(1)
   const submissionSection = useRef<HTMLDivElement>(null)
   const recordSection = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!initialRecord) return
+    const frame = requestAnimationFrame(() => document.getElementById(`weekly-record-${initialRecord.id}`)?.scrollIntoView({ block: 'center' }))
+    return () => cancelAnimationFrame(frame)
+  }, [initialRecord?.id])
   function selectRecordWeek(value: string) {
     setWeek(value); setCycleWeek(value); setWorkContext(null); setReviewRequest(null)
     setFilter('all'); setSearch(''); setSourceFilter('all')
   }
   function selectWork(target: WorkTarget) {
-    setWorkContext(target); setWeek(target.contentWeek); setOwner(target.ownerId); setFilter('all'); setSearch(''); setSourceFilter('all')
-    const record = target.recordId ? data.weeklyRecords.find(row => row.id === target.recordId && row.ownerId === target.ownerId && row.weekStart === target.contentWeek) : undefined
+    setWorkContext(target); setWeek(target.contentWeek); showOwner(target.ownerId); setFilter('all'); setSearch(''); setSourceFilter('all')
+    const record = target.recordId ? data.weeklyRecords.find(row => isActiveWeeklyRecord(row) && row.id === target.recordId && row.ownerId === target.ownerId && row.weekStart === target.contentWeek) : undefined
     if (record) { setSelected(record); setModal('edit') }
     else if (target.create) openCreate(false)
     else requestAnimationFrame(() => { recordSection.current?.scrollIntoView({block:'start'}); recordSection.current?.focus({preventScroll:true}) })
@@ -79,12 +104,24 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
     requestAnimationFrame(() => { submissionSection.current?.scrollIntoView({block:'start'}); submissionSection.current?.focus({preventScroll:true}) })
   }
   const [modal, setModal] = useState(
-      intent?.action === 'create' ? 'create' : '',
+      intent?.action === 'create' ? initialTask?.isTemporary ? 'temporary' : 'create' : '',
     ),
     [selected, setSelected] = useState<WeeklyRecord | null>(null)
+  const [deletedRecord, setDeletedRecord] = useState<WeeklyRecord | null>(null)
   const [creationTask, setCreationTask] = useState<Task | undefined>(
     intent?.action === 'create' ? initialTask : undefined,
   )
+  const [progressStatus, setProgressStatus] = useState<WeeklyRecord['status']>('planned')
+  const [completeTask, setCompleteTask] = useState(false)
+  const progressStatusRef = useRef<HTMLSelectElement>(null)
+  useEffect(() => {
+    if (modal !== 'edit' || !selected) return
+    // Form restores a saved draft directly into its controls after mounting.
+    const frame = requestAnimationFrame(() => {
+      setProgressStatus((progressStatusRef.current?.value || selected.status) as WeeklyRecord['status'])
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [modal, selected?.id, selected?.version])
   function openCreate(temporary: boolean, task?: Task) {
     setCreationTask(task)
     setModal(temporary ? 'temporary' : 'create')
@@ -92,7 +129,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
   const action = useAction(refresh, notify)
   const weekRecords = data.weeklyRecords.filter(
     (record) =>
-      record.weekStart === week && (!owner || record.ownerId === owner),
+      isActiveWeeklyRecord(record) && record.weekStart === week && (!owner || record.ownerId === owner) && visibleOwners.some(user => user.id === record.ownerId),
   )
   const records = weekRecords
     .filter(record => sourceFilter === 'all' || workSource(record) === sourceFilter)
@@ -102,24 +139,26 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
         .includes(search.toLocaleLowerCase()),
     )
     .filter((record) =>
-      filter === 'all' || filter === 'draft'
+      filter === 'pending' ? record.submitted && !isEffectiveWeeklyRecord(record) : filter === 'all' || filter === 'draft'
         ? filter !== 'draft' || !record.submitted
         : record.submitted && record.status === filter,
     )
-  const official = weekRecords.filter((record) => record.submitted)
+  const official = weekRecords.filter(isEffectiveWeeklyRecord)
+  const pending = weekRecords.filter(record => record.submitted && !isEffectiveWeeklyRecord(record))
   const close = () => {
+    setCompleteTask(false)
     setModal('')
     setSelected(null)
     setCreationTask(undefined)
   }
-  const saved = async (message: string, record?: WeeklyRecord) => {
+  const saved = async (message: string, record?: WeeklyRecord) => finishSaved(async () => {
     await refresh()
     if (record) {
       setWorkContext(recordTarget(record, cycleWeek)); setWeek(record.weekStart); setOwner(record.ownerId); setFilter('all'); setSearch(''); setSourceFilter('all')
     }
     notify(message)
     close()
-  }
+  })
   const selectedTask = data.tasks.find((task) => task.id === selected?.taskId)
   return (
     <>
@@ -129,6 +168,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
         description="同一任务可以持续跨周，每周承诺、实际结果和证据分别保存。"
         actions={
           <>
+            {navigate && <button className="button secondary" onClick={() => navigate('collaboration')}>进展与催办</button>}
             <button
               className="button secondary"
               onClick={() => openCreate(true)}
@@ -151,9 +191,12 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
       </div>
       <div ref={recordSection} tabIndex={-1} className="weekly-record-context">
         <h2>周工作记录 · {week} ～ {advanceWeek(week,6)}</h2>
-        <p>保存单条记录用于更新工作与周统计；完成填写后，请核对并提交整份提报。</p>
+        <p>保存单条记录用于更新工作；适用审核的计划通过后纳入周统计。完成填写后，请核对并提交整份提报。</p>
         {workContext && <div className="navigation-context"><span>正在处理{nameOf(data,workContext.ownerId)}的{workContext.kind === 'results' ? '完成情况' : '下周计划'}（记录周 {workContext.contentWeek}，提报周期 {workContext.cycleWeek}）。</span><button className="button primary" onClick={() => reviewWork(workContext)}>返回核对并提交整份提报</button></div>}
       </div>
+      {deletedRecord && <DeletedWeeklyRecordNotice data={data} record={deletedRecord} onRelink={() => { setSelected(deletedRecord); setModal('relink') }} onRecreate={task => {
+        setWeek(deletedRecord.weekStart); showOwner(deletedRecord.ownerId); setWorkContext(recordTarget(deletedRecord, cycleWeek)); setFilter('all'); setSearch(''); setSourceFilter('all'); setDeletedRecord(null); openCreate(task.isTemporary, task)
+      }} onDismiss={() => setDeletedRecord(null)} />}
       <div className="toolbar">
         <div className="week-switcher">
           <button
@@ -194,15 +237,22 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
               value={owner}
               onChange={(event) => { setOwner(event.target.value); setWorkContext(null) }}
             >
-              <option value="">所有成员</option>
-              {data.users.map((user) => (
+              <option value="">{includeInactive ? '所有成员（含停用）' : '在用成员'}</option>
+              {visibleOwners.map((user) => (
                 <option key={user.id} value={user.id}>
-                  {user.name}
+                  {accountDisplayName(user)}
                 </option>
               ))}
             </select>
           </label>
         )}
+        <label className="checkbox-label">
+          <input type="checkbox" checked={includeInactive} onChange={event => {
+            setIncludeInactive(event.target.checked)
+            if (!event.target.checked && owner && !availableOwner(owner)) { setOwner(manager ? '' : data.user.id); setWorkContext(null) }
+          }} />
+          包含停用成员
+        </label>
       </div>
       {!manager && owner !== data.user.id && (
         <div className="navigation-context">
@@ -228,6 +278,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
         <span>
           已纳入周统计 <strong>{official.length}</strong> 项
         </span>
+        {pending.length > 0 && <span>待审核生效 <strong>{pending.length}</strong> 项</span>}
         <span>
           成员自报完成{' '}
           <strong>
@@ -256,6 +307,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
         {[
           ['all', '全部记录'],
           ['draft', '草稿'],
+          ['pending', '待审核生效'],
           ...Object.entries(statusLabels),
         ].map(([value, label]) => (
           <button
@@ -281,8 +333,13 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
       </div>
       {initialTask && !initialRecord && (
         <div className="navigation-context">
-          <span>找到任务「{initialTask.title}」，该周尚未安排执行记录。</span>
-          {(manager || initialTask.ownerId === data.user.id) && (
+          <div>
+            <strong>{initialTask.title}</strong>
+            <p>{initialTask.description || '该任务暂未填写补充说明。'}</p>
+            <p>负责人：{nameOf(data, initialTask.ownerId)} · 截止日期：{initialTask.dueDate || '未设置'}</p>
+            <span>该周尚未安排执行记录，可将任务纳入对应周的工作。</span>
+          </div>
+          {(manager || initialTask.ownerId === data.user.id) && availableOwner(initialTask.ownerId) && (
             <button
               className="text-button"
               onClick={() => openCreate(initialTask.isTemporary, initialTask)}
@@ -290,6 +347,8 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
               为此任务安排本周
             </button>
           )}
+          {manager && <NotificationStatus type="task" id={initialTask.id} data={data} />}
+          {navigate && <button className="button secondary" onClick={() => navigate('collaboration', { id: initialTask.id, targetType: 'task' })}>查看进展与催办</button>}
         </div>
       )}
       {action.error && (
@@ -305,10 +364,14 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
                 (plan) => plan.id === record.monthlyPlanId,
               ),
               canEdit = manager || record.ownerId === data.user.id
+            const temporaryReason = task?.temporaryReason?.trim() || ''
+            const temporaryRecord = !record.monthlyPlanId && !!(task?.isTemporary || temporaryReason)
+            const recordState = weeklyRecordState(record)
             return (
               <article
                 className={`weekly-card ${record.status === 'blocked' ? 'has-blocker' : ''} ${record.id === initialRecord?.id ? 'navigation-highlight' : ''}`}
                 key={record.id}
+                id={`weekly-record-${record.id}`}
               >
                 <div className="weekly-card-top">
                   <div className="row-meta">
@@ -316,6 +379,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
                       #{record.taskId.slice(-6).toUpperCase()}
                     </span>
                     <WorkOriginLabel row={record} data={data} />
+                    {record.submitted && (record.planApproval?.required || record.workOrigin?.kind === 'assigned') && <Badge tone={recordState.tone}>{recordState.label}</Badge>}
                     {record.submitted ? (
                       <Badge tone={statusTone[record.status]}>
                         {record.importSource && record.status === 'done'
@@ -331,17 +395,12 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
                     {record.importSource?.sourceStatus && (
                       <span>原文：{record.importSource.sourceStatus}</span>
                     )}
-                    {!record.monthlyPlanId && (
+                    {temporaryRecord ? (
                       <Badge tone="amber">
-                        {record.importSource ? (
-                          '未关联月度目标'
-                        ) : (
-                          <>
-                            临时工作
-                            {task?.monthlyPlanId ? ' · 原周记录' : ' · 待关联'}
-                          </>
-                        )}
+                        临时交办{task?.monthlyPlanId ? ' · 原周记录' : ''}
                       </Badge>
+                    ) : !record.monthlyPlanId && (
+                      <Badge tone="amber">未关联月度目标</Badge>
                     )}
                   </div>
                   <span className="owner-chip">
@@ -349,6 +408,9 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
                   </span>
                 </div>
                 <h2>{record.commitment || task?.title || '已有周工作记录'}</h2>
+                {task?.title && record.commitment && task.title.trim() !== record.commitment.trim() && (
+                  <p className="cell-description">任务：{task.title}</p>
+                )}
                 {record.importSource && !record.commitment && (
                   <p className="cell-description">本周承诺：原表未注明</p>
                 )}
@@ -356,11 +418,13 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
                   <Link2 size={14} />
                   {plan
                     ? `${plan.month} · ${plan.title}`
-                    : record.importSource
-                      ? '未关联月度目标，保留原资料归属'
-                      : task?.monthlyPlanId
+                    : temporaryRecord
+                      ? task?.monthlyPlanId
                         ? '本周按临时工作记录，任务后续已关联月度目标'
-                        : '临时事项，尚未关联月度目标'}
+                        : '临时交办，直接纳入本周计划'
+                      : record.importSource
+                        ? '未关联月度目标，保留原资料归属'
+                        : '未关联月度目标'}
                   {task && (
                     <span>
                       任务当前截止{' '}
@@ -368,6 +432,11 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
                     </span>
                   )}
                 </div>
+                {temporaryReason && (
+                  <p className="cell-description">
+                    {temporaryRecord ? '交办说明' : '原临时交办说明'}：{temporaryReason}
+                  </p>
+                )}
                 <div className="weekly-facts">
                   <div>
                     <span>实际成果</span>
@@ -406,11 +475,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
                   )}
                 <footer className="weekly-card-footer">
                   <small>
-                    {record.submitted
-                      ? record.importSource
-                        ? '已有周记录已导入生效'
-                        : '已保存并纳入周统计，整份提报另行确认'
-                      : '草稿尚未纳入周统计，整份提报另行确认'}{' '}
+                    {recordState.label} · 整份提报另行确认{' '}
                     · 记录 V{record.version}
                   </small>
                   <div className="row-actions">
@@ -440,15 +505,17 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
                                       'PATCH',
                                     ),
                                   ),
-                                '该条记录已纳入周统计；整份提报仍需核对提交',
+                                '该条记录已正式保存；适用审核的计划通过后纳入周统计，请核对整份提报',
                               )
                             }
                           >
-                            将该条纳入周统计
+                            正式保存该条计划
                           </button>
                         )}
                         <button onClick={() => reviewWork(recordTarget(record, cycleWeek))}>核对关联整份提报</button>
                         <button
+                          disabled={!availableOwner(record.ownerId)}
+                          title={!availableOwner(record.ownerId) ? '责任人账号已停用，无法新安排任务' : undefined}
                           onClick={() => {
                             setSelected(record)
                             setModal('carry')
@@ -468,6 +535,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
                         调整月度关联
                       </button>
                     )}
+                    {manager && <button className="weekly-delete-action" onClick={() => { setSelected(record); setModal('delete') }}><Trash2 size={14} />删除周安排</button>}
                   </div>
                 </footer>
               </article>
@@ -491,6 +559,17 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
           />
         </div>
       )}
+      {modal === 'delete' && selected && manager && <Modal title="删除这条周安排" onClose={close}>
+        <div className="context-box"><strong>{nameOf(data, selected.ownerId)} · {selected.weekStart} ～ {advanceWeek(selected.weekStart, 6)}</strong><p>{selected.commitment || selectedTask?.title || '未填写本周承诺'}</p><p>任务：{selectedTask?.title || selected.taskId}</p></div>
+        <p className="modal-intro">删除后，该条安排退出当前列表与统计；原任务、其他周安排和已有提交、报告快照保留。已提交的整份计划需要重新核对，删除原因会留痕。</p>
+        <Form onCancel={close} submitLabel="确认删除周安排" onSubmit={async event => {
+          const reason = String(new FormData(event.currentTarget).get('reason') || '').trim()
+          if (!reason) throw new Error('请填写删除原因')
+          const deleted = await api<WeeklyRecord>(`/weekly-records/${selected.id}`, json({ version:selected.version, reason }, 'DELETE'))
+          await saved('该周安排已删除，原任务和历史记录保留')
+          setDeletedRecord(deleted)
+        }}><Field label="删除原因" hint="例如：早期录入未关联月度临时计划，现需调整后重建。"><textarea name="reason" required rows={3} maxLength={12000} /></Field></Form>
+      </Modal>}
       {(modal === 'create' || modal === 'temporary') && (
         <WeeklyCreate
           data={data}
@@ -504,6 +583,8 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
       )}
       {modal === 'edit' && selected && (
         <Modal title="更新本周实际进展" onClose={close} wide>
+          {navigate && <button className="button secondary" onClick={() => navigate('collaboration', { id: selected.taskId, targetType: 'task' })}>任务进展、催办回应与延期申请</button>}
+          {manager && <NotificationStatus type="weeklyRecord" id={selected.id} data={data} />}
           <div className="context-box">
             <strong>{selectedTask?.title}</strong>
             <p>
@@ -516,12 +597,25 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
                   ? '验收标准：原表未注明，可继续保留为空。'
                   : '临时工作，请记录真实结果与证据。')}
             </p>
+            {selectedTask?.temporaryReason && (
+              <p>
+                {!selected.monthlyPlanId ? '临时交办说明' : '原临时交办说明'}：{selectedTask.temporaryReason}
+              </p>
+            )}
           </div>
           <Form
             onCancel={close}
             submitLabel="保存本周进展"
+            draftKey={`weekly-progress:${data.user.id}:${selected.id}:v${selected.version}`}
+            draftContext={{ __completeTask: completeTask ? 'yes' : '' }}
+            onDraftRestore={values => {
+              const status = draftText(values, 'status')
+              if (['planned', 'doing', 'blocked', 'done', 'not_done'].includes(status)) setProgressStatus(status as WeeklyRecord['status'])
+              setCompleteTask(draftText(values, '__completeTask') === 'yes')
+            }}
             onSubmit={async (event) => {
               const form = new FormData(event.currentTarget)
+              const completesTask = completeTask && form.get('status') === 'done' && selectedTask && selectedTask.status !== 'done'
               const updated = await api<WeeklyRecord>(
                 `/weekly-records/${selected.id}`,
                 json(
@@ -529,11 +623,12 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
                     ...Object.fromEntries(form),
                     submitted: form.has('submitted'),
                     version: selected.version,
+                    ...(completesTask ? { completeTask: true, taskVersion: selectedTask.version } : {}),
                   },
                   'PATCH',
                 ),
               )
-              await saved('该周进展已保存，请返回核对整份提报', updated)
+              await saved(completesTask ? '本周进展与整个任务均已保存为完成，请返回核对整份提报' : '该周进展已保存，请返回核对整份提报', updated)
             }}
           >
             <Field label="本周承诺">
@@ -545,7 +640,11 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
               />
             </Field>
             <Field label="执行状态">
-              <select name="status" defaultValue={selected.status}>
+              <select name="status" ref={progressStatusRef} defaultValue={selected.status} onChange={event => {
+                const nextStatus = event.target.value as WeeklyRecord['status']
+                setProgressStatus(nextStatus)
+                if (nextStatus !== 'done') setCompleteTask(false)
+              }}>
                 {Object.entries(statusLabels).map(([value, label]) => (
                   <option value={value} key={value}>
                     {label}
@@ -553,6 +652,13 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
                 ))}
               </select>
             </Field>
+            {selectedTask?.status === 'done' ? <p className="form-hint">整个任务已自报完成。本次仍可更新对应周的实际进展。</p> : selectedTask && <>
+              <label className="checkbox-label">
+                <input type="checkbox" checked={progressStatus === 'done' && completeTask} disabled={progressStatus !== 'done'} onChange={event => setCompleteTask(event.target.checked)} />
+                同时完成整个任务
+              </label>
+              <p className="form-hint">本周完成仅表示当周阶段完成。若整件工作也已结束，请勾选此项；下方实际成果将同时作为任务完成说明。</p>
+            </>}
             <Field
               label="实际成果"
               hint={
@@ -565,6 +671,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
                 name="actualOutcome"
                 rows={3}
                 defaultValue={selected.actualOutcome}
+                required={completeTask && progressStatus === 'done'}
               />
             </Field>
             <Field label="证据链接">
@@ -606,8 +713,10 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
               />
               {selected.importSource
                 ? '保留为生效记录，纳入对应周统计'
-                : '将该条纳入周统计（不代表已提交整份提报）'}
+                : selected.planApproval?.required && !selected.planApproval.suspended ? '正式保存该条计划（审核通过后纳入周统计）' : '将该条纳入周统计（不代表已提交整份提报）'}
             </label>
+            <div className="form-grid"><Field label="阻塞影响范围" hint="启用进展督办后，首次受阻时需填写。"><textarea name="blockerImpact" rows={2} defaultValue={selected.blockerImpact || ''} /></Field><Field label="需要的支持"><textarea name="supportNeeded" rows={2} defaultValue={selected.supportNeeded || ''} /></Field></div>
+            {manager && selected.ownerId !== data.user.id && <Field label="管理者代录原因" hint="替成员修改进展时，记录核实依据和原因；同时完成整个任务时必填。"><textarea name="proxyReason" rows={2} required={completeTask && progressStatus === 'done'} /></Field>}
           </Form>
         </Modal>
       )}
@@ -650,7 +759,7 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
       {modal === 'relink' && selectedTask && (
         <Modal title="调整任务的月度归属" onClose={close}>
           <p className="modal-intro">
-            任务编号保持不变；以前的周记录继续引用当时的月度目标，新周记录采用新的关联。
+            任务编号保持不变；曾纳入周统计的记录保留原月度归属，从未提交且覆盖目标月份的草稿会同步调整，新周记录采用新的关联。
           </p>
           <Form
             onCancel={close}
@@ -704,6 +813,19 @@ export default function Weekly({ data, refresh, notify, intent }: PageProps) {
     </>
   )
 }
+export function DeletedWeeklyRecordNotice({ data, record, onRelink, onRecreate, onDismiss }: {
+  data: PageProps['data']; record: WeeklyRecord; onRelink: () => void; onRecreate: (task: Task) => void; onDismiss: () => void
+}) {
+  // Resolve from refreshed data, so relinking after deletion cannot recreate from stale task ownership.
+  const task = data.tasks.find(item => item.id === record.taskId)
+  const plan = task?.monthlyPlanId ? data.plans.find(item => item.id === task.monthlyPlanId) : undefined
+  return <div className="navigation-context weekly-deletion-result" role="status">
+    <div><strong>已删除{nameOf(data, record.ownerId)}在 {record.weekStart} 当周的安排</strong><p>原任务及历史提交、报告仍保留。调整完成后请重新核对整份提报。</p>{task && <p>原任务当前月度关联：{plan ? `${plan.month} · ${plan.title}` : task.monthlyPlanId ? `目标 #${task.monthlyPlanId.slice(-6).toUpperCase()}` : '未关联月度目标'}</p>}</div>
+    {data.user.role === 'manager' && task && <button className="button secondary" onClick={onRelink}>调整原任务月度关联</button>}
+    {task && data.users.some(user => user.id === record.ownerId && canUseAccount(user)) && <button className="button secondary" onClick={() => onRecreate(task)}>沿用原任务重新安排该周</button>}
+    <button className="text-button" aria-label="关闭删除结果提示" onClick={onDismiss}>关闭</button>
+  </div>
+}
 function WeeklyCreate({
   data,
   week,
@@ -724,13 +846,14 @@ function WeeklyCreate({
   const accessibleTask =
     initialTask &&
     initialTask.isTemporary === temporary &&
+    data.users.some(user => user.id === initialTask.ownerId && canUseAccount(user)) &&
     (data.user.role === 'manager' || initialTask.ownerId === data.user.id)
       ? initialTask
       : undefined
   const [taskId, setTaskId] = useState(accessibleTask?.id || ''),
     [planId, setPlanId] = useState(accessibleTask?.monthlyPlanId || ''),
-    [ownerId, setOwnerId] = useState(accessibleTask?.ownerId || initialOwnerId),
-    [createdTask, setCreatedTask] = useState<Task | null>(null)
+    [ownerId, setOwnerId] = useState(accessibleTask?.ownerId || (data.users.some(user => user.id === initialOwnerId && canUseAccount(user)) ? initialOwnerId : ''))
+  const attempt = useRef<SubmissionAttempt | null>(null)
   const [arrangement, setArrangement] = useState('assigned')
   const creationKind = ownerId === data.user.id ? 'self' : arrangement
   const assigning = creationKind === 'assigned' && !!ownerId
@@ -754,6 +877,7 @@ function WeeklyCreate({
       (temporary ? task.isTemporary : !task.isTemporary),
   )
   const plan = plans.find((plan) => plan.id === planId)
+  const [includeInStatistics, setIncludeInStatistics] = useState(temporary || plan?.status === 'published')
   return (
     <Modal
       title={temporary ? '记录临时工作' : data.user.role === 'manager' ? '下发 / 安排周任务' : '安排个人周任务'}
@@ -762,41 +886,39 @@ function WeeklyCreate({
     >
       <Form
         onCancel={onClose}
-        submitLabel={assigning ? '下发给责任人' : creationKind === 'proxy' ? '保存代录记录' : '保存周工作记录'}
+        submitLabel={assigning ? includeInStatistics ? '下发给责任人' : '保存周草稿' : creationKind === 'proxy' ? '保存代录记录' : '保存周工作记录'}
+        draftKey={`weekly-create:${data.user.id}:${week}:${temporary ? 'temporary' : 'regular'}:${accessibleTask?.id || 'new'}:${initialOwnerId}`}
+        draftContext={{ __ownerId: ownerId, __taskId: taskId, __planId: planId, __arrangement: arrangement, __submitted: includeInStatistics ? 'yes' : '' }}
+        onDraftRestore={values => {
+          const requestedOwner = draftText(values, '__ownerId')
+          const restoredOwner = data.user.role === 'manager' ? data.users.some(user => user.id === requestedOwner && canUseAccount(user)) ? requestedOwner : '' : data.user.id
+          const restoredTask = data.tasks.find(task => task.id === draftText(values, '__taskId') && task.ownerId === restoredOwner && !!task.isTemporary === temporary)
+          const requestedPlan = restoredTask?.monthlyPlanId || draftText(values, '__planId')
+          const restoredPlan = data.plans.find(plan => plan.id === requestedPlan && !plan.visibility && (plan.ownerId === restoredOwner || plan.collaboratorIds.includes(restoredOwner)) && plan.status !== 'merged')
+          setOwnerId(restoredOwner); setTaskId(restoredTask?.id || ''); setPlanId(restoredPlan?.id || '')
+          setArrangement(draftText(values, '__arrangement') === 'proxy' ? 'proxy' : 'assigned')
+          setIncludeInStatistics(draftText(values, '__submitted') === 'yes' || draftChecked(values, 'submitted'))
+        }}
         onSubmit={async (event) => {
           const form = new FormData(event.currentTarget),
             values = Object.fromEntries(form)
           const origin = { creationKind, creationReason: values.creationReason || '' }
-          let task =
-            createdTask || data.tasks.find((item) => item.id === taskId)
-          if (!task) {
-            task = await api<Task>(
-              '/tasks',
-              json({
-                ...origin,
-                title: values.title,
-                monthlyPlanId: temporary ? null : planId,
-                ownerId,
-                description: values.description || '',
-                dueDate: values.dueDate,
-                isTemporary: temporary,
-                temporaryReason: values.temporaryReason || '',
-              }),
-            )
-            setCreatedTask(task)
+          const payload = {
+            ...(taskId ? { taskId } : { task: {
+              ...origin, title: values.title, monthlyPlanId: temporary ? null : planId,
+              ownerId, description: values.description || '', dueDate: values.dueDate,
+              isTemporary: temporary, temporaryReason: values.temporaryReason || '',
+            } }),
+            record: { ...origin, weekStart: values.weekStart, commitment: values.commitment,
+              status: 'planned', submitted: form.has('submitted') },
           }
-          const record = await api<WeeklyRecord>(
-            '/weekly-records',
-            json({
-              ...origin,
-              taskId: task.id,
-              weekStart: values.weekStart,
-              commitment: values.commitment,
-              status: 'planned',
-              submitted: form.has('submitted'),
-            }),
-          )
-          await onSaved(assigning ? `已下发给${nameOf(data, record.ownerId)}，请成员在我的周计划中更新并核对整份提报` : '周工作记录已保存，请核对整份提报', record)
+          attempt.current = assignmentAttempt(attempt.current, payload)
+          const { record } = await api<{ task: Task; record: WeeklyRecord }>('/weekly-assignments',
+            json({ requestId: attempt.current.requestId, ...payload }))
+          await onSaved(assigning ? record.submitted
+            ? `已下发给${nameOf(data, record.ownerId)}，通知已记录；请成员更新并核对整份提报`
+            : '周安排草稿已保存，尚未发送下发通知'
+            : '周工作记录已保存，请核对整份提报', record)
         }}
       >
         <div className="form-grid">
@@ -812,12 +934,13 @@ function WeeklyCreate({
                 setOwnerId(event.target.value)
                 setTaskId('')
                 setPlanId('')
+                setIncludeInStatistics(temporary)
               }}
-              disabled={data.user.role !== 'manager' || !!createdTask}
+              disabled={data.user.role !== 'manager'}
             >
               <option value="" disabled>请选择责任人</option>
               {data.users
-                .filter((user) => user.active && (!user.registrationStatus || user.registrationStatus === 'approved'))
+                .filter(canUseAccount)
                 .map((user) => (
                   <option key={user.id} value={user.id}>
                     {user.name}
@@ -827,15 +950,18 @@ function WeeklyCreate({
           </Field>
         </div>
         {data.user.role === 'manager' && ownerId && ownerId !== data.user.id && <>
-          <Field label="安排方式"><select aria-label="安排方式" value={arrangement} onChange={event => setArrangement(event.target.value)} disabled={!!createdTask}><option value="assigned">下发任务</option><option value="proxy">代成员录入</option></select></Field>
+          <Field label="安排方式"><select aria-label="安排方式" value={arrangement} onChange={event => setArrangement(event.target.value)}><option value="assigned">下发任务</option><option value="proxy">代成员录入</option></select></Field>
           {creationKind === 'proxy' && <Field label="代录原因"><textarea name="creationReason" required rows={2} maxLength={12000} /></Field>}
-          <p className="form-hint">{assigning ? '下发后成员可直接更新，无需重复创建。' : '保留管理员代录来源及原因。'}此操作不会生成成员的整份提报回执。</p>
+          <p className="form-hint">{assigning ? '纳入周统计后才正式下发；草稿不发送下发通知。下发后成员可直接更新。' : '保留管理员代录来源及原因。'}此操作不会生成成员的整份提报回执。</p>
         </>}
         <Field label="关联个人任务">
           <select
             value={taskId}
-            onChange={(event) => setTaskId(event.target.value)}
-            disabled={!!createdTask}
+            onChange={(event) => {
+              setTaskId(event.target.value)
+              const task = existing.find(item => item.id === event.target.value)
+              setIncludeInStatistics(temporary || plans.some(plan => plan.id === (task?.monthlyPlanId || planId) && plan.status === 'published'))
+            }}
           >
             <option value="">创建新的个人任务</option>
             {existing.map((task) => (
@@ -845,7 +971,7 @@ function WeeklyCreate({
             ))}
           </select>
         </Field>
-        {!taskId && !createdTask && (
+        {!taskId && (
           <>
             {!temporary && (
               <Field
@@ -854,7 +980,10 @@ function WeeklyCreate({
               >
                 <select
                   value={planId}
-                  onChange={(event) => setPlanId(event.target.value)}
+                  onChange={(event) => {
+                    setPlanId(event.target.value)
+                    setIncludeInStatistics(plans.some(plan => plan.id === event.target.value && plan.status === 'published'))
+                  }}
                   required
                 >
                   <option value="">选择责任人负责或参与的月度目标</option>
@@ -918,11 +1047,6 @@ function WeeklyCreate({
             )}
           </>
         )}
-        {createdTask && (
-          <div className="note">
-            个人任务已创建；请修正周记录后重试，将继续使用同一个任务。
-          </div>
-        )}
         <Field label="本周承诺">
           <textarea
             name="commitment"
@@ -935,12 +1059,13 @@ function WeeklyCreate({
           <input
             type="checkbox"
             name="submitted"
-            defaultChecked={temporary || plan?.status === 'published'}
+            checked={includeInStatistics}
+            onChange={event => setIncludeInStatistics(event.target.checked)}
           />
-          将该条纳入周统计（不代表已提交整份提报）
+          正式保存该条计划（适用审核时，通过后纳入周统计）
         </label>
         <p className="form-hint">
-          未发布月度目标下的记录请先保存草稿。完成周工作后，月度成果仍需单独验收。
+          未发布月度目标下的记录请先保存草稿。成员自行安排或管理员代录的计划按生效规则提交审核；管理员正式下发视为已确认。完成周工作后，月度成果仍需单独验收。
         </p>
       </Form>
     </Modal>

@@ -1,5 +1,8 @@
 import { useState } from 'react'
+import { canUseAccount } from '../../shared/auth-policy'
+import { accountDisplayName, assignmentAccounts, visibleMonthlyPlan } from '../account-options'
 import WorkflowGuide from '../components/WorkflowGuide'
+import NotificationStatus from '../components/NotificationStatus'
 import {
   Plus,
   Send,
@@ -8,8 +11,9 @@ import {
   GitBranch,
   CheckCircle2,
 } from 'lucide-react'
-import type { AuditEvent, MonthlyPlan } from '../../shared/types'
-import { api, json } from '../api'
+import type { AuditEvent, MonthlyPlan, Task } from '../../shared/types'
+import type { Navigate } from '../navigation'
+import { api, json, finishSaved } from '../api'
 import MergeProposals from './MergeProposals'
 import {
   Badge,
@@ -48,7 +52,7 @@ const tones: Record<string, string> = {
   published: 'green',
   merged: 'neutral',
 }
-export default function Monthly({ data, refresh, notify, intent }: PageProps) {
+export default function Monthly({ data, refresh, notify, intent, navigate }: PageProps & { navigate?: Navigate }) {
   const manager = data.user.role === 'manager'
   const archivedProjectIds = new Set(
     data.projects
@@ -58,8 +62,14 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
   const canPublish = (plan: MonthlyPlan) =>
     plan.status === 'approved' &&
     (!plan.projectId || !archivedProjectIds.has(plan.projectId))
+  const canEdit = (plan: MonthlyPlan) => !plan.visibility && plan.status !== 'merged' &&
+    (manager || (plan.isTemporary && plan.ownerId === data.user.id && ['draft', 'returned'].includes(plan.status)))
+  const canCreateOwnTask = (plan: MonthlyPlan) => !plan.visibility && plan.status !== 'merged' &&
+    (!plan.projectId || !archivedProjectIds.has(plan.projectId)) &&
+    (plan.ownerId === data.user.id || plan.collaboratorIds.includes(data.user.id))
   const initialMonth = intent?.month || currentMonth()
   const initialPlan = data.plans.find((plan) => plan.id === intent?.id)
+  const [includeInactive, setIncludeInactive] = useState(!!initialPlan && !visibleMonthlyPlan(initialPlan, data.users))
   const readyToPublish =
     manager &&
     intent?.action === 'publish' &&
@@ -71,7 +81,7 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
     [search, setSearch] = useState(intent?.query || '')
   const [modal, setModal] = useState(
       initialPlan
-        ? 'detail'
+        ? intent?.action === 'create-task' && canCreateOwnTask(initialPlan) ? 'task' : 'detail'
         : manager && intent?.action === 'create'
           ? 'create'
           : readyToPublish
@@ -81,7 +91,8 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
     [selected, setSelected] = useState<MonthlyPlan | null>(initialPlan || null),
     [history, setHistory] = useState<AuditEvent[] | null>(null)
   const action = useAction(refresh, notify)
-  const monthPlans = data.plans.filter((plan) => plan.month === month)
+  const [createdPersonalTask, setCreatedPersonalTask] = useState<Task | null>(null)
+  const monthPlans = data.plans.filter((plan) => plan.month === month && visibleMonthlyPlan(plan, data.users, includeInactive))
   const filtered = monthPlans.filter(
     (plan) =>
       (filter === 'all' || plan.status === filter) &&
@@ -89,7 +100,7 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
         search,
       ),
   )
-  const approved = monthPlans.filter(canPublish)
+  const approved = data.plans.filter(plan => plan.month === month && canPublish(plan))
   const publications = data.publications
     .filter((value) => value.month === month)
     .sort((a, b) => b.revision - a.revision)
@@ -102,13 +113,15 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
     setModal('')
     setSelected(null)
     setHistory(null)
+    setCreatedPersonalTask(null)
   }
-  const saved = async (message: string) => {
+  const saved = async (message: string) => finishSaved(async () => {
     await refresh()
     notify(message)
     close()
-  }
+  })
   function open(type: string, plan: MonthlyPlan) {
+    setCreatedPersonalTask(null)
     setSelected(plan)
     setModal(type)
   }
@@ -117,7 +130,7 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
       <PageHeader
         eyebrow="PLANNING / MONTHLY"
         title={manager ? '月度目标' : '我参与的月度目标'}
-        description={manager ? '定义团队大项、负责人和参与人员，发布目标后跟进个人任务与整体成果。' : '查看本人负责或参与的目标，关联目标建立自己的任务；个人进展在周计划中维护。'}
+        description={manager ? '定义团队目标，审核临时目标，并按月发布阶段承诺。' : '查看参与目标，提报本人临时目标，并拆成每周个人任务。'}
         actions={
           <>
             {manager && (
@@ -135,6 +148,13 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
               <GitBranch size={16} />
               发布版本{publications.length > 0 && ` ${publications.length}`}
             </button>
+            <button
+              className={manager ? 'button secondary' : 'button primary'}
+              onClick={() => setModal('temporary')}
+            >
+              <Plus size={17} />
+              新增临时目标
+            </button>
             {manager && <button
               className="button primary"
               onClick={() => setModal('create')}
@@ -147,17 +167,18 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
       />
       <WorkflowGuide title="月度目标流转说明">
         <div className="workflow-strip">
-          <span>01 管理员定义目标</span>
+          <span>01 定义目标 / 提报临时目标</span>
           <i>→</i>
           <span>02 明确负责人与参与人员</span>
           <i>→</i>
-          <span>03 发布承诺</span>
+          <span>03 审核并发布承诺</span>
           <i>→</i>
           <span>04 每周执行</span>
           <i>→</i>
           <span>05 成果验收</span>
         </div>
-        </WorkflowGuide>
+        <p className="muted">临时目标可持续多周。长期事项按月记录阶段成果，未完成时由管理者跨月承接，保留各月结果。</p>
+      </WorkflowGuide>
       <div className="toolbar">
         <div className="toolbar-left">
           <Field label="计划月份">
@@ -176,6 +197,10 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
+          </label>
+          <label className="checkbox-label">
+            <input type="checkbox" checked={includeInactive} onChange={event => setIncludeInactive(event.target.checked)} />
+            包含停用成员
           </label>
         </div>
         {manager && (
@@ -249,6 +274,7 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
                           </p>
                           <div className="row-meta">
                             <span>{plan.category}</span>
+                            {plan.isTemporary && <Badge tone="amber">临时目标</Badge>}
                             {plan.importSource && (
                               <Badge tone="blue">已有计划导入</Badge>
                             )}
@@ -287,9 +313,7 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
                         </td>
                         <td>
                           <Badge tone={tones[plan.status]}>
-                            {plan.importSource && plan.status === 'published'
-                              ? '已生效'
-                              : statuses[plan.status]}
+                            {statuses[plan.status]}
                           </Badge>
                           {plan.reviewComment && (
                             <p className="cell-description review-comment">
@@ -312,7 +336,7 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
                         </td>
                         <td>
                           <div className="row-actions">
-                            {plan.status !== 'merged' && manager && (
+                            {canEdit(plan) && (
                                 <button onClick={() => open('edit', plan)}>
                                   编辑
                                 </button>
@@ -320,7 +344,7 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
                             {['draft', 'returned'].includes(plan.status) &&
                               (!plan.projectId ||
                                 !archivedProjectIds.has(plan.projectId)) &&
-                              manager && (
+                              canEdit(plan) && (
                                 <button
                                   disabled={action.busy}
                                   onClick={() =>
@@ -359,7 +383,7 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
                                   跨月承接
                                 </button>
                               )}
-                            {!manager && !plan.visibility && plan.status !== 'merged' && (plan.ownerId === data.user.id || plan.collaboratorIds.includes(data.user.id)) && <button onClick={() => open('task', plan)}>关联个人任务</button>}
+                            {canCreateOwnTask(plan) && <button onClick={() => open('task', plan)}>关联个人任务</button>}
                             <button
                               onClick={() => {
                                 open('history', plan)
@@ -393,14 +417,14 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
                 ? '没有符合条件的计划'
                 : manager ? '从第一个团队月度目标开始' : '本月暂无你参与的月度目标'
             }
-            description={manager ? '指定负责人和参与人员，明确预期成果与验收标准。' : '管理员发布目标并将你加入参与人员后，即可关联个人任务。'}
+            description={manager ? '指定负责人和参与人员，明确预期成果与验收标准。' : '可提报本人的临时月度目标，或参与管理者发布的团队目标。'}
             action={
-              manager && <button
+              <button
                 className="button secondary"
-                onClick={() => setModal('create')}
+                onClick={() => setModal(manager ? 'create' : 'temporary')}
               >
                 <Plus size={16} />
-                新增月度目标
+                {manager ? '新增月度目标' : '新增临时目标'}
               </button>
             }
           />
@@ -414,24 +438,39 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
           onSaved={saved}
         />
       )}
-      {manager && (modal === 'create' || modal === 'edit') && (
+      {(modal === 'temporary' || (manager && modal === 'create') || (modal === 'edit' && selected && canEdit(selected))) && (
         <PlanEditor
           data={data}
           month={month}
           plan={selected}
+          temporary={modal === 'temporary' || !!selected?.isTemporary}
           onClose={close}
           onSaved={saved}
         />
       )}
-      {modal === 'task' && selected && !selected.visibility && <Modal title="关联目标，建立个人任务" onClose={close}>
+      {modal === 'task' && selected && canCreateOwnTask(selected) && <Modal title="关联目标，建立个人任务" onClose={close}>
         <p className="modal-intro">月度目标：{selected.title}<br />月份：{selected.month} · 项目：{projectOf(data, selected.projectId)}<br />任务负责人：{data.user.name}</p>
-        <Form onCancel={close} submitLabel="保存个人任务" onSubmit={async event => {
-          await api('/tasks', json({ ...Object.fromEntries(new FormData(event.currentTarget)), monthlyPlanId: selected.id }))
-          await saved('个人任务已建立，可在周计划中安排每周工作')
+        {selected.status !== 'published' && <p className="form-hint">目标当前为「{statuses[selected.status]}」，尚未发布。可先建立个人任务并保存周草稿，发布后才能正式排周。</p>}
+        <Form onCancel={close} submitLabel={createdPersonalTask ? '重试加载已保存任务' : intent?.action === 'create-task' && navigate ? '建立任务并安排周工作' : '保存个人任务'} onSubmit={async event => {
+          const values = Object.fromEntries(new FormData(event.currentTarget))
+          const { workSource, ...fields } = values
+          const task = createdPersonalTask ?? await api<Task>('/tasks', json({ ...fields, monthlyPlanId: selected.id,
+            ...(workSource ? { workSource } : {}),
+            requestedOutcome: selected.expectedOutcome || '',
+          }))
+          setCreatedPersonalTask(task)
+          try { await saved('个人任务已建立，可在周计划中安排每周工作') }
+          catch { throw new Error('个人任务已保存，但清单刷新失败。请重试加载已保存任务，无需重复建立。') }
+          if (intent?.action === 'create-task' && navigate) navigate('weekly', { action: 'create', id: task.id, ownerId: task.ownerId, weekStart: intent.weekStart })
         }}>
-          <Field label="个人任务名称"><input name="title" required maxLength={300} /></Field>
-          <Field label="个人交付说明"><textarea name="description" rows={3} /></Field>
-          <Field label="截止日期"><input name="dueDate" type="date" defaultValue={selected.dueDate} required /></Field>
+          <fieldset className="form-fields" disabled={!!createdPersonalTask}>
+          <Field label="个人任务名称"><input name="title" defaultValue={selected.title} required maxLength={300} /></Field>
+          <Field label="个人交付说明"><textarea name="description" defaultValue={selected.expectedOutcome} rows={3} /></Field>
+          <Field label="事项来源" hint="按明确交办背景填写，临时目标不会自动当作领导交办。"><select name="workSource" defaultValue={selected.workSource || ''}><option value="">来源待核对</option><option value="leader">领导交办</option><option value="self">自主安排</option><option value="coordination">协同事项</option></select></Field>
+          <Field label="交办人 / 对接人"><input name="assignedBy" defaultValue={selected.assignedBy || ''} maxLength={100} /></Field>
+          <Field label="交办日期"><input name="assignedOn" type="date" defaultValue={selected.assignedOn || ''} /></Field>
+          <Field label="截止日期" hint="尚未确定时可留空，工作清单显示待确认。"><input name="dueDate" type="date" defaultValue={selected.dueDate} /></Field>
+          </fieldset>
         </Form>
       </Modal>}
       {manager && modal === 'publish' && (
@@ -539,6 +578,7 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
           <Form
             onCancel={close}
             submitLabel={manager ? '保存验收结论' : '提交管理者验收'}
+            draftKey={`monthly-result:${data.user.id}:${selected.id}:v${selected.version}`}
             onSubmit={async (event) => {
               const values = Object.fromEntries(
                 new FormData(event.currentTarget),
@@ -593,6 +633,7 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
         <Modal title="承接到下月度目标" onClose={close}>
           <p className="modal-intro">
             保留 {selected.month} 的承诺和结果，新建有来源关系的月度草稿。
+            {selected.isTemporary && '临时目标标记和原因将保留，请在承接草稿中调整新月份的阶段成果。'}
           </p>
           <Form
             onCancel={close}
@@ -696,9 +737,17 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
       )}
       {modal === 'detail' && selected && (
         <Modal title={selected.title} onClose={close} wide>
+          {manager && <NotificationStatus type="plan" id={selected.id} data={data} />}
+          {selected.isTemporary && (
+            <div className="context-box">
+              <Badge tone="amber">临时目标 · 本月阶段成果</Badge>
+              <p>临时原因：{selected.temporaryReason}</p>
+              <p>可拆成多周执行；未完成时由管理者跨月承接，保留每月承诺和结果。</p>
+            </div>
+          )}
           {selected.importSource && (
             <p className="modal-intro">
-              已有计划已导入生效，无需重新提报。原文状态：
+              {selected.status === 'published' ? '已有计划导入，当前已发布，无需重新提报。' : `已有计划导入，当前状态为${statuses[selected.status]}。`}原文状态：
               {selected.importSource.sourceStatus || '原表未注明'}
               ；原有成果已保留，验收结论单独记录。
             </p>
@@ -733,9 +782,7 @@ export default function Monthly({ data, refresh, notify, intent }: PageProps) {
                 {selected.dueDate ||
                   (selected.importSource ? '原表未注明' : '暂无')}{' '}
                 ·{' '}
-                {selected.importSource && selected.status === 'published'
-                  ? '已生效'
-                  : statuses[selected.status]}
+                {statuses[selected.status]}
               </p>
             </div>
             <div>
@@ -765,12 +812,14 @@ function PlanEditor({
   data,
   month,
   plan,
+  temporary,
   onClose,
   onSaved,
 }: {
   data: PageProps['data']
   month: string
   plan: MonthlyPlan | null
+  temporary: boolean
   onClose: () => void
   onSaved: (message: string) => Promise<void>
 }) {
@@ -794,8 +843,8 @@ function PlanEditor({
         plan
           ? plan.status === 'published'
             ? '修订已发布计划'
-            : '编辑月度目标'
-          : '新增月度目标'
+            : temporary ? '编辑临时月度目标' : '编辑月度目标'
+          : temporary ? '新增临时月度目标' : '新增月度目标'
       }
       onClose={onClose}
       wide
@@ -803,6 +852,7 @@ function PlanEditor({
       <Form
         onCancel={onClose}
         submitLabel={plan ? '保存计划' : '保存为草稿'}
+        draftKey={`monthly-plan:${data.user.id}:${plan ? `${plan.id}:v${plan.version}` : `${month}:${temporary ? 'temporary' : 'regular'}:new`}`}
         onSubmit={async (event) => {
           const form = new FormData(event.currentTarget),
             values = Object.fromEntries(form)
@@ -813,7 +863,8 @@ function PlanEditor({
                 ...values,
                 projectId: values.projectId || null,
                 collaboratorIds: form.getAll('collaboratorIds'),
-                ownerId: manager ? values.ownerId : data.user.id,
+                ownerId: manager ? values.ownerId || plan?.ownerId : data.user.id,
+                isTemporary: temporary,
                 ...(plan ? { version: plan.version } : {}),
               },
               plan ? 'PATCH' : 'POST',
@@ -821,11 +872,12 @@ function PlanEditor({
           )
           await onSaved(
             plan?.status === 'published'
-              ? '修订已生效，发布版本和历史记录已保存'
+              ? '修订已发布，发布版本和历史记录已保存'
               : '月度提报已保存',
           )
         }}
       >
+        {temporary && <p className="modal-intro">按本月阶段填写成果和验收标准，可拆成多周推进。保存后提交管理者审核；未完成时可由管理者跨月承接。</p>}
         <div className="form-grid">
           <Field label="计划月份">
             <input
@@ -851,7 +903,7 @@ function PlanEditor({
             </select>
           </Field>
         </div>
-        <Field label="本月成果名称">
+        <Field label={temporary ? '本月阶段成果名称' : '本月成果名称'}>
           <input
             name="title"
             defaultValue={plan?.title}
@@ -860,6 +912,9 @@ function PlanEditor({
             placeholder="例如：完成模型评测平台首版交付"
           />
         </Field>
+        {temporary && <Field label="临时目标原因" hint="说明新增事项的背景；长期事项可同时描述整体目标及本月推进范围。">
+          <textarea name="temporaryReason" defaultValue={plan?.temporaryReason} rows={3} required maxLength={12000} placeholder="例如：新增专项研究，预计持续三个月，本月完成方案验证" />
+        </Field>}
         <div className="form-grid">
           <Field label="所属项目">
             <select name="projectId" defaultValue={plan?.projectId || ''}>
@@ -884,11 +939,10 @@ function PlanEditor({
               defaultValue={plan?.ownerId || data.user.id}
               disabled={!manager}
             >
-              {data.users
-                .filter((user) => user.active || user.id === plan?.ownerId)
+              {assignmentAccounts(data.users, plan ? [plan.ownerId] : [])
                 .map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.name}
+                  <option key={user.id} value={user.id} disabled={!canUseAccount(user)}>
+                    {accountDisplayName(user)}
                     {user.position ? ` · ${user.position}` : ''}
                   </option>
                 ))}
@@ -897,7 +951,7 @@ function PlanEditor({
         </div>
         {imported && (
           <p className="modal-intro">
-            这条已有计划已生效。原表未注明的预期成果、验收标准和截止日期可继续留空；修订保留原因和历史版本。
+            这条目标来自已有计划导入。原表未注明的预期成果、验收标准和截止日期可继续留空；修订保留原因和历史版本。
           </p>
         )}
         <Field label="预期交付成果">
@@ -919,7 +973,7 @@ function PlanEditor({
           />
         </Field>
         <div className="form-grid">
-          <Field label="截止日期">
+          <Field label={temporary ? '本月阶段截止日期' : '截止日期'} hint="截止日期须在所选月份内；未完成事项可跨月承接。">
             <input
               name="dueDate"
               type="date"
@@ -938,13 +992,7 @@ function PlanEditor({
         <div className="field">
           <span>协作成员</span>
           <div className="check-grid">
-            {data.users
-              .filter(
-                (user) =>
-                  user.active ||
-                  plan?.collaboratorIds.includes(user.id) ||
-                  plan?.ownerId === user.id,
-              )
+            {assignmentAccounts(data.users, plan?.collaboratorIds)
               .map((user) => (
                 <label className="checkbox-label" key={user.id}>
                   <input
@@ -953,8 +1001,8 @@ function PlanEditor({
                     value={user.id}
                     defaultChecked={plan?.collaboratorIds.includes(user.id)}
                   />
-                  {user.name}
-                  {!user.active && <small>已停用 · 保留已有责任</small>}
+                  {accountDisplayName(user)}
+                  {!canUseAccount(user) && <small>保留已有责任，可取消关联</small>}
                   <small>{user.position}</small>
                 </label>
               ))}
@@ -996,6 +1044,8 @@ function HistoryDiff({
     ownerId: '负责人',
     collaboratorIds: '参与人员',
     projectId: '所属项目',
+    isTemporary: '临时目标',
+    temporaryReason: '临时目标原因',
   }
   if (!after || typeof after !== 'object') return null
   const old =
@@ -1010,6 +1060,8 @@ function HistoryDiff({
   const display = (key: string, value: unknown) =>
     value === undefined || value === '' || value === null
       ? '未填写'
+      : key === 'isTemporary'
+        ? value ? '是' : '否'
       : key === 'ownerId'
         ? nameOf(data, String(value))
         : key === 'collaboratorIds'

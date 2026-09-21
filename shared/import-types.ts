@@ -4,11 +4,23 @@ export interface ImportRow {
   id: string
   kind: ImportKind
   selected: boolean
+  exclusionReason?: string
+  exclusionKind?: 'task' | 'duplicate' | 'not_task'
+  /** Server-assigned provenance for candidates added during human source review. */
+  manuallyAdded?: boolean
   sourceSheet: string
   sourceRow: number
   sourceText: string
   ownerName: string
   ownerId: string
+  collaboratorNames?: string[]
+  collaboratorIds?: string[]
+  workSource?: 'leader' | 'self' | 'coordination'
+  assignedBy?: string
+  assignedOn?: string
+  /** Human confirmation that the whole task ended, independent of this week's result. */
+  taskCompleted?: boolean
+  completionNote?: string
   projectName: string
   projectId: string
   category: string
@@ -25,10 +37,14 @@ export interface ImportRow {
   monthlyPlanId: string
   linkedRowId: string
   taskId: string
+  /** Missing on legacy rows. Temporary weekly work is independent of monthly goals. */
+  isTemporary?: boolean
+  temporaryReason?: string
   issues: string[]
   monthlyResult?: 'pending' | 'submitted' | 'accepted' | 'not_completed'
   weeklyStatus?: 'planned' | 'doing' | 'blocked' | 'done' | 'not_done'
   result?: { collection: string; id: string }
+  resultDisposition?: 'created' | 'existing'
 }
 export interface ImportBatch {
   id: string
@@ -49,6 +65,11 @@ export interface ImportBatch {
   committedCount?: number
   activatedCount?: number
   skippedCount?: number
+  excludedCount?: number
+  pendingCount?: number
+  requiresCompletionReview?: boolean
+  analysisOptions?: { sheetNames: string[]; instruction: string; period: string; kind?: string }
+  completionReview?: { sourceItemCount: number; reviewedAt: string; reviewedBy: string; reviewedVersion: number; contentFingerprint: string }
   analysis?: { status: 'running' | 'failed' | 'completed'; completedChunks: number; totalChunks: number; error?: string }
 }
 export type ImportBatchSummary = Omit<ImportBatch, 'rows'> & { rowCount: number }

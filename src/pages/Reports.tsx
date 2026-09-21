@@ -15,6 +15,8 @@ import type {
   Report,
   ReportSchedule,
 } from '../../shared/types'
+import { isEffectiveWeeklyRecord } from '../../shared/weekly-record-state'
+import { weeklyRecordState } from '../weekly-submission-flow'
 import { api, json } from '../api'
 import {
   Badge,
@@ -99,6 +101,7 @@ export default function Reports({
   }
   useEffect(() => {
     if (selectedId) return
+    if (intent?.id) { const target = history.find(report => report.id === intent.id); if (target) choose(target); else setError('该报告已删除或当前不可访问'); return }
     if (intent?.action === 'write-weekly') {
       const draft = history.find(
         (report) =>
@@ -110,7 +113,7 @@ export default function Reports({
       return
     }
     if (history[0]) choose(history[0])
-  }, [history, selectedId, intent?.action, entryWeek])
+  }, [history, selectedId, intent?.action, intent?.id, entryWeek])
   useEffect(() => {
     if (!unsaved) return
     const handler = (event: BeforeUnloadEvent) => {
@@ -361,7 +364,7 @@ export default function Reports({
                   </strong>
                   <p>
                     {metrics.weekly.done} 条成员自报完成 ·{' '}
-                    {metrics.weekly.drafts} 条未提交草稿
+                    {metrics.weekly.drafts} 条草稿或待审计划
                   </p>
                 </div>
                 <div>
@@ -438,7 +441,7 @@ export default function Reports({
                       <div>
                         {(selected.type === 'weekly'
                           ? selected.snapshot.weeklyRecords
-                              .filter((r) => r.submitted)
+                              .filter(isEffectiveWeeklyRecord)
                               .map((r) => ({
                                 id: r.id,
                                 title:
@@ -934,7 +937,7 @@ function SourceFacts({ report }: { report: Report }) {
                     </td>
                     <td>
                       {weeklyStatusLabel(r)}
-                      {!r.submitted && <small>未提交草稿，不计正式统计</small>}
+                      {!isEffectiveWeeklyRecord(r) && <small>{weeklyRecordState(r).label}，不计正式统计</small>}
                     </td>
                   </tr>
                 ))}

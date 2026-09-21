@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { canUseAccount } from '../../shared/auth-policy'
+import { accountDisplayName, assignmentAccounts } from '../account-options'
 import { Archive, FolderKanban, Plus, Search } from 'lucide-react'
 import type { Project } from '../../shared/types'
 import { api, json } from '../api'
@@ -168,11 +170,13 @@ export default function Projects({ data, refresh, notify, intent }: PageProps) {
           <Form
             onCancel={() => setEditing(null)}
             onSubmit={async (event) => {
+              const values = Object.fromEntries(new FormData(event.currentTarget))
               await api(
                 project ? `/projects/${project.id}` : '/projects',
                 json(
                   {
-                    ...Object.fromEntries(new FormData(event.currentTarget)),
+                    ...values,
+                    ownerId: values.ownerId || project?.ownerId,
                     ...(project ? { version: project.version } : {}),
                   },
                   project ? 'PATCH' : 'POST',
@@ -205,11 +209,10 @@ export default function Projects({ data, refresh, notify, intent }: PageProps) {
                 name="ownerId"
                 defaultValue={project?.ownerId || data.user.id}
               >
-                {data.users
-                  .filter((user) => user.active || user.id === project?.ownerId)
+                {assignmentAccounts(data.users, project ? [project.ownerId] : [])
                   .map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.name}
+                    <option key={user.id} value={user.id} disabled={!canUseAccount(user)}>
+                      {accountDisplayName(user)}
                     </option>
                   ))}
               </select>

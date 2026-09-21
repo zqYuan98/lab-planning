@@ -78,7 +78,9 @@ export class DomainBase {
     return !!visiblePlan(this.store, actor, plan)
   }
   protected audit(actor: User, entityType: string, entityId: string, action: string, before: unknown, after: unknown, reason = '') {
-    this.store.insert<AuditEvent>('events', { entityType, entityId, actorId: actor.id, action, reason, before, after })
+    const event = this.store.insert<AuditEvent>('events', { entityType, entityId, actorId: actor.id, action, reason, before, after })
+    notifyBusinessEvent(this.store, actor, event)
+    onCollaborationAudit(this.store, actor, event)
   }
   protected owner(actor: User, requested: unknown): string {
     const id = requested === undefined ? actor.id : text(requested, '负责人')
@@ -86,3 +88,5 @@ export class DomainBase {
     return this.activeUser(id).id
   }
 }
+import { notifyBusinessEvent } from './notification-events.ts'
+import { onCollaborationAudit } from './collaboration-hooks.ts'

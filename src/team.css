@@ -1,0 +1,188 @@
+.toolbar.team-toolbar {
+  justify-content: space-between;
+  gap: 16px;
+}
+.team-status-filter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--white);
+}
+.team-status-filter button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.team-status-filter button:hover {
+  background: var(--paper);
+}
+.team-status-filter button.is-selected {
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 600;
+}
+.team-status-filter button span {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+.team-account-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+.team-account-actions .text-button {
+  min-height: 36px;
+}
+.team-account-actions .team-delete-button {
+  color: #ad344b;
+}
+.team-account-hint {
+  margin: 8px 0 20px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.team-delete-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 20px;
+  width: 100%;
+  grid-column: 1 / -1;
+}
+.team-delete-entry p {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.team-delete-entry .button {
+  flex-shrink: 0;
+}
+.account-delete-dialog {
+  --account-danger: #ad344b;
+}
+.account-delete-person {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--paper);
+  margin-bottom: 20px;
+}
+.account-delete-person > div {
+  flex: 1;
+  min-width: 0;
+}
+.account-delete-person strong,
+.account-delete-person p {
+  overflow-wrap: anywhere;
+}
+.account-delete-person p {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.account-delete-person .avatar {
+  flex-shrink: 0;
+}
+.account-delete-person > .badge {
+  flex-shrink: 0;
+}
+.account-delete-loading,
+.account-delete-guidance {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  line-height: 1.7;
+}
+.account-delete-loading svg,
+.account-delete-guidance svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+.account-delete-guidance p {
+  margin: 5px 0 0;
+  color: var(--text-secondary);
+}
+.account-delete-blockers {
+  list-style: none;
+  padding: 0;
+  margin: 18px 0 0;
+  border-top: 1px solid var(--border);
+}
+.account-delete-blockers li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.account-delete-description {
+  margin: 0 0 20px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+.account-delete-actions {
+  flex-wrap: wrap;
+}
+.account-delete-dialog .button.danger {
+  background: var(--account-danger);
+  color: #fff;
+}
+.account-delete-dialog .button.danger:hover:not(:disabled) {
+  background: #92283c;
+}
+@media (max-width: 600px) {
+  .toolbar.team-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .team-status-filter {
+    width: 100%;
+  }
+  .team-status-filter button {
+    flex: 1;
+    min-height: 44px;
+    padding-inline: 8px;
+  }
+  .toolbar.team-toolbar .search-input {
+    width: 100%;
+    min-width: 0;
+  }
+  .team-account-actions .text-button {
+    min-height: 44px;
+  }
+  .team-delete-entry {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .account-delete-person {
+    padding: 12px;
+    gap: 10px;
+  }
+  .account-delete-actions > .button {
+    flex: 1 1 auto;
+    min-height: 44px;
+  }
+}

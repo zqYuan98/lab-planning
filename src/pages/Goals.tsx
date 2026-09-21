@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { canUseAccount } from '../../shared/auth-policy'
+import { accountDisplayName, assignmentAccounts } from '../account-options'
 import { Plus, Target } from 'lucide-react'
 import type { AnnualGoal } from '../../shared/types'
 import { api, json } from '../api'
@@ -138,6 +140,7 @@ export default function Goals({ data, refresh, notify }: PageProps) {
                 json(
                   {
                     ...values,
+                    ownerId: values.ownerId || goal?.ownerId,
                     year: Number(values.year),
                     progress: Number(values.progress),
                     ...(goal ? { version: goal.version } : {}),
@@ -174,11 +177,10 @@ export default function Goals({ data, refresh, notify }: PageProps) {
                   name="ownerId"
                   defaultValue={goal?.ownerId || data.user.id}
                 >
-                  {data.users
-                    .filter((user) => user.active || user.id === goal?.ownerId)
+                  {assignmentAccounts(data.users, goal ? [goal.ownerId] : [])
                     .map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.name}
+                      <option key={user.id} value={user.id} disabled={!canUseAccount(user)}>
+                        {accountDisplayName(user)}
                       </option>
                     ))}
                 </select>

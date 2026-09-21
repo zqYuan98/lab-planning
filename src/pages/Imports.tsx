@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import WorkflowGuide from '../components/WorkflowGuide'
+import ImportDeleteDialog, { type ImportDeleteTarget } from '../components/ImportDeleteDialog'
+import ImportSourceReview from '../components/ImportSourceReview'
+import { canRequestImportReview, importAnalysisRequest, importReconciliationText, importReviewCounts, importReviewRequired, importRowDisposition, importRowOutcomeLabel, importWorkFields, newImportCandidate, restoredImportOptions, selectImportTask, type ImportWorkFields } from '../import-review'
 import {
   Archive,
   ArrowRight,
@@ -13,6 +16,7 @@ import {
   RefreshCw,
   Settings2,
   Sparkles,
+  Trash2,
   Upload,
 } from 'lucide-react'
 import type {
@@ -23,13 +27,20 @@ import type {
   ImportRow,
   IntegrationTokenView,
 } from '../../shared/import-types'
-import { registrationApproved } from '../../shared/auth-policy'
+import { canUseAccount } from '../../shared/auth-policy'
+import { accountDisplayName } from '../account-options'
 import {
   importedMonthlyResult,
   importedWeeklyStatus,
 } from '../../shared/import-status'
 import type { Navigate } from '../navigation'
 import { api, json } from '../api'
+import {
+  filesFromTransfer,
+  hasTransferredFiles,
+  importFileError,
+  importFileName,
+} from '../import-input'
 import {
   Badge,
   Empty,
@@ -85,7 +96,7 @@ function savedBatchLabel(mode: ImportBatch['mode']) {
       : '历史资料已保存'
 }
 function savedBatchCounts(batch: ImportBatch) {
-  return `新增 ${batch.committedCount || 0} 条${batch.mode === 'existing' ? `、原草稿转生效 ${batch.activatedCount || 0} 条` : ''}、重复跳过 ${batch.skippedCount || 0} 条`
+  return `${importReconciliationText(batch.rows)}；本次新增 ${batch.committedCount || 0} 项${batch.mode === 'existing' ? `、原草稿转生效 ${batch.activatedCount || 0} 项` : ''}、已有记录 ${batch.skippedCount || 0} 项`
 }
 function optionalSourceGaps(row: ImportRow) {
   return [
@@ -107,6 +118,11 @@ type Bulk = {
   projectId: string
   category: string
   monthlyPlanId: string
+  kind: '' | ImportKind
+  nature: '' | 'regular' | 'temporary'
+  month: string
+  weekStart: string
+  temporaryReason: string
 }
 interface HistoricalRecord {
   id: string
@@ -150,6 +166,11 @@ const emptyBulk: Bulk = {
   projectId: '',
   category: '',
   monthlyPlanId: '',
+  kind: '',
+  nature: '',
+  month: '',
+  weekStart: '',
+  temporaryReason: '',
 }
 
 async function fileBase64(file: File): Promise<string> {
@@ -177,12 +198,17 @@ export default function Imports({
   const [pollError, setPollError] = useState('')
   const [pasted, setPasted] = useState('')
   const [showPaste, setShowPaste] = useState(false)
+  const [draggingFiles, setDraggingFiles] = useState(false)
+  const [uploadResults, setUploadResults] = useState<
+    { name: string; status: 'waiting' | 'uploading' | 'saved' | 'failed'; error?: string }[]
+  >([])
   const [sheetNames, setSheetNames] = useState<string[]>([])
   const [parseKind, setParseKind] = useState<ImportKind>('monthly')
   const [period, setPeriod] = useState('')
   const [instruction, setInstruction] = useState('')
-  const [forceRefresh, setForceRefresh] = useState(false)
   const [editing, setEditing] = useState<ImportRow | null>(null)
+  const detachedWorkSource = useRef<{ rowId: string; fields: ImportWorkFields } | null>(null)
+  const [exclusion, setExclusion] = useState<{ ids: string[]; reason: string; kind: 'task' | 'duplicate' | 'not_task' } | null>(null)
   const [editingHistory, setEditingHistory] = useState<HistoricalRecord | null>(
     null,
   )
@@ -206,6 +232,7 @@ export default function Imports({
   const [historyRecord, setHistoryRecord] = useState<HistoricalRecord | null>(
     null,
   )
+  const [deleteTarget, setDeleteTarget] = useState<ImportDeleteTarget | null>(null)
   const [restorePacket, setRestorePacket] = useState<unknown>(null)
   const [restoreFileName, setRestoreFileName] = useState('')
   const [restorePreview, setRestorePreview] = useState<RestorePreview | null>(
@@ -222,13 +249,14 @@ export default function Imports({
     skipped: number
   } | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
+  const pasteInput = useRef<HTMLTextAreaElement>(null)
+  const dragDepth = useRef(0)
   const lock = useRef(false)
   const activeBatchId = useRef<string | null>(null)
   const interactionCount = useRef(0)
   const activeUsers = data.users.filter(
     (user) =>
-      user.active &&
-      registrationApproved(user) &&
+      canUseAccount(user) &&
       (manager || user.id === data.user.id),
   )
   const activeProjects = data.projects.filter(
@@ -237,8 +265,16 @@ export default function Imports({
   const availablePlans = data.plans.filter((plan) => plan.status !== 'merged')
   const selected = batch?.rows.filter((row) => row.selected) || []
   const selectedIssues = selected.filter((row) => row.issues.length)
+  const reviewCounts = importReviewCounts(batch?.rows || [])
   const immutable = batch?.status === 'committed'
   const readOnlyEditor = immutable && !editingHistory
+  const editingNew = !!editing?.id.startsWith('new:') && !editingHistory
+  const editingTaskLocked = !editingHistory && !readOnlyEditor && !!editing?.taskId
+  const editingTask =
+    editing?.kind === 'weekly' && editingTaskLocked
+      ? data.tasks.find((task) => task.id === editing.taskId)
+      : undefined
+  const editingTemporary = editingTask?.isTemporary ?? !!editing?.isTemporary
   const parsing = batch?.analysis?.status === 'running'
   const batchBusy = !!busy || parsing
   const visibleBatches = pendingOnly
@@ -251,7 +287,7 @@ export default function Imports({
   ).length
   const visibleHistory = history.filter((item) => {
     const row = item.row
-    return `${row.title} ${row.ownerName} ${row.projectName} ${row.month} ${row.weekStart} ${row.category} ${row.sourceText}`
+    return `${row.title} ${row.ownerName} ${row.projectName} ${row.month} ${row.weekStart} ${row.category} ${row.sourceText} ${row.isTemporary ? '临时交办' : ''} ${row.temporaryReason || ''}`
       .toLowerCase()
       .includes(historyQuery.trim().toLowerCase())
   })
@@ -269,10 +305,11 @@ export default function Imports({
       ...previous.filter((item) => item.id !== next.id),
     ])
     if (resetSheets) {
-      setSheetNames(next.sourceSheets.length ? [next.sourceSheets[0].name] : [])
-      setInstruction('')
-      setForceRefresh(false)
-      setPeriod('')
+      const options = restoredImportOptions(next)
+      setSheetNames(options.sheetNames)
+      setInstruction(options.instruction)
+      setParseKind(options.kind)
+      setPeriod(options.period)
       setBulk(emptyBulk)
     }
   }
@@ -357,7 +394,7 @@ export default function Imports({
         setPollError('')
         acceptBatch(next)
         if (next.analysis?.status === 'completed')
-          notify(`解析完成，共 ${next.rows.length} 条记录，请校对后保存。`)
+          notify(`解析完成，生成 ${next.rows.length} 项候选。请对照原始资料核对是否收全。`)
         if (next.analysis?.status !== 'running') return
       } catch (cause) {
         if (cancelled) return
@@ -403,25 +440,90 @@ export default function Imports({
     acceptBatch(saved)
   }
 
-  async function upload(file: File) {
+  async function saveCompletionReview(sourceItemCount: number) {
+    if (!batch) return
+    await run('正在保存完整性核对', async () => {
+      acceptBatch(await api<ImportBatch>(`/imports/${batch.id}`, json({
+        version: batch.version, mode: batch.mode, rows: batch.rows,
+        completionReview: { confirmed: true, sourceItemCount },
+      }, 'PATCH')))
+      notify('完整性核对已记录，可以确认保存。')
+    })
+  }
+
+  function selectRows(ids: string[], checked: boolean) {
+    if (!batch) return
+    if (!checked) {
+      const row = ids.length === 1 ? batch.rows.find(row => row.id === ids[0]) : undefined
+      setExclusion({ ids, reason: row?.exclusionReason || '', kind: row?.exclusionKind || 'task' })
+      return
+    }
+    void run('正在保存选择', () => saveRows(batch.rows.map(row => ids.includes(row.id)
+      ? { ...row, selected: true, exclusionReason: '', exclusionKind: 'task' } : row)))
+  }
+
+  async function parseSource(resumeFailed = false) {
+    if (!batch) return
+    const options = resumeFailed ? restoredImportOptions(batch) : { sheetNames, instruction, period, kind: parseKind }
+    await run(resumeFailed ? '正在续跑上次解析' : '正在启动智能识别', async () => {
+      const next = await api<ImportBatch>(`/imports/${batch.id}/analyze`, json(importAnalysisRequest(batch, options, resumeFailed)))
+      acceptBatch(next)
+      if (resumeFailed) {
+        setSheetNames(options.sheetNames); setInstruction(options.instruction)
+        setPeriod(options.period); setParseKind(options.kind)
+      }
+      notify(next.analysis?.status === 'running'
+        ? '后台识别已开始，可以离开页面后继续查看。'
+        : '识别完成，请对照原始资料核对是否收全。')
+    })
+  }
+
+  async function upload(files: File[], transferIssues: string[] = []) {
+    if (lock.current) {
+      setError('当前操作尚未完成，请稍后重新拖入、粘贴或选择文件。')
+      return
+    }
+    if (!files.length) {
+      if (transferIssues.length) setError(transferIssues.join(' '))
+      return
+    }
     await run('正在保存原始文件', async () => {
-      if (file.size > 10 * 1024 * 1024)
-        throw new Error('文件大小不能超过 10 MB。请分批导入。')
-      if (!/\.(xlsx|csv|tsv|txt|png|jpe?g|webp)$/i.test(file.name))
-        throw new Error(
-          '请选择 XLSX、CSV、TSV、TXT 或 PNG/JPG/WebP 图片。旧版 XLS 请先另存为 XLSX。',
-        )
-      const next = await api<ImportBatch>(
-        '/imports',
-        json({
-          fileName: file.name,
-          mode: 'existing',
-          mimeType: file.type,
-          base64: await fileBase64(file),
-        }),
-      )
-      acceptBatch(next, true)
-      notify('原始文件已保存，可设置解析选项并开始解析。')
+      setUploadResults(files.map((file) => ({ name: importFileName(file), status: 'waiting' })))
+      let saved = 0
+      const failures = [...transferIssues]
+      for (const [index, file] of files.entries()) {
+        const name = importFileName(file)
+        const updateResult = (status: 'uploading' | 'saved' | 'failed', error?: string) =>
+          setUploadResults((previous) => previous.map((result, resultIndex) =>
+            resultIndex === index ? { name, status, error } : result,
+          ))
+        setBusy(`正在保存原始文件 ${index + 1}/${files.length}：${name}`)
+        try {
+          const validationError = importFileError(file)
+          if (validationError) throw new Error(validationError)
+          updateResult('uploading')
+          const next = await api<ImportBatch>(
+            '/imports',
+            json({
+              fileName: name,
+              mode: 'existing',
+              mimeType: file.type,
+              base64: await fileBase64(file),
+            }),
+          )
+          acceptBatch(next, true)
+          saved++
+          updateResult('saved')
+        } catch (cause) {
+          const message = cause instanceof Error ? cause.message : '保存失败，请重新上传。'
+          failures.push(`${name}：${message}`)
+          updateResult('failed', message)
+        }
+      }
+      if (saved)
+        notify(`已保存 ${saved} 个文件，每个文件对应一个导入批次，请逐一解析和校对。`)
+      if (failures.length)
+        setError(`有 ${failures.length} 项未保存。${transferIssues.join(' ')}${files.length ? '请查看文件处理结果后重试。' : ''}`)
     })
   }
 
@@ -454,6 +556,7 @@ export default function Imports({
 
   function closeEditor() {
     setEditing(null)
+    detachedWorkSource.current = null
     setEditingHistory(null)
     setCorrectionReason('')
   }
@@ -471,11 +574,67 @@ export default function Imports({
       navigate('weekly', { id: row.result.id, weekStart: row.weekStart })
   }
 
+  function requestHistoryDelete(record: HistoricalRecord) {
+    setHistoryRecord(null)
+    setDeleteTarget({ kind: 'history', id: record.id, version: record.version, title: record.row.title || '未命名工作记录' })
+  }
+
+  function finishDelete(target: ImportDeleteTarget, deletedHistoryCount: number) {
+    if (target.kind === 'batch') {
+      setBatches((previous) => previous.filter((item) => item.id !== target.id))
+      setHistory((previous) => previous.filter((item) => item.batchId !== target.id))
+      if (activeBatchId.current === target.id) {
+        activeBatchId.current = null
+        setBatch(null)
+        setPollError('')
+        setSheetNames([])
+        setBulk(emptyBulk)
+        closeEditor()
+      }
+      try {
+        const key = `lab-import-batch:${data.user.id}`
+        if (localStorage.getItem(key) === target.id) localStorage.removeItem(key)
+      } catch { /* The server deletion has already succeeded. */ }
+      notify(`导入批次已删除${deletedHistoryCount ? `，同时删除 ${deletedHistoryCount} 条历史资料` : ''}。已生成的计划和报告保留。`)
+    } else {
+      setHistory((previous) => previous.filter((item) => item.id !== target.id))
+      notify('历史资料已删除，来源批次及其他记录保留。')
+    }
+    setError('')
+    setDeleteTarget(null)
+  }
+
   return (
-    <div className="imports-page">
+    <div
+      className="imports-page"
+      onDragEnter={(event) => {
+        if (!hasTransferredFiles(event.dataTransfer)) return
+        event.preventDefault()
+        dragDepth.current++
+        setDraggingFiles(true)
+      }}
+      onDragOver={(event) => {
+        if (!hasTransferredFiles(event.dataTransfer)) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = busy ? 'none' : 'copy'
+      }}
+      onDragLeave={(event) => {
+        if (!hasTransferredFiles(event.dataTransfer)) return
+        dragDepth.current = Math.max(0, dragDepth.current - 1)
+        if (!dragDepth.current) setDraggingFiles(false)
+      }}
+      onDrop={(event) => {
+        if (!hasTransferredFiles(event.dataTransfer)) return
+        event.preventDefault()
+        dragDepth.current = 0
+        setDraggingFiles(false)
+        const { files, issues } = filesFromTransfer(event.dataTransfer)
+        void upload(files, issues)
+      }}
+    >
       <PageHeader
         title="数据导入"
-        description="把已有表格、文字和截图变成可校对的数据，原始资料与导入批次始终可追溯。"
+        description="把已有表格、文字和截图变成可校对的数据，支持管理导入批次与历史资料。"
         actions={
           <Badge tone={configured ? 'green' : 'neutral'}>
             {configured ? 'AI 解析已配置' : 'AI 解析待配置'}
@@ -506,17 +665,29 @@ export default function Imports({
           {busy}…
         </div>
       )}
-      <section className="import-upload panel">
+      <section
+        className={`import-upload panel${draggingFiles ? ' is-dragging' : ''}`}
+        tabIndex={0}
+        aria-label="文件拖放与粘贴导入区域"
+        aria-describedby="import-upload-help"
+        aria-busy={!!busy}
+        onPaste={(event) => {
+          if (!hasTransferredFiles(event.clipboardData)) return
+          event.preventDefault()
+          const { files, issues } = filesFromTransfer(event.clipboardData)
+          void upload(files, issues)
+        }}
+      >
         <div className="import-upload-copy">
           <span className="import-upload-icon">
             <FileInput size={28} strokeWidth={1.6} />
           </span>
           <div>
             <h2>从现有资料开始</h2>
-            <p>Excel / 钉钉导出表格、文字、截图，单个文件最大 10 MB。</p>
+            <p id="import-upload-help">将文件或图片拖到此页，或点击此区域后按 Ctrl / ⌘ + V 粘贴截图。</p>
             <small>
               支持 XLSX、CSV、TSV、TXT、PNG、JPG、WebP。钉钉表格可先导出为
-              Excel。
+              Excel。支持多文件，每个文件单独建立批次，单个文件最大 10 MB。
             </small>
           </div>
         </div>
@@ -525,13 +696,14 @@ export default function Imports({
             ref={fileInput}
             className="import-file-input"
             type="file"
+            multiple
             accept=".xlsx,.csv,.tsv,.txt,.png,.jpg,.jpeg,.webp"
             aria-label="选择导入文件"
             disabled={!!busy}
             onChange={(event) => {
-              const file = event.target.files?.[0]
+              const files = Array.from(event.target.files || [])
               event.target.value = ''
-              if (file) void upload(file)
+              if (files.length) void upload(files)
             }}
           />
           <button
@@ -545,20 +717,43 @@ export default function Imports({
           <button
             className="button secondary"
             disabled={!!busy}
-            onClick={() => setShowPaste((value) => !value)}
+            onClick={() => {
+              setShowPaste((value) => !value)
+              if (!showPaste) window.setTimeout(() => pasteInput.current?.focus(), 0)
+            }}
           >
             <FileText size={16} />
             粘贴内容
           </button>
         </div>
+        {draggingFiles && (
+          <div className="import-drop-status" role="status">
+            <Upload size={18} />
+            {busy ? '当前操作进行中，请稍后重新拖入文件' : '松开即可保存文件或图片，支持一次拖入多个文件'}
+          </div>
+        )}
+        {uploadResults.length > 0 && (
+          <ul className="import-upload-results" aria-label="文件处理结果" aria-live="polite">
+            {uploadResults.map((result, index) => (
+              <li key={index} className={result.status === 'failed' ? 'has-error' : ''}>
+                <span>{result.name}</span>
+                <small>
+                  {result.status === 'waiting' ? '等待保存' : result.status === 'uploading' ? '正在保存…' : result.status === 'saved' ? '已保存为导入批次' : result.error}
+                </small>
+              </li>
+            ))}
+          </ul>
+        )}
         {showPaste && (
           <div className="import-paste">
             <Field label="粘贴表格或工作记录">
               <textarea
+                ref={pasteInput}
                 rows={6}
+                disabled={!!busy}
                 value={pasted}
                 onChange={(event) => setPasted(event.target.value)}
-                placeholder="直接粘贴 Excel 单元格、钉钉工作记录或旧计划文字…"
+                placeholder="直接粘贴 Excel 单元格、钉钉工作记录或旧计划文字；粘贴截图或文件会直接保存为导入批次…"
               />
             </Field>
             <button
@@ -645,14 +840,13 @@ export default function Imports({
                       : item.reviewRequestedAt && item.status !== 'committed'
                         ? '待管理员确认'
                         : batchLabels[item.status]}{' '}
-                    · {item.rowCount} 条
+                    · 候选 {item.rowCount} 项{item.excludedCount ? ` · ${item.excludedCount} 项未导入` : ''}
                   </span>
                   <small>{dateTime(item.createdAt)}</small>
                   {manager && (
                     <small>
                       整理：
-                      {data.users.find((user) => user.id === item.ownerId)
-                        ?.name || '原账号'}
+                      {accountDisplayName(data.users.find((user) => user.id === item.ownerId), '原账号')}
                     </small>
                   )}
                 </button>
@@ -688,13 +882,23 @@ export default function Imports({
                   <h2>{batch.fileName}</h2>
                   <p>{dateTime(batch.updatedAt)} 更新</p>
                 </div>
-                <a
-                  className="button secondary"
-                  href={`/api/imports/${batch.id}/source`}
-                >
-                  <Download size={15} />
-                  原始文件
-                </a>
+                <div className="import-detail-actions">
+                  <a className="button secondary" href={`/api/imports/${batch.id}/source`}>
+                    <Download size={15} />
+                    原始文件
+                  </a>
+                  {(manager || batch.ownerId === data.user.id) && (
+                    <button
+                      className="button secondary import-delete-button"
+                      disabled={batchBusy || loading}
+                      title={parsing ? '解析完成后可删除此批次' : '删除导入批次及其归档历史资料'}
+                      onClick={() => setDeleteTarget({ kind: 'batch', id: batch.id, version: batch.version, title: batch.fileName })}
+                    >
+                      <Trash2 size={15} />
+                      删除批次
+                    </button>
+                  )}
+                </div>
               </div>
               {!!batch.warnings.length && (
                 <div className="import-notice">
@@ -707,8 +911,8 @@ export default function Imports({
                 <div className="import-confirmation-note">
                   <strong>
                     {manager
-                      ? '成员已整理完成，请确认导入已有计划'
-                      : '已交管理员确认'}
+                      ? '成员提交了导入资料，请核对完整性及待补项'
+                      : '已交管理员核对'}
                   </strong>
                   <p>
                     {dateTime(batch.reviewRequestedAt)} ·
@@ -740,7 +944,7 @@ export default function Imports({
                   </p>
                   <small>
                     {batch.analysis.completedChunks > 0
-                      ? '已完成的分段结果保留，使用相同选项重试可继续处理。'
+                      ? '已完成的分段结果保留；“继续上次解析”沿用保存的选项及分段，“重新识别”会重新调用 AI。'
                       : '原始资料已保留，修正问题后可直接重试，无需重新上传。'}
                   </small>
                 </div>
@@ -853,16 +1057,7 @@ export default function Imports({
                           maxLength={4000}
                         />
                       </Field>
-                      <label className="import-force-refresh">
-                        <input
-                          type="checkbox"
-                          checked={forceRefresh}
-                          onChange={(event) =>
-                            setForceRefresh(event.target.checked)
-                          }
-                        />
-                        重新调用模型（不复用已有解析片段）
-                      </label>
+                      <p className="import-reparse-note">重新识别会重新调用 AI。发现遗漏后，请重新识别或直接补录候选；已有校对和完整性确认需要重做。</p>
                       <div className="import-parser-footer">
                         <p>
                           {batch.kind === 'image'
@@ -879,33 +1074,15 @@ export default function Imports({
                             (batch.sourceSheets.length > 0 &&
                               !sheetNames.length)
                           }
-                          onClick={() =>
-                            void run('正在启动智能解析', async () => {
-                              const next = await api<ImportBatch>(
-                                `/imports/${batch.id}/analyze`,
-                                json({
-                                  version: batch.version,
-                                  ...(batch.kind === 'table'
-                                    ? { sheets: sheetNames }
-                                    : {}),
-                                  instruction,
-                                  forceRefresh,
-                                  kind: parseKind,
-                                  ...(period ? { period } : {}),
-                                }),
-                              )
-                              acceptBatch(next)
-                              notify(
-                                next.analysis?.status === 'running'
-                                  ? '后台解析已开始，可以离开页面后继续查看。'
-                                  : '解析完成，请核对负责人、日期及关联关系。',
-                              )
-                            })
-                          }
+                          onClick={() => void parseSource()}
                         >
                           <Sparkles size={16} />
-                          {batch.rows.length ? '重新解析' : '智能解析'}
+                          {batch.rows.length ? '重新识别（重新调用 AI）' : '智能识别'}
                         </button>
+                        {batch.analysis?.status === 'failed' && batch.analysisOptions && <button
+                          className="button secondary" disabled={batchBusy || !configured}
+                          onClick={() => void parseSource(true)}
+                        >继续上次解析（保留已完成分段）</button>}
                       </div>
                       {!configured && (
                         <p className="import-notice">
@@ -918,6 +1095,12 @@ export default function Imports({
                   </div>
                 </details>
               )}
+              <ImportSourceReview key={batch.id} batch={batch} disabled={batchBusy}
+                reviewerName={data.users.find(user => user.id === batch.completionReview?.reviewedBy)?.name}
+                onConfirm={saveCompletionReview} />
+              {!immutable && !batch.rows.length && <button className="button secondary" disabled={batchBusy}
+                onClick={() => setEditing(newImportCandidate(batch, crypto.randomUUID()))}
+              >按原始资料手动补录事项</button>}
               {(batch.status !== 'uploaded' || batch.rows.length > 0) && (
                 <>
                   {!immutable && (
@@ -958,9 +1141,62 @@ export default function Imports({
                   {!immutable && !!batch.rows.length && (
                     <div className="import-bulk">
                       <div className="import-section-title">
-                        <h3>批量匹配</h3>
+                        <h3>批量设置</h3>
                         <span>应用到勾选的 {selected.length} 条记录</span>
                       </div>
+                      <div className="import-bulk-plan">
+                        <Field label="纳入计划">
+                          <select
+                            aria-label="批量纳入计划"
+                            value={bulk.kind}
+                            onChange={(event) =>
+                              setBulk({ ...bulk, kind: event.target.value as Bulk['kind'], month: '', weekStart: '' })
+                            }
+                          >
+                            <option value="">保持原计划类型</option>
+                            <option value="monthly">月度计划</option>
+                            <option value="weekly">每周计划</option>
+                          </select>
+                        </Field>
+                        <Field label="任务性质">
+                          <select
+                            aria-label="批量设置任务性质"
+                            value={bulk.nature}
+                            onChange={(event) =>
+                              setBulk({ ...bulk, nature: event.target.value as Bulk['nature'], temporaryReason: '' })
+                            }
+                          >
+                            <option value="">保持原任务性质</option>
+                            <option value="regular">常规工作</option>
+                            <option value="temporary">临时交办</option>
+                          </select>
+                        </Field>
+                        {bulk.kind && (
+                          <Field label={bulk.kind === 'monthly' ? '所属月份（留空保留原值）' : '所属周（留空保留原值）'}>
+                            <input
+                              type={bulk.kind === 'monthly' ? 'month' : 'date'}
+                              value={bulk.kind === 'monthly' ? bulk.month : bulk.weekStart}
+                              onChange={(event) => setBulk({ ...bulk, [bulk.kind === 'monthly' ? 'month' : 'weekStart']: event.target.value })}
+                            />
+                          </Field>
+                        )}
+                        {bulk.nature === 'temporary' && (
+                          <div className="import-bulk-reason">
+                            <Field label="交办说明（入计划前必填）" hint="例如：领导临时交办客户演示，下周三前完成。留空时保留各条原说明，也可逐条补充。">
+                              <textarea
+                                aria-label="批量交办说明"
+                                rows={2}
+                                maxLength={2000}
+                                value={bulk.temporaryReason}
+                                onChange={(event) => setBulk({ ...bulk, temporaryReason: event.target.value })}
+                              />
+                            </Field>
+                          </div>
+                        )}
+                      </div>
+                      {!!selected.some((row) => row.taskId) && (
+                        <p className="import-bulk-hint">已关联个人任务的记录沿用该任务的性质与月度关联，批量设置不会将它改为新任务。</p>
+                      )}
                       <div className="import-bulk-fields">
                         <select
                           aria-label="批量匹配负责人"
@@ -1002,6 +1238,7 @@ export default function Imports({
                         <select
                           aria-label="批量匹配周记录的月度目标"
                           value={bulk.monthlyPlanId}
+                          disabled={bulk.nature === 'temporary'}
                           onChange={(event) =>
                             setBulk({
                               ...bulk,
@@ -1026,11 +1263,23 @@ export default function Imports({
                           onClick={() =>
                             void run('正在保存批量匹配', async () => {
                               await saveRows(
-                                batch.rows.map((row) =>
-                                  !row.selected
-                                    ? row
-                                    : {
+                                batch.rows.map((row) => {
+                                  if (!row.selected) return row
+                                  const task = row.taskId ? data.tasks.find((item) => item.id === row.taskId) : undefined
+                                  const kind = row.taskId ? row.kind : bulk.kind || row.kind
+                                  const isTemporary = task?.isTemporary ?? (row.taskId ? !!row.isTemporary : bulk.nature ? bulk.nature === 'temporary' : !!row.isTemporary)
+                                  return {
                                         ...row,
+                                         kind,
+                                         ...(kind === 'monthly' ? { taskCompleted: false, completionNote: '' } : {}),
+                                        isTemporary,
+                                        temporaryReason: task
+                                          ? task.temporaryReason
+                                          : isTemporary
+                                            ? (!row.taskId && bulk.nature === 'temporary' && bulk.temporaryReason.trim()) || row.temporaryReason || ''
+                                            : '',
+                                        ...(bulk.month && kind === 'monthly' ? { month: bulk.month } : {}),
+                                        ...(bulk.weekStart && kind === 'weekly' ? { weekStart: bulk.weekStart } : {}),
                                         ...(bulk.ownerId
                                           ? {
                                               ownerId: bulk.ownerId,
@@ -1059,15 +1308,15 @@ export default function Imports({
                                           ? { category: bulk.category }
                                           : {}),
                                         ...(bulk.monthlyPlanId &&
-                                        row.kind === 'weekly'
+                                        kind === 'weekly' && !isTemporary && !row.taskId
                                           ? {
                                               monthlyPlanId: bulk.monthlyPlanId,
                                               linkedRowId: '',
-                                              taskId: '',
                                             }
                                           : {}),
-                                      },
-                                ),
+                                        ...(!row.taskId && (kind === 'monthly' || isTemporary) ? { monthlyPlanId: '', linkedRowId: '' } : {}),
+                                      }
+                                }),
                               )
                               setBulk(emptyBulk)
                               notify('批量匹配已保存')
@@ -1087,8 +1336,11 @@ export default function Imports({
                     <span>
                       {immutable
                         ? savedBatchCounts(batch)
-                        : `已勾选 ${selected.length} 条 · ${selectedIssues.length} 条有待补项`}
+                        : `${importReconciliationText(batch.rows)} · ${selectedIssues.length} 项有待补项`}
                     </span>
+                    {!immutable && <button className="button secondary" disabled={batchBusy}
+                      onClick={() => setEditing(newImportCandidate(batch, crypto.randomUUID()))}
+                    >补录遗漏事项</button>}
                   </div>
                   {batch.rows.length ? (
                     <div className="table-scroll import-table-scroll">
@@ -1106,14 +1358,7 @@ export default function Imports({
                                   disabled={batchBusy}
                                   onChange={(event) => {
                                     const checked = event.target.checked
-                                    void run('正在保存选择', () =>
-                                      saveRows(
-                                        batch.rows.map((row) => ({
-                                          ...row,
-                                          selected: checked,
-                                        })),
-                                      ),
-                                    )
+                                    selectRows(batch.rows.map(row => row.id), checked)
                                   }}
                                 />
                               )}
@@ -1148,15 +1393,7 @@ export default function Imports({
                                     disabled={batchBusy}
                                     onChange={(event) => {
                                       const checked = event.target.checked
-                                      void run('正在保存选择', () =>
-                                        saveRows(
-                                          batch.rows.map((item) =>
-                                            item.id === row.id
-                                              ? { ...item, selected: checked }
-                                              : item,
-                                          ),
-                                        ),
-                                      )
+                                      selectRows([row.id], checked)
                                     }}
                                   />
                                 )}
@@ -1165,9 +1402,12 @@ export default function Imports({
                                 <Badge>
                                   {row.kind === 'monthly' ? '月度' : '每周'}
                                 </Badge>
+                                {row.isTemporary && <span className="import-temporary-badge">临时交办</span>}
                                 <strong className="import-row-title">
                                   {row.title || '待补充工作事项'}
                                 </strong>
+                                {!row.selected && <p className="import-exclusion-reason">{row.exclusionKind === 'duplicate' ? '重复候选' : row.exclusionKind === 'not_task' ? '非工作事项' : '本次不导入的工作'}：{row.exclusionReason || (immutable ? '历史未记录排除原因' : '请填写排除原因')}</p>}
+                                {row.isTemporary && <small className="import-temporary-reason">交办说明：{row.temporaryReason || '待补充'}</small>}
                                 {batch.mode === 'existing' && (
                                   <div className="import-row-destination">
                                     <strong>
@@ -1206,11 +1446,9 @@ export default function Imports({
                               </td>
                               <td>
                                 <strong>
-                                  {data.users.find(
+                                  {accountDisplayName(data.users.find(
                                     (user) => user.id === row.ownerId,
-                                  )?.name ||
-                                    row.ownerName ||
-                                    '未识别负责人'}
+                                  ), row.ownerName || '未识别负责人')}
                                 </strong>
                                 <small>
                                   {row.kind === 'monthly'
@@ -1224,6 +1462,10 @@ export default function Imports({
                                       ? '截止日期待确认'
                                       : '截止日期：原表未注明'}
                                 </small>
+                                {!!row.collaboratorIds?.length && <small>协作：{row.collaboratorIds.map(id => data.users.find(user => user.id === id)?.name || '原成员').join('、')}</small>}
+                                {!!row.collaboratorNames?.length && <small>原文协作人：{row.collaboratorNames.join('、')}</small>}
+                                <small>来源：{row.workSource === 'leader' ? '领导交办' : row.workSource === 'self' ? '自主安排' : row.workSource === 'coordination' ? '协同事项' : '待核对'}{row.assignedBy ? ` · ${row.assignedBy}` : ''}{row.assignedOn ? ` · ${row.assignedOn}` : ''}</small>
+                                {row.kind === 'weekly' && <small>整件任务：{row.taskCompleted ? '已明确整体完成' : row.taskCompleted === false ? '尚未整体完成' : '整体完成待核对'}</small>}
                               </td>
                               <td>
                                 {data.projects.find(
@@ -1234,7 +1476,9 @@ export default function Imports({
                                   '未匹配'}
                                 {row.kind === 'weekly' && (
                                   <small>
-                                    {data.plans.find(
+                                    {row.isTemporary
+                                      ? '临时任务，无需关联月度目标'
+                                      : data.plans.find(
                                       (plan) => plan.id === row.monthlyPlanId,
                                     )?.title ||
                                       (row.linkedRowId
@@ -1253,7 +1497,7 @@ export default function Imports({
                                   )}
                               </td>
                               <td>
-                                {row.issues.length ? (
+                                {importRowDisposition(row) === 'excluded' ? <span className="import-excluded">{importRowOutcomeLabel(row)}</span> : row.result ? <span className="import-valid"><Check size={13} />{importRowOutcomeLabel(row)}</span> : row.issues.length ? (
                                   <ul className="import-issues">
                                     {row.issues.map((issue, index) => (
                                       <li key={index}>{issue}</li>
@@ -1262,7 +1506,7 @@ export default function Imports({
                                 ) : (
                                   <span className="import-valid">
                                     <Check size={13} />
-                                    {immutable ? '已处理' : '规则校验通过'}
+                                    待处理 · 字段校验通过
                                   </span>
                                 )}
                               </td>
@@ -1298,11 +1542,11 @@ export default function Imports({
                     </div>
                   ) : (
                     <Empty
-                      title="未识别到工作记录"
-                      description="可调整工作表、内容类型或补充说明后重新解析，原始文件已保留。"
+                      title={canRequestImportReview(manager, batch) ? '当前没有本人可见的候选' : '未识别到工作记录'}
+                      description={canRequestImportReview(manager, batch) ? '其他成员的候选由管理员核对。可以将本批次交管理员接续处理，无需重新解析。' : '可调整工作表、内容类型或补充说明后重新解析，原始文件已保留。'}
                     />
                   )}
-                  {!immutable && !!batch.rows.length && (
+                  {!immutable && (!!batch.rows.length || canRequestImportReview(manager, batch)) && (
                     <div className="import-commit">
                       <div>
                         <strong>
@@ -1317,17 +1561,20 @@ export default function Imports({
                             ? `${manager ? '本次确认会直接写入对应月份与周，并保留实际成果及核对后的状态。' : '校对后交管理员确认一次，确认后直接进入对应月份与周，无需成员再次提报。'} 原表未注明的验收标准、预期成果与截止日期可留空；原文“完成”不自动等于已验收。同来源的既有草稿会沿用原编号转为生效计划。`
                             : batch.mode === 'history'
                               ? '勾选记录将与来源一起归档。缺失字段可保留为空，历史状态不自动算作当前成果。'
-                              : manager ? '用于新目标或周任务草稿，需补齐必要信息；月度目标由管理员发布。' : '成员可导入自己的周任务草稿。团队月度目标由管理员创建；月度资料可存为历史，或选择已有计划交管理员确认。'}{' '}
+                              : manager ? '用于新目标或周任务草稿，需补齐必要信息；常规月度目标由管理员发布，临时交办需填写说明。' : '成员可导入自己的周任务草稿及临时月度草稿，临时交办需填写说明。常规团队月度目标由管理员创建；已有计划可交管理员确认。'}{' '}
                           每次校对保存后，可随时离开再继续。
                         </p>
+                        {importReviewRequired(batch) && <p className="import-commit-warning">{!manager && batch.mode === 'existing' ? '可先交管理员核对资料；管理员补齐完整性核对后才能正式导入。' : '请先在“对照原始资料”中保存完整性核对。'}</p>}
+                        {!!reviewCounts.missingReasons && <p className="import-commit-warning">{reviewCounts.missingReasons} 项未选择且缺少排除原因，正式导入前需要补齐。</p>}
+                        {!!reviewCounts.excluded && <p className="import-commit-warning">本次有 {reviewCounts.excluded} 项未选择，将保留候选和原因，不写入计划。</p>}
                       </div>
                       <button
                         className="button primary"
                         disabled={
                           batchBusy ||
-                          !selected.length ||
-                          (!manager && batch.mode === 'draft' && selected.some(row => row.kind === 'monthly')) ||
-                          (batch.mode !== 'history' &&
+                          ((manager || batch.mode !== 'existing') && (!selected.length || reviewCounts.missingReasons > 0 || importReviewRequired(batch))) ||
+                          (!manager && batch.mode === 'draft' && selected.some(row => row.kind === 'monthly' && !row.isTemporary)) ||
+                          ((manager || batch.mode !== 'existing') && batch.mode !== 'history' &&
                             selectedIssues.length > 0) ||
                           (batch.mode === 'existing' &&
                             !manager &&
@@ -1342,7 +1589,7 @@ export default function Imports({
                             acceptBatch(next)
                             if (next.status !== 'committed') {
                               notify(
-                                '已交管理员确认，确认后直接生效，无需再次提报。',
+                                '已交管理员核对；补齐待补项和完整性确认后，由管理员正式导入。',
                               )
                               return
                             }
@@ -1359,8 +1606,8 @@ export default function Imports({
                           ? manager
                             ? `确认 ${selected.length} 条并生效`
                             : batch.reviewRequestedAt
-                              ? '已交管理员确认'
-                              : `交管理员确认 ${selected.length} 条`
+                              ? '已交管理员核对'
+                              : '交管理员核对本批次'
                           : batch.mode === 'history'
                             ? `保存 ${selected.length} 条历史资料`
                             : `生成 ${selected.length} 条新草稿`}
@@ -1443,6 +1690,7 @@ export default function Imports({
                             <strong>
                               {item.row.title || '未命名工作记录'}
                             </strong>
+                            {item.row.isTemporary && <span className="import-temporary-badge">临时交办</span>}
                             <small>
                               {item.row.projectName ||
                                 item.row.category ||
@@ -1450,11 +1698,9 @@ export default function Imports({
                             </small>
                           </td>
                           <td>
-                            {data.users.find(
+                            {accountDisplayName(data.users.find(
                               (user) => user.id === item.row.ownerId,
-                            )?.name ||
-                              item.row.ownerName ||
-                              '待确认'}
+                            ), item.row.ownerName || '待确认')}
                           </td>
                           <td>
                             {item.row.kind === 'monthly'
@@ -1477,6 +1723,16 @@ export default function Imports({
                               >
                                 纠正
                               </button>
+                              {(manager || item.importedBy === data.user.id || item.row.ownerId === data.user.id) && (
+                                <button
+                                  className="import-edit-button import-delete-button"
+                                  disabled={!!busy}
+                                  aria-label={`删除历史资料：${item.row.title || '未命名工作记录'}`}
+                                  onClick={() => requestHistoryDelete(item)}
+                                >
+                                  删除
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -2060,6 +2316,7 @@ export default function Imports({
         <Modal title="历史工作资料" wide onClose={() => setHistoryRecord(null)}>
           <div className="import-history-detail">
             <h3>{historyRecord.row.title || '未命名工作记录'}</h3>
+            {historyRecord.row.isTemporary && <span className="import-temporary-badge">临时交办</span>}
             <p>
               {historyRecord.row.ownerName || '负责人未注明'} ·{' '}
               {historyRecord.row.kind === 'monthly'
@@ -2068,6 +2325,8 @@ export default function Imports({
               · {historyRecord.row.sourceStatus || '原文状态未注明'}
             </p>
             <dl>
+              <div><dt>任务性质</dt><dd>{historyRecord.row.isTemporary ? '临时交办' : '常规工作'}</dd></div>
+              {historyRecord.row.isTemporary && <div><dt>交办说明</dt><dd>{historyRecord.row.temporaryReason || '原始资料未注明'}</dd></div>}
               {(
                 [
                   ['projectName', '项目'],
@@ -2111,6 +2370,12 @@ export default function Imports({
             >
               纠正历史资料
             </button>
+            {(manager || historyRecord.importedBy === data.user.id || historyRecord.row.ownerId === data.user.id) && (
+              <button className="button secondary import-delete-button" disabled={!!busy} onClick={() => requestHistoryDelete(historyRecord)}>
+                <Trash2 size={15} />
+                删除历史资料
+              </button>
+            )}
             {(manager || historyRecord.importedBy === data.user.id) && (
               <button
                 className="button primary"
@@ -2136,6 +2401,35 @@ export default function Imports({
           </div>
         </Modal>
       )}
+      {deleteTarget && (
+        <ImportDeleteDialog
+          target={deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+          onPendingChange={(pending) => {
+            lock.current = pending
+            if (pending) interactionCount.current++
+            setBusy(pending ? '正在删除导入资料' : '')
+          }}
+          onDeleted={finishDelete}
+        />
+      )}
+      {exclusion && batch && <Modal title={`排除 ${exclusion.ids.length} 项候选`} onClose={() => setExclusion(null)}>
+        <p className="modal-intro">这些事项会保留在批次中并标为“未导入”。请记录为什么不纳入本次计划，方便以后核对。</p>
+        <Form submitLabel="保存排除原因" onCancel={() => setExclusion(null)} onSubmit={async () => {
+          if (!exclusion.reason.trim()) throw new Error('请填写排除原因')
+          await saveRows(batch.rows.map(row => exclusion.ids.includes(row.id)
+            ? { ...row, selected: false, exclusionReason: exclusion.reason.trim(), exclusionKind: exclusion.kind } : row))
+          setExclusion(null)
+          notify('已记录排除原因；完整性核对需要重新确认。')
+        }}>
+          <Field label="排除类型"><select value={exclusion.kind} onChange={event => setExclusion({ ...exclusion, kind: event.target.value as typeof exclusion.kind })}>
+            <option value="task">本次不导入的工作（仍计入原文事项数）</option><option value="duplicate">重复候选（不重复计数）</option><option value="not_task">非工作事项（如表头、说明）</option>
+          </select></Field>
+          <Field label="排除原因"><textarea required maxLength={1000} rows={3} value={exclusion.reason}
+            placeholder="例如：已另行登记，原任务编号为…；本项仅为背景说明…"
+            onChange={event => setExclusion({ ...exclusion, reason: event.target.value })} /></Field>
+        </Form>
+      </Modal>}
       {editing && (batch || editingHistory) && (
         <Modal
           title={
@@ -2143,7 +2437,7 @@ export default function Imports({
               ? '纠正历史资料'
               : readOnlyEditor
                 ? '查看导入记录'
-                : '校对导入记录'
+                : editingNew ? '补录遗漏事项' : '校对导入记录'
           }
           wide
           onClose={closeEditor}
@@ -2151,7 +2445,7 @@ export default function Imports({
           <p className="modal-intro">
             {editingHistory
               ? '本次修改用于纠正已归档的历史资料，原始文字保持不变，纠正原因留档。关联的工作计划如需修改，请到相应计划页面处理。'
-              : '校对后保存到当前批次。原始文字保留在下方，可随时对照。'}
+              : editingNew ? '对照原始资料补录遗漏的独立事项，填写真实来源。保存候选后仍需完整性核对，才会写入计划。' : '校对后保存到当前批次。原始文字保留在下方，可随时对照。'}
           </p>
           <Form
             submitLabel={
@@ -2159,17 +2453,19 @@ export default function Imports({
                 ? '关闭'
                 : editingHistory
                   ? '保存历史纠正'
-                  : '保存校对'
+                  : editingNew ? '保存补录候选' : '保存校对'
             }
             onCancel={closeEditor}
             onSubmit={async () => {
+              const cleanEditing = { ...editing, collaboratorNames: editing.collaboratorNames?.map(name => name.trim()).filter(Boolean) }
+              const reviewed = editingTask ? { ...cleanEditing, isTemporary: editingTask.isTemporary, temporaryReason: editingTask.temporaryReason, ...importWorkFields(editingTask) } : cleanEditing
               if (editingHistory) {
                 const saved = await api<HistoricalRecord>(
                   `/imports/history/${editingHistory.id}`,
                   json(
                     {
                       version: editingHistory.version,
-                      row: editing,
+                      row: reviewed,
                       reason: correctionReason,
                     },
                     'PATCH',
@@ -2181,8 +2477,8 @@ export default function Imports({
                 setHistoryRecord(saved)
               } else if (!readOnlyEditor && batch)
                 await saveRows(
-                  batch.rows.map((row) =>
-                    row.id === editing.id ? editing : row,
+                  editingNew ? [...batch.rows, reviewed] : batch.rows.map((row) =>
+                    row.id === editing.id ? reviewed : row,
                   ),
                 )
               if (!readOnlyEditor)
@@ -2198,21 +2494,81 @@ export default function Imports({
               className="import-editor-fields"
               disabled={readOnlyEditor}
             >
-              <div className="import-form-grid">
-                <Field label="内容类型">
+              {editingNew && <div className="import-editor-source-input">
+                <h3>遗漏事项的原始来源</h3>
+                <div className="import-form-grid">
+                  <Field label="来源工作表 / 资料位置">
+                    {batch?.sourceSheets.length ? <select required value={editing.sourceSheet} onChange={event => setEditing({ ...editing, sourceSheet: event.target.value })}>
+                      <option value="">请选择工作表</option>
+                      {batch.sourceSheets.map(sheet => <option value={sheet.name} key={sheet.name}>{sheet.name}</option>)}
+                    </select> : <input value={editing.sourceSheet} placeholder="例如：原始图片、第二段" onChange={event => setEditing({ ...editing, sourceSheet: event.target.value })} />}
+                  </Field>
+                  <Field label="原始行号 / 事项序号"><input required type="number" min="1" step="1" value={editing.sourceRow} onChange={event => setEditing({ ...editing, sourceRow: Number(event.target.value) })} /></Field>
+                </div>
+                <Field label="原文内容" hint="按原资料填写，不编造原文；同一源行有多事项时可分别补录。"><textarea required rows={3} maxLength={20000} value={editing.sourceText} onChange={event => setEditing({ ...editing, sourceText: event.target.value })} /></Field>
+              </div>}
+              {!editingHistory && <div className="import-editor-selection">
+                <label><input type="checkbox" checked={editing.selected} onChange={event => setEditing({ ...editing, selected: event.target.checked, exclusionReason: event.target.checked ? '' : editing.exclusionReason })} />纳入本次导入</label>
+                {!editing.selected && <>
+                  <Field label="排除类型"><select value={editing.exclusionKind || 'task'} onChange={event => setEditing({ ...editing, exclusionKind: event.target.value as ImportRow['exclusionKind'] })}>
+                    <option value="task">本次不导入的工作（仍计入原文事项数）</option><option value="duplicate">重复候选（不重复计数）</option><option value="not_task">非工作事项（如表头、说明）</option>
+                  </select></Field>
+                  <Field label="排除原因"><textarea required={!readOnlyEditor} maxLength={1000} rows={2} value={editing.exclusionReason || ''} placeholder={readOnlyEditor ? '历史未记录排除原因' : '请说明为什么不纳入本批次'} onChange={event => setEditing({ ...editing, exclusionReason: event.target.value })} /></Field>
+                </>}
+              </div>}
+              <div className="import-editor-destination">
+                <div className="import-form-grid">
+                <Field label="纳入计划" hint={editingTaskLocked ? '已关联个人任务，保持纳入每周计划。' : undefined}>
                   <select
                     value={editing.kind}
+                    disabled={editingTaskLocked}
                     onChange={(event) =>
                       setEditing({
                         ...editing,
                         kind: event.target.value as ImportKind,
+                        ...(event.target.value === 'monthly' ? { taskId: '', taskCompleted: false, completionNote: '' } : {}),
+                        ...(event.target.value === 'monthly' || editingTemporary ? { monthlyPlanId: '', linkedRowId: '' } : {}),
                       })
                     }
                   >
-                    <option value="monthly">月度目标</option>
-                    <option value="weekly">每周工作</option>
+                    <option value="monthly">月度计划</option>
+                    <option value="weekly">每周计划</option>
                   </select>
                 </Field>
+                <Field label="任务性质" hint={editingTaskLocked ? '沿用已有任务的性质与交办说明，不在导入时修改。' : '领导交办、突发支持等工作可标记为临时交办。'}>
+                  <select
+                    value={editingTemporary ? 'temporary' : 'regular'}
+                    disabled={editingTaskLocked}
+                    onChange={(event) => {
+                      const isTemporary = event.target.value === 'temporary'
+                      setEditing({ ...editing, isTemporary, temporaryReason: isTemporary ? editing.temporaryReason || '' : '', ...(isTemporary && editing.kind === 'weekly' ? { monthlyPlanId: '', linkedRowId: '' } : {}) })
+                    }}
+                  >
+                    <option value="regular">常规工作</option>
+                    <option value="temporary">临时交办</option>
+                  </select>
+                </Field>
+                <Field label={editing.kind === 'monthly' ? '所属月份' : '所属周（选择该周的日期）'}>
+                  <input
+                    type={editing.kind === 'monthly' ? 'month' : 'date'}
+                    value={editing.kind === 'monthly' ? editing.month : editing.weekStart}
+                    onChange={(event) => setEditing({ ...editing, [editing.kind === 'monthly' ? 'month' : 'weekStart']: event.target.value })}
+                  />
+                </Field>
+                </div>
+                {editingTemporary && (
+                  <Field label={batch?.mode === 'history' || editingHistory ? '交办说明' : '交办说明（入计划前必填）'} hint="说明交办来源、临时背景或要求。可以先保存校对，纳入计划前再补齐。">
+                    <textarea
+                      rows={2}
+                      maxLength={2000}
+                      value={editingTask?.temporaryReason ?? editing.temporaryReason ?? ''}
+                      disabled={editingTaskLocked}
+                      onChange={(event) => setEditing({ ...editing, temporaryReason: event.target.value })}
+                    />
+                  </Field>
+                )}
+              </div>
+              <div className="import-form-grid">
                 <Field label="工作事项">
                   <input
                     value={editing.title}
@@ -2245,8 +2601,8 @@ export default function Imports({
                           user.id === editing.ownerId,
                       )
                       .map((user) => (
-                        <option key={user.id} value={user.id}>
-                          {user.name}
+                        <option key={user.id} value={user.id} disabled={!canUseAccount(user)}>
+                          {accountDisplayName(user)}
                         </option>
                       ))}
                   </select>
@@ -2290,6 +2646,16 @@ export default function Imports({
                       setEditing({ ...editing, category: event.target.value })
                     }
                   />
+                </Field>
+                <Field label="工作来源" hint="临时工作不自动等于领导交办；按原文或明确安排选择。">
+                  <select value={editingTask ? editingTask.workSource || '' : editing.workSource || ''} disabled={editingTaskLocked} onChange={event => setEditing({ ...editing, workSource: event.target.value as ImportRow['workSource'] })}>
+                    <option value="">来源待核对</option><option value="leader">领导交办</option><option value="self">自主安排</option><option value="coordination">协同事项</option>
+                  </select>
+                </Field>
+                <Field label="交办人" hint={editingTaskLocked ? '沿用已有任务；需更正时请到原任务处理。' : undefined}><input maxLength={100} disabled={editingTaskLocked} value={editingTask ? editingTask.assignedBy || '' : editing.assignedBy || ''} onChange={event => setEditing({ ...editing, assignedBy: event.target.value })} /></Field>
+                <Field label="交办日期"><input type="date" disabled={editingTaskLocked} value={editingTask ? editingTask.assignedOn || '' : editing.assignedOn || ''} onChange={event => setEditing({ ...editing, assignedOn: event.target.value })} /></Field>
+                <Field label="原文协作人" hint={editing.kind === 'monthly' ? '用顿号或逗号分隔；在下方明确匹配系统成员。' : '周任务由个人负责；原文有多人协作时请分别拆项或改为月目标，名单不要直接作为个人责任。'}>
+                  <input value={(editing.collaboratorNames || []).join('、')} onChange={event => setEditing({ ...editing, collaboratorNames: event.target.value.split(/[、,，;；\n]/) })} />
                 </Field>
                 <Field
                   label="原文状态"
@@ -2365,24 +2731,6 @@ export default function Imports({
                       </select>
                     </Field>
                   ))}
-                <Field label="所属月份">
-                  <input
-                    type="month"
-                    value={editing.month}
-                    onChange={(event) =>
-                      setEditing({ ...editing, month: event.target.value })
-                    }
-                  />
-                </Field>
-                <Field label="所属周（选择该周的日期）">
-                  <input
-                    type="date"
-                    value={editing.weekStart}
-                    onChange={(event) =>
-                      setEditing({ ...editing, weekStart: event.target.value })
-                    }
-                  />
-                </Field>
                 <Field
                   label="截止日期"
                   hint={
@@ -2400,13 +2748,32 @@ export default function Imports({
                   />
                 </Field>
               </div>
+              {(editing.kind === 'monthly' || !!editing.collaboratorIds?.length) && <div className="import-editor-collaborators">
+                <h3>明确匹配协作成员</h3>
+                <p>协作参与与负责人分别记录；请核对同名和无法匹配的原文姓名。</p>
+                <div className="import-collaborator-options">{data.users.filter(user => canUseAccount(user) || editing.collaboratorIds?.includes(user.id)).map(user => <label key={user.id}>
+                  <input type="checkbox" checked={editing.collaboratorIds?.includes(user.id) || false} disabled={!canUseAccount(user) && !editing.collaboratorIds?.includes(user.id)}
+                    onChange={event => setEditing({ ...editing, collaboratorIds: event.target.checked ? [...(editing.collaboratorIds || []), user.id] : (editing.collaboratorIds || []).filter(id => id !== user.id) })} />
+                  {accountDisplayName(user)}
+                </label>)}</div>
+              </div>}
+              {editing.kind === 'weekly' && !editingHistory && batch?.mode === 'existing' && <div className="import-overall-completion">
+                <h3>整件任务是否完成</h3>
+                <p>本周阶段完成不会自动结束整件任务。只有全部工作已完成且无需继续推进，才确认整体完成。</p>
+                {editingTaskLocked ? <p>已关联现有个人任务，整体完成状态请到原任务核对与修改。</p> : <>
+                  <label><input type="checkbox" checked={editing.taskCompleted === true} onChange={event => setEditing({ ...editing, taskCompleted: event.target.checked, completionNote: event.target.checked ? editing.completionNote || '' : '' })} />确认整件任务已完成</label>
+                  {editing.taskCompleted && <Field label="整体完成依据"><textarea required maxLength={2000} rows={2} value={editing.completionNote || ''} onChange={event => setEditing({ ...editing, completionNote: event.target.value })} placeholder="说明整个事项已完成的依据，而非仅本周的阶段成果" /></Field>}
+                </>}
+              </div>}
               {editing.kind === 'weekly' && (
                 <div className="import-editor-relations">
                   <h3>周工作关联</h3>
                   <Field
                     label="关联已有个人任务"
                     hint={
-                      batch?.mode === 'existing'
+                      editingTemporary
+                        ? '临时任务可直接纳入本周，无需先创建月度目标；也可匹配已有任务。'
+                        : batch?.mode === 'existing'
                         ? '原表已有任务可直接匹配；没有月度目标关联也可导入生效。'
                         : '可关联自己的任务，或先选择月度目标以新建任务。'
                     }
@@ -2417,41 +2784,41 @@ export default function Imports({
                         const task = data.tasks.find(
                           (item) => item.id === event.target.value,
                         )
-                        setEditing({
-                          ...editing,
-                          taskId: event.target.value,
-                          ...(task
-                            ? {
-                                monthlyPlanId: task.monthlyPlanId || '',
-                                ownerId: task.ownerId,
-                                linkedRowId: '',
-                              }
-                            : {}),
-                        })
+                        if (task && !editing.taskId) detachedWorkSource.current = { rowId: editing.id, fields: importWorkFields(editing) }
+                        const previousSource = detachedWorkSource.current?.rowId === editing.id ? detachedWorkSource.current.fields : undefined
+                        setEditing(selectImportTask(editing, task, previousSource))
+                        if (!task) detachedWorkSource.current = null
                       }}
                     >
                       <option value="">新建个人任务</option>
                       {data.tasks
                         .filter(
-                          (task) => manager || task.ownerId === data.user.id,
+                          (task) => task.id === editing.taskId ||
+                            ((manager || task.ownerId === data.user.id) && activeUsers.some(user => user.id === task.ownerId)),
                         )
                         .map((task) => (
-                          <option key={task.id} value={task.id}>
-                            {task.title}
+                          <option key={task.id} value={task.id} disabled={!activeUsers.some(user => user.id === task.ownerId)}>
+                            {task.title}{task.isTemporary ? ' · 临时交办' : ''}{!activeUsers.some(user => user.id === task.ownerId) ? ' · 责任人账号不可用' : ''}
                           </option>
                         ))}
                     </select>
                   </Field>
+                  {editingTemporary ? (
+                    <p className="import-relation-hint">临时交办直接关联个人任务，无需关联月度目标。</p>
+                  ) : <>
                   <Field
                     label="关联系统月度目标"
                     hint={
-                      batch?.mode === 'existing'
+                      editingTaskLocked
+                        ? '沿用已有任务的月度关联。如需新建任务，请先在上方选择“新建个人任务”。'
+                        : batch?.mode === 'existing'
                         ? '原表没有明确关联时可留空，导入后显示“未关联月度目标”。'
                         : undefined
                     }
                   >
                     <select
                       value={editing.monthlyPlanId}
+                      disabled={editingTaskLocked}
                       onChange={(event) =>
                         setEditing({
                           ...editing,
@@ -2472,6 +2839,7 @@ export default function Imports({
                   <Field label="或关联本批次的月度目标">
                     <select
                       value={editing.linkedRowId}
+                      disabled={editingTaskLocked}
                       onChange={(event) =>
                         setEditing({
                           ...editing,
@@ -2497,6 +2865,7 @@ export default function Imports({
                         ))}
                     </select>
                   </Field>
+                  </>}
                 </div>
               )}
               {(

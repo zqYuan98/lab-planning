@@ -133,7 +133,9 @@ test('import provenance and omissions survive business export and restore withou
   restoreBusinessData(target.store, target.manager, packet, {}, preview.fingerprint)
   const plan = target.store.list<MonthlyPlan>('plans')[0]
   assert.equal(plan.ownerId, target.member.id)
-  assert.deepEqual(plan.importSource, { batchId: source.manager.id, sourceId: source.member.id, rowId: source.member.id, sourceStatus: '' })
+  assert.deepEqual(plan.importSource, { batchId: source.manager.id, sourceId: source.member.id, rowId: source.member.id, sourceStatus: '', mode: 'existing', notificationMode: 'silent' })
+  assert.equal(target.store.list<WeeklyRecord>('weeklyRecords')[0].importSource?.notificationMode, 'silent')
+  assert.equal(target.store.list<Task>('tasks')[0].importSource?.mode, 'existing')
   assert.equal(target.store.list<WeeklyRecord>('weeklyRecords')[0].blocker, '')
   assert.equal(target.store.list<Task>('tasks')[0].description.length, 20000)
   const missingSource = structuredClone(packet)

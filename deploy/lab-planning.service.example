@@ -1,0 +1,23 @@
+[Unit]
+Description=Lab planning single-instance service
+After=network-online.target
+
+[Service]
+Type=simple
+User=lab-planning
+Group=lab-planning
+WorkingDirectory=/opt/lab-planning/current
+EnvironmentFile=/etc/lab-planning/app.env
+ExecStart=/usr/bin/node --import tsx server/index.ts
+KillSignal=SIGTERM
+TimeoutStopSec=45
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/lab-planning
+
+[Install]
+WantedBy=multi-user.target

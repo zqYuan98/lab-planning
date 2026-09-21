@@ -31,6 +31,10 @@ function fork(store: Store, actor: User, before: ImportBatch): ImportBatch {
   })
 }
 
+function review(service: ImportService, actor: User, batch: ImportBatch) {
+  return service.edit(actor, batch.id, { version: batch.version, rows: batch.rows, completionReview: { confirmed: true, sourceItemCount: batch.rows.length } })
+}
+
 async function waitForAnalysis(service: ImportService, actor: User, id: string) {
   const deadline = Date.now() + 5000
   while (Date.now() < deadline) {
@@ -74,10 +78,10 @@ test('two managers committing the same source item through separate batches shar
   const f = fixture(t), uploaded = await f.upload()
   const second = f.domain.createUser(f.actor, { name: '另一位管理员', email: 'second@example.test', password: 'Synthetic-pass-2026!', position: '测试', role: 'manager' })
   t.mock.method(globalThis, 'fetch', async () => completion([candidate()]))
-  const parsed = await f.service.analyze(f.actor, uploaded.id, { version: uploaded.version })
+  const parsed = review(f.service, f.actor, await f.service.analyze(f.actor, uploaded.id, { version: uploaded.version }))
   const first = f.service.commit(f.actor, parsed.id, { version: parsed.version })
   const next = fork(f.store, second, parsed)
-  const secondParsed = await f.service.analyze(second, next.id, { version: next.version })
+  const secondParsed = review(f.service, second, await f.service.analyze(second, next.id, { version: next.version }))
   const committed = f.service.commit(second, next.id, { version: secondParsed.version })
   assert.equal(first.rows[0].id, committed.rows[0].id)
   assert.deepEqual(first.rows[0].result, committed.rows[0].result)
@@ -89,12 +93,12 @@ test('two managers committing the same source item through separate batches shar
 test('changing an already imported source item fails explicitly instead of silently discarding corrections', async t => {
   const f = fixture(t), uploaded = await f.upload()
   t.mock.method(globalThis, 'fetch', async () => completion([candidate('原识别标题')]))
-  const parsed = await f.service.analyze(f.actor, uploaded.id, { version: uploaded.version })
+  const parsed = review(f.service, f.actor, await f.service.analyze(f.actor, uploaded.id, { version: uploaded.version }))
   const committed = f.service.commit(f.actor, parsed.id, { version: parsed.version })
   const next = fork(f.store, f.actor, parsed)
   let revised = await f.service.analyze(f.actor, next.id, { version: next.version })
   revised.rows[0].title = '人工纠正标题'
-  revised = f.service.edit(f.actor, revised.id, { version: revised.version, rows: revised.rows })
+  revised = review(f.service, f.actor, revised)
   assert.throws(() => f.service.commit(f.actor, revised.id, { version: revised.version }), error => {
     assert.equal((error as { status: number }).status, 409)
     assert.match((error as Error).message, /内容有变化.*纠正/)
@@ -136,7 +140,8 @@ test('background failure preserves completed chunks and source data; retry resum
     const source = JSON.parse(content.slice(content.lastIndexOf(marker) + marker.length)) as { rows: Array<{ rowNumber: number; cells: string[] }> }
     return completion(source.rows.filter(row => row.cells[0].startsWith('task-')).map(row => candidate(row.cells[0], row.rowNumber)))
   })
-  const started = f.service.startAnalysis(f.actor, uploaded.id, { version: uploaded.version })
+  const parseOptions = { instruction: '逐项核对', period: '2026-09', kind: 'monthly', sheets: ['fixture.csv'] }
+  const started = f.service.startAnalysis(f.actor, uploaded.id, { version: uploaded.version, ...parseOptions })
   assert.equal(started.analysis?.status, 'running')
   assert.throws(() => f.service.startAnalysis(f.actor, uploaded.id, { version: uploaded.version }), { status: 409 })
   assert.throws(() => f.service.edit(f.actor, uploaded.id, { version: uploaded.version, rows: [] }), { status: 409 })
@@ -146,9 +151,10 @@ test('background failure preserves completed chunks and source data; retry resum
   assert.equal(failed.analysis?.completedChunks, 1)
   assert.equal(failed.analysis?.totalChunks, 2)
   assert.equal(failed.status, 'uploaded')
+  assert.deepEqual(failed.analysisOptions, { instruction: parseOptions.instruction, period: parseOptions.period, kind: parseOptions.kind, sheetNames: parseOptions.sheets })
   assert.equal(f.store.list('importParsedChunks').length, 1)
   assert.equal(f.service.source(f.actor, uploaded.id).base64, originalSource)
-  f.service.startAnalysis(f.actor, uploaded.id, { version: failed.version })
+  f.service.startAnalysis(f.actor, uploaded.id, { version: failed.version, ...parseOptions })
   const resumed = await waitForAnalysis(f.service, f.actor, uploaded.id)
   assert.equal(resumed.analysis?.status, 'completed')
   assert.equal(resumed.analysis?.completedChunks, 2)

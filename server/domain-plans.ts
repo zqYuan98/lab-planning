@@ -1,7 +1,8 @@
 import type { AuditEvent, MonthlyPlan, Publication, Task, User } from '../shared/types.ts'
 import { projectPlan, visiblePlanHistory } from './plan-visibility.ts'
+import { notifyPublishedPlans } from './notification-events.ts'
 import { HttpError } from './store.ts'
-import { DomainBase, choice, date, manager, month, own, participates, text, type Input } from './domain-common.ts'
+import { DomainBase, bool, choice, date, manager, month, own, participates, text, type Input } from './domain-common.ts'
 
 export class MonthlyService extends DomainBase {
   private collaborators(value: unknown, ownerId: string, existingParticipants: string[] = []): string[] {
@@ -21,8 +22,15 @@ export class MonthlyService extends DomainBase {
   private visible(actor: User, plan: MonthlyPlan) {
     if (!this.planVisible(actor, plan)) throw new HttpError(403, '无权查看此月计划')
   }
+  private editable(actor: User, plan: MonthlyPlan) {
+    own(actor, plan.ownerId)
+    if (actor.role === 'manager') return
+    if (!plan.isTemporary) throw new HttpError(403, '普通月度目标需由管理者维护')
+    if (!['draft', 'returned'].includes(plan.status)) throw new HttpError(403, '提交后的临时目标需由管理者退回后修改')
+  }
   create(actor: User, input: Input): MonthlyPlan {
-    manager(actor)
+    const isTemporary = input.isTemporary === undefined ? false : bool(input.isTemporary, '临时目标标记')
+    if (!isTemporary) manager(actor)
     return this.store.transaction(() => {
       const period = month(input.month)
       const ownerId = this.owner(actor, input.ownerId)
@@ -30,6 +38,7 @@ export class MonthlyService extends DomainBase {
       if (projectId) this.activeProject(projectId)
       const sourcePlanId = input.sourcePlanId ? text(input.sourcePlanId, '来源计划') : null
       if (sourcePlanId) {
+        manager(actor)
         const source = this.need<MonthlyPlan>('plans', sourcePlanId)
         own(actor, source.ownerId)
         if (source.status === 'merged') throw new HttpError(400, '请从合并后的月计划发起跨月承接')
@@ -44,6 +53,7 @@ export class MonthlyService extends DomainBase {
         collaboratorIds: this.collaborators(input.collaboratorIds, ownerId),
         expectedOutcome: text(input.expectedOutcome, '预期成果'), acceptanceCriteria: text(input.acceptanceCriteria, '验收标准'), dueDate,
         priority: choice(input.priority ?? 'medium', ['high', 'medium', 'low'], '优先级'),
+        isTemporary, temporaryReason: isTemporary ? text(input.temporaryReason, '临时目标原因') : '',
         status: 'draft', reviewComment: '', publishedVersion: null, sourcePlanId,
         actualOutcome: '', acceptanceStatus: 'pending', acceptanceNote: '',
       })
@@ -52,15 +62,15 @@ export class MonthlyService extends DomainBase {
     })
   }
   update(actor: User, id: string, input: Input): MonthlyPlan {
-    manager(actor)
     return this.store.transaction(() => {
       const before = this.need<MonthlyPlan>('plans', id)
-      own(actor, before.ownerId)
+      this.editable(actor, before)
       if (before.status === 'merged') throw new HttpError(409, '已合并的来源提报保留为历史，请编辑合并后的计划')
-      if (actor.role !== 'manager' && !['draft', 'returned'].includes(before.status)) throw new HttpError(403, '提交后的计划需由管理者退回后修改')
       this.current<MonthlyPlan>('plans', id, input)
       if (input.month !== undefined && input.month !== before.month) throw new HttpError(400, '所属月份不能直接修改，请使用跨月承接')
+      if (input.isTemporary !== undefined && bool(input.isTemporary, '临时目标标记') !== !!before.isTemporary) throw new HttpError(400, '月度目标类型不能直接修改')
       const patch: Partial<MonthlyPlan> = {}
+      if (before.isTemporary && input.temporaryReason !== undefined) patch.temporaryReason = text(input.temporaryReason, '临时目标原因')
       if (input.title !== undefined) patch.title = text(input.title, '计划标题', true, 300)
       if (input.projectId !== undefined) {
         patch.projectId = input.projectId ? text(input.projectId, '项目') : null
@@ -95,20 +105,20 @@ export class MonthlyService extends DomainBase {
       const plan = this.store.update<MonthlyPlan>('plans', id, before.version, patch)
       this.audit(actor, 'plan', id, before.status === 'published' ? 'published_change' : 'update', before, plan, reason)
       if (before.status === 'published') this.snapshot(actor, before.month, plan.publishedVersion!, reason)
-      return plan
+      return projectPlan(actor, plan, this.store)
     })
   }
   submit(actor: User, id: string, input: Input): MonthlyPlan {
-    manager(actor)
     return this.store.transaction(() => {
       const before = this.need<MonthlyPlan>('plans', id)
-      own(actor, before.ownerId)
+      this.editable(actor, before)
       this.current<MonthlyPlan>('plans', id, input)
       if (!['draft', 'returned'].includes(before.status)) throw new HttpError(400, '只有草稿或退回的计划可以提交')
       if (before.projectId) this.activeProject(before.projectId)
+      if (before.isTemporary) text(before.temporaryReason, '临时目标原因')
       const plan = this.store.update<MonthlyPlan>('plans', id, before.version, { status: 'submitted', reviewComment: '' })
       this.audit(actor, 'plan', id, 'submit', before, plan)
-      return plan
+      return projectPlan(actor, plan, this.store)
     })
   }
   review(actor: User, id: string, input: Input): MonthlyPlan {
@@ -140,6 +150,7 @@ export class MonthlyService extends DomainBase {
         const after = this.store.update<MonthlyPlan>('plans', before.id, before.version, { status: 'published', publishedVersion: revision })
         this.audit(actor, 'plan', before.id, 'publish', before, after, reason)
       }
+      notifyPublishedPlans(this.store, plans.map(plan => this.need<MonthlyPlan>('plans', plan.id)), period, revision)
       return this.snapshot(actor, period, revision, reason)
     })
   }

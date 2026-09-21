@@ -1,10 +1,14 @@
 import { createHash } from 'node:crypto'
 import type { Entity, MonthlyPlan, Project, Publication, Report, Task, User, WeeklyRecord } from '../shared/types.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
+import { isActiveWeeklyRecord, isWeeklyPlanReviewCycle } from '../shared/weekly-record-state.ts'
+import { addWeekDays } from './weekly-submission-clock.ts'
 import { manager } from './domain-common.ts'
 import { HttpError, Store } from './store.ts'
 import { reportSubmissionIssues, weeklyTransferIssues } from './weekly-submission-transfer.ts'
 import type { WeeklyReportSubmission, WeeklyRule } from '../shared/weekly-submissions.ts'
+import type { CollaborationSettings, TaskTracking } from '../shared/collaboration.ts'
+import { collaborationTransferIssues } from './collaboration-transfer.ts'
 import { businessEventCollections, canonical, collectionNames, emptyCollections, parsePacket, projectRow, remapUsers, rowReferences, storedCollection, type BusinessCollections, type BusinessDataPacket, type TransferCollection } from './data-transfer-schema.ts'
 
 export interface RestoreCount { total: number; insert: number; skip: number; replace: number }
@@ -50,6 +54,7 @@ function semanticIssues(name: TransferCollection, input: unknown, issue: (messag
     if (!weekly.commitment.trim() && !weekly.importSource) issue(`${label}：缺少本周承诺`)
     if (weekly.status === 'done' && !weekly.actualOutcome.trim() && !weekly.importSource) issue(`${label}：已完成周记录缺少成果`)
     if (['blocked', 'not_done'].includes(weekly.status) && !weekly.blocker.trim() && !weekly.importSource) issue(`${label}：阻塞或未完成周记录缺少原因`)
+    if (weekly.deletion && (Date.parse(weekly.deletion.deletedAt) < Date.parse(weekly.createdAt) || Date.parse(weekly.deletion.deletedAt) > Date.parse(weekly.updatedAt))) issue(`${label}：删除时间不在记录创建和更新时间之间`)
   }
   if (name === 'publications') {
     const publication = input as Publication
@@ -93,6 +98,13 @@ function inspectRestore(store: Store, packet: BusinessDataPacket, requestedMappi
   const sourceUsers = new Map(packet.collections.users.map(user => [user.id, user]))
   const currentUsers = store.list<User>('users')
   const activeUsers = currentUsers.filter(canUseAccount)
+  const activeMemberIds = new Set(activeUsers.filter(user => user.role === 'member').map(user => user.id))
+  const targetRule = store.get<WeeklyRule>('weeklyRules', 'weekly-submission-rule')
+  const targetReviewWeek = targetRule?.planReviewEffectiveWeek
+  const reviewRule = packet.collections.weeklyRules[0] ?? targetRule
+  const reviewWeek = reviewRule?.planReviewEffectiveWeek ?? targetReviewWeek
+  const effectiveReviewRule = reviewRule && reviewWeek ? { ...reviewRule, planReviewEffectiveWeek: reviewWeek } : undefined
+  let pendingLegacyRecords = 0
   const neededUsers = new Set(collectionNames.flatMap(name => (packet.collections[name] as Entity[]).flatMap(row => rowReferences(name, row).filter(ref => ref.collection === 'users').map(ref => ref.id))))
   const mapping: Record<string, string> = Object.create(null)
   const missingUsers: RestorePreview['missingUsers'] = []
@@ -131,7 +143,26 @@ function inspectRestore(store: Store, packet: BusinessDataPacket, requestedMappi
     }
     current[name] = store.list<Entity>(storedCollection(name))
     const existing = new Map(current[name].map(row => [row.id, row]))
-    const transformed = incoming.map(row => remapUsers(name, row, mapping) as Entity)
+    const transformed = incoming.map(row => {
+      const mapped = remapUsers(name, row, mapping) as Entity
+      if (name === 'weeklyRules' && !(mapped as WeeklyRule).planReviewEffectiveWeek && targetReviewWeek) {
+        notices.push('旧迁移包未包含计划审批生效周，将继承目标服务已持久保存的审批边界；来源提报窗口、版本与时间保持不变。')
+        return { ...mapped, planReviewEffectiveWeek: targetReviewWeek } as WeeklyRule
+      }
+      if (name === 'weeklyRecords') {
+        const record = mapped as WeeklyRecord
+        const cycleWeek = addWeekDays(record.weekStart, -7)
+        if (reviewWeek && effectiveReviewRule && isWeeklyPlanReviewCycle(effectiveReviewRule, cycleWeek)
+          && isActiveWeeklyRecord(record) && !record.planApproval && !(record.workOrigin?.kind === 'assigned' && record.submitted)
+          && record.weekStart >= addWeekDays(reviewWeek, 7) && activeMemberIds.has(record.ownerId)) {
+          pendingLegacyRecords++
+          return { ...record, planApproval: { required: true, approvedSubmissionId: null, approvedFingerprint: null } } as WeeklyRecord
+        }
+      }
+      if (name !== 'taskTrackings') return mapped
+      const tracking = mapped as TaskTracking
+      return { ...tracking, source: 'restore', ...(tracking.state === 'closed' ? {} : { state: 'paused', pauseReason: '业务迁移恢复，待管理者核对后恢复督办', reviewAt: null, closedAt: null, closedReason: '' }) } as TaskTracking
+    })
     ;(rows[name] as Entity[]) = transformed
     available[name] = new Map([...existing, ...transformed.map(row => [row.id, row] as const)])
     const count = { total: transformed.length, insert: 0, skip: 0, replace: 0 }
@@ -185,19 +216,23 @@ function inspectRestore(store: Store, packet: BusinessDataPacket, requestedMappi
       if (row.submitted && plan.status !== 'published') issue(`weeklyRecords/${row.id}：已提交周记录的月计划未发布`)
     } else if (task && !task.temporaryReason.trim() && !row.importSource) issue(`weeklyRecords/${row.id}：未关联月计划的历史记录缺少临时工作来源说明`)
   }
-  const unique = <T extends Entity>(name: TransferCollection, key: (row: T) => string) => {
+  const unique = <T extends Entity>(name: TransferCollection, key: (row: T) => string, include: (row: T) => boolean = () => true) => {
     const seen = new Map<string, string>()
     for (const row of available[name].values() as Iterable<T>) {
+      if (!include(row)) continue
       const value = key(row)
       if (seen.has(value) && seen.get(value) !== row.id) issue(`${name} 存在重复业务键：${value}`)
       seen.set(value, row.id)
     }
   }
   unique<Project>('projects', row => row.code.toLowerCase())
-  unique<WeeklyRecord>('weeklyRecords', row => `${row.taskId}/${row.weekStart}`)
+  unique<WeeklyRecord>('weeklyRecords', row => `${row.taskId}/${row.weekStart}`, isActiveWeeklyRecord)
   unique<Publication>('publications', row => `${row.month}/${row.revision}`)
   unique<Report>('reports', row => `${row.type}/${row.period}/${row.revision}`)
   weeklyTransferIssues(rows, available, issue)
+  collaborationTransferIssues(rows, available, issue)
+  if (pendingLegacyRecords) notices.push(`将 ${pendingLegacyRecords} 条适用审批周期但缺少审批元数据的成员周安排标记为待审核；历史提交、报告及审计快照保持原样。`)
+  if (rows.taskTrackings.length) notices.push('恢复的有效督办将暂停，需管理者核对后显式恢复；协作规则保持关闭，历史事件不产生新通知。')
   return {
     rows, unusedRule,
     preview: { canRestore: issues.length === 0, fingerprint: fingerprint({ packet, mapping, current }), counts, issues, notices, missingUsers, mapping },
@@ -229,8 +264,12 @@ export function restoreBusinessData(store: Store, actor: User, input: unknown, m
       store.restoreEntity(storedCollection(name), row); restored++
     }
     const restoredAt = new Date().toISOString()
+    if (restored) {
+      const settings = store.get<CollaborationSettings>('collaborationSettings', 'collaboration')
+      if (settings && [settings.enabled, settings.autoRulesEnabled, settings.dailyManagerEnabled, settings.weeklyManagerEnabled, settings.memberActionsEnabled, settings.deadlineApprovalEnabled].some(Boolean)) store.update<CollaborationSettings>('collaborationSettings', settings.id, settings.version, { enabled: false, autoRulesEnabled: false, deadlineApprovalEnabled: false, dailyManagerEnabled: false, weeklyManagerEnabled: false, memberActionsEnabled: false })
+    }
     if (checked.unusedRule) store.insert<BusinessCollections['events'][number]>('events', {
-      entityType: 'weeklyRule', entityId: checked.unusedRule.id, actorId: actor.id, action: 'restore_default', reason: checked.preview.notices[0], before: checked.unusedRule, after: checked.rows.weeklyRules[0],
+      entityType: 'weeklyRule', entityId: checked.unusedRule.id, actorId: actor.id, action: 'restore_default', reason: checked.preview.notices.find(notice => notice.includes('尚未使用的默认规则')) ?? '', before: checked.unusedRule, after: checked.rows.weeklyRules[0],
     })
     if (restored) store.insert<Entity & { entityType: string; entityId: string; actorId: string; action: string; reason: string; before: null; after: unknown }>('events', {
       entityType: 'dataRestore', entityId: expectedFingerprint, actorId: actor.id, action: 'restore', reason: '', before: null,

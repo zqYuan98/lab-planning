@@ -1,8 +1,9 @@
-import type { AnnualGoal, Project, User } from '../shared/types.ts'
+import type { AnnualGoal, Entity, Project, User } from '../shared/types.ts'
 import { canUseAccount, registrationApproved } from '../shared/auth-policy.ts'
 import { checkPassword, hashPassword, safeUser, type StoredUser } from './auth.ts'
 import { HttpError } from './store.ts'
 import { DomainBase, bool, choice, manager, number, text, type Input } from './domain-common.ts'
+import { userDeletionPreview } from './user-deletion.ts'
 
 function email(value: unknown) {
   const address = text(value, '邮箱', true, 254).toLowerCase()
@@ -83,6 +84,33 @@ export class AdminService extends DomainBase {
       const user = this.store.update<StoredUser>('users', id, before.version, patch)
       this.audit(actor, 'user', id, passwordHash ? 'update_credentials' : 'update', safeUser(before), safeUser(user))
       return safeUser(user)
+    })
+  }
+  private liveManager(actor: User): User {
+    const current = this.store.get<User>('users', actor.id)
+    if (!current || !canUseAccount(current)) throw new HttpError(403, '当前账号已不可用，请重新登录')
+    manager(current)
+    return safeUser(current)
+  }
+  userDeletionPreview(actor: User, id: string) {
+    return this.store.transaction(() => userDeletionPreview(this.store, this.liveManager(actor), this.need<User>('users', id)))
+  }
+  deleteUser(actor: User, id: string, input: Input) {
+    return this.store.transaction(() => {
+      const currentActor = this.liveManager(actor)
+      const before = this.current<StoredUser>('users', id, input)
+      if (text(input.confirmName, '确认姓名', true, 100) !== before.name) throw new HttpError(400, '确认姓名与当前成员不一致')
+      const preview = userDeletionPreview(this.store, currentActor, before)
+      if (!preview.canDelete) throw new HttpError(409, `无法删除：${preview.blockers.map(blocker => blocker.label).join('、')}。有业务或历史记录的账号请停用，保留原有归属。`)
+      // Preferences are operational state, not business history or a deletion blocker.
+      for (const collection of ['sessions', 'integrationTokens', 'externalIdentities', 'collaborationPreferences']) {
+        for (const operational of this.store.list<Entity & { userId: string }>(collection).filter(row => row.userId === id)) {
+          this.store.delete(collection, operational.id, operational.version)
+        }
+      }
+      this.store.delete('users', id, before.version)
+      this.audit(currentActor, 'user', id, 'delete', safeUser(before), null, '删除无业务或历史关联的账号；保留账号生命周期审计')
+      return { deleted: true as const, id }
     })
   }
   createProject(actor: User, input: Input): Project {

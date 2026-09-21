@@ -29,3 +29,10 @@ test('record links preserve the cutoff cycle and target the correct owner and co
   assert.equal(recordTarget({weekStart:'2026-09-07',ownerId:'member'},'2026-09-14').cycleWeek,'2026-09-07')
   assert.equal(advanceWeek('2026-12-28',7),'2027-01-04')
 })
+
+test('direct future-week deletion and recreation returns to the preceding plan cycle while current and historical weeks keep results', () => {
+  assert.deepEqual(recordTarget({weekStart:'2026-09-21',ownerId:'member'},'2026-09-21','2026-09-14'), {cycleWeek:'2026-09-14',contentWeek:'2026-09-21',ownerId:'member',kind:'plan'})
+  assert.deepEqual(recordTarget({weekStart:'2026-10-05',ownerId:'member'},'2026-10-05','2026-09-14'), {cycleWeek:'2026-09-28',contentWeek:'2026-10-05',ownerId:'member',kind:'plan'})
+  assert.equal(recordTarget({weekStart:'2026-09-14',ownerId:'member'},'2026-09-14','2026-09-14').kind,'results')
+  assert.equal(recordTarget({weekStart:'2026-09-07',ownerId:'member'},'2026-09-14','2026-09-14').kind,'results')
+})

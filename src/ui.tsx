@@ -8,6 +8,11 @@ import {
 import { X, Inbox, LoaderCircle } from 'lucide-react'
 import type { Bootstrap } from '../shared/types'
 import type { NavigationIntent } from './navigation'
+import { accountDisplayName } from './account-options'
+import { allowDraftLeave, type DraftValues } from './draft-recovery'
+import { useFormDraft } from './use-form-draft'
+import { ApiError, SavedResultError } from './api'
+import { requestErrorFeedback, rememberClientError } from './error-context'
 
 export interface PageProps {
   data: Bootstrap
@@ -28,7 +33,7 @@ export function Modal({
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const closeRef = useRef(onClose)
-  closeRef.current = onClose
+  closeRef.current = () => { if (allowDraftLeave(ref.current)) onClose() }
   useEffect(() => {
     const before = document.activeElement as HTMLElement | null
     const previousOverflow = document.body.style.overflow
@@ -37,6 +42,8 @@ export function Modal({
       ?.querySelector<HTMLElement>('input,select,textarea,button')
       ?.focus()
     function key(event: KeyboardEvent) {
+      const dialogs = document.querySelectorAll('[role="dialog"]')
+      if (dialogs[dialogs.length - 1] !== ref.current) return
       if (event.key === 'Escape') closeRef.current()
       if (event.key === 'Tab') {
         const nodes = Array.from(
@@ -66,7 +73,7 @@ export function Modal({
     <div
       className="modal-backdrop"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose()
+        if (event.target === event.currentTarget) closeRef.current()
       }}
     >
       <div
@@ -82,7 +89,7 @@ export function Modal({
             type="button"
             className="icon-button"
             aria-label="关闭对话框"
-            onClick={onClose}
+            onClick={() => closeRef.current()}
           >
             <X size={20} />
           </button>
@@ -163,36 +170,64 @@ export function Form({
   children,
   submitLabel = '保存',
   onCancel,
+  draftKey,
+  draftContext,
+  onDraftRestore,
+  workspaceErrorActions = true,
 }: {
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>
   children: ReactNode
   submitLabel?: string
   onCancel?: () => void
+  /** Opt-in, tab-local recovery for work forms; never used for credentials. */
+  draftKey?: string
+  draftContext?: DraftValues
+  onDraftRestore?: (values: DraftValues) => void
+  workspaceErrorActions?: boolean
 }) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('')
+  const sending = useRef(false)
+  const [requestId, setRequestId] = useState<string>()
+  const [sessionExpired, setSessionExpired] = useState(false)
+  const [savedResult, setSavedResult] = useState<SavedResultError | null>(null)
+  const { formRef, rememberDraft, clearDraft, notice } = useFormDraft(draftKey, draftContext, onDraftRestore, busy)
   return (
     <form
+      ref={formRef}
+      onInput={rememberDraft}
+      onChange={rememberDraft}
       onSubmit={async (event) => {
         event.preventDefault()
-        if (busy) return
+        if (sending.current || savedResult) return
+        sending.current = true
         setBusy(true)
         setError('')
+        setRequestId(undefined)
+        setSessionExpired(false)
         try {
           await onSubmit(event)
+          clearDraft()
         } catch (e) {
+          if (e instanceof SavedResultError) { clearDraft(); setSavedResult(e) }
+          if (e instanceof ApiError) { setRequestId(e.requestId); setSessionExpired(e.status === 401) }
           setError(e instanceof Error ? e.message : '操作失败')
         } finally {
+          sending.current = false
           setBusy(false)
         }
       }}
     >
-      <fieldset disabled={busy} className="form-fields">
+      {notice && <p className="form-hint" role="status">{notice}</p>}
+      <fieldset disabled={busy || !!savedResult} className="form-fields">
         {children}
       </fieldset>
       {error && (
         <div className="error" role="alert">
           {error}
+          {requestId && <p>定位编号：{requestId}</p>}
+          {workspaceErrorActions && sessionExpired && <button className="text-button" type="button" onClick={() => window.dispatchEvent(new Event('workspace-login-expired'))}>重新登录并保留草稿</button>}
+          {workspaceErrorActions && !savedResult && <button className="text-button" type="button" onClick={() => { rememberClientError(error, requestId); requestErrorFeedback() }}>反馈此问题</button>}
         </div>
       )}
       <footer className="form-footer">
@@ -200,16 +235,22 @@ export function Form({
           <button
             type="button"
             className="button secondary"
-            onClick={onCancel}
+            onClick={() => { if (allowDraftLeave(formRef.current)) onCancel() }}
             disabled={busy}
           >
             取消
           </button>
         )}
-        <button type="submit" className="button primary" disabled={busy}>
+        {savedResult ? <button type="button" className="button primary" disabled={busy} onClick={async () => {
+          if (sending.current) return
+          sending.current = true; setBusy(true)
+          try { await savedResult.retry(); setError(''); setSavedResult(null) }
+          catch { setError('内容已保存，重新加载仍未成功。请保留此页面并稍后重试。') }
+          finally { sending.current = false; setBusy(false) }
+        }}>重新加载已保存结果</button> : <button type="submit" className="button primary" disabled={busy}>
           {busy && <LoaderCircle className="spin" size={16} />}{' '}
           {busy ? '正在保存…' : submitLabel}
-        </button>
+        </button>}
       </footer>
     </form>
   )
@@ -251,7 +292,7 @@ export function addDays(date: string, amount: number) {
 }
 export const currentMonth = () => localDate().slice(0, 7)
 export const nameOf = (data: Bootstrap, id: string) =>
-  data.users.find((user) => user.id === id)?.name || '未指定'
+  accountDisplayName(data.users.find((user) => user.id === id))
 export const projectOf = (data: Bootstrap, id: string | null) =>
   data.projects.find((project) => project.id === id)?.name || '部门工作'
 export const dateTime = (value: string) =>

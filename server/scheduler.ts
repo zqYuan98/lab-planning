@@ -2,6 +2,10 @@ import type { Entity, ReportSchedule, User } from '../shared/types.ts'
 import type { Store } from './store.ts'
 import { generateReport, normalizeReportPeriod, shiftMonth } from './reports.ts'
 import { WeeklySubmissionService } from './weekly-submissions.ts'
+import { runNotificationReminders } from './notification-reminders.ts'
+import { beginRuntimeRun } from './runtime-health.ts'
+import { publishCollaborationEvents } from './collaboration-notifications.ts'
+import { runCollaborationDigests } from './collaboration-digests.ts'
 
 interface ScheduleRun extends Entity { key: string; type: 'weekly' | 'monthly'; period: string; reportId: string }
 const SCHEDULE_ID = 'report-schedule'
@@ -52,8 +56,12 @@ export function runScheduledReports(store: Store, now = new Date()): string[] {
 export function startScheduler(store: Store): () => void {
   const submissions = new WeeklySubmissionService(store)
   const tick = () => {
-    try { submissions.reconcile() } catch (error) { console.error('周提报核对未完成：', error instanceof Error ? error.message : '未知错误') }
-    try { runScheduledReports(store) } catch (error) { console.error('报告定时任务未完成：', error instanceof Error ? error.message : '未知错误') }
+    const finish = beginRuntimeRun(store, 'scheduler'); let success = true
+    try { submissions.reconcile() } catch (error) { success = false; console.error('周提报核对未完成：', error instanceof Error ? error.message : '未知错误') }
+    try { runScheduledReports(store) } catch (error) { success = false; console.error('报告定时任务未完成：', error instanceof Error ? error.message : '未知错误') }
+    try { runNotificationReminders(store) } catch (error) { success = false; console.error('消息提醒生成失败：', error instanceof Error ? error.name : '未知错误') }
+    try { publishCollaborationEvents(store); runCollaborationDigests(store) } catch (error) { success = false; console.error('工作协作摘要生成失败：', error instanceof Error ? error.name : '未知错误') }
+    finish(success)
   }
   const interval = setInterval(tick, 30000)
   interval.unref()

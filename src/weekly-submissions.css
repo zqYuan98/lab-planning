@@ -31,3 +31,15 @@
 @media (max-width: 800px) { .weekly-submission-panel { padding: 16px; } .submission-cards { grid-template-columns: 1fr; } .submission-tools { width: 100%; } }
 
 .work-origin { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; overflow-wrap: anywhere; font-size: 12px; }
+.submission-review-state { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin: 8px 0; font-size: 13px; }
+.submission-review-state .badge { margin-left: 4px; }
+.submission-return-reason { margin: 0; color: var(--text-primary); white-space: pre-wrap; overflow-wrap: anywhere; }
+.submission-plan-link, .submission-review-history p { font-size: 13px; color: var(--text-secondary); }
+.submission-review-history { margin: 10px 0; }
+.submission-frozen-preview { max-height: 400px; border: 1px solid var(--border, #e2e7e5); border-radius: 4px; }
+.submission-frozen-preview article:last-child { border-bottom: 0; }
+.submission-frozen-preview p { overflow-wrap: anywhere; }
+.weekly-card-footer .weekly-delete-action { display: inline-flex; align-items: center; gap: 5px; color: #a13932; }
+.weekly-deletion-result { align-items: center; flex-wrap: wrap; }
+.weekly-deletion-result p { margin: 6px 0 0; }
+@media (max-width: 800px) { .submission-frozen-preview { max-height: 45vh; } .weekly-deletion-result > div { width: 100%; } }

@@ -6,7 +6,7 @@ services:
     build: .
     init: true
     restart: unless-stopped
-    stop_grace_period: 15s
+    stop_grace_period: 45s
     ports:
       - "${INTRANET_IP:-192.168.0.37}:${INTRANET_PORT:-4310}:4310"
     environment:

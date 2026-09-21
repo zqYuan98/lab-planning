@@ -1,4 +1,5 @@
 import type { Bootstrap, MonthlyPlan, WeeklyRecord } from "../shared/types";
+import { isActiveWeeklyRecord, isEffectiveWeeklyRecord } from "../shared/weekly-record-state";
 
 const iso = (value: Date) => value.toISOString().slice(0, 10);
 function day(value: string) {
@@ -60,8 +61,8 @@ export function monthWeeks(
     cursor <= last;
     cursor = addCalendarDays(cursor, 7)
   ) {
-    const week = records.filter((record) => record.weekStart === cursor);
-    const submitted = week.filter((record) => record.submitted),
+    const week = records.filter((record) => isActiveWeeklyRecord(record) && record.weekStart === cursor);
+    const submitted = week.filter(isEffectiveWeeklyRecord),
       drafts = week.length - submitted.length;
     const done = submitted.filter((record) => record.status === "done").length;
     const startDate = cursor < first ? first : cursor,
@@ -114,13 +115,13 @@ function weeklyPoints(data: Bootstrap, currentWeek: string): TrendPoint[] {
   return [-3, -2, -1, 0].map((offset) => {
     const period = addCalendarDays(currentWeek, offset * 7),
       records = data.weeklyRecords.filter(
-        (record) => record.weekStart === period,
+        (record) => isActiveWeeklyRecord(record) && record.weekStart === period,
       );
     return {
       period,
       value:
         records.length || offset === 0
-          ? records.filter((record) => record.submitted).length
+          ? records.filter(isEffectiveWeeklyRecord).length
           : null,
     };
   });
@@ -133,9 +134,9 @@ export function buildOverview(data: Bootstrap, today = shanghaiToday()) {
   );
   const published = plans.filter((plan) => plan.status === "published");
   const records = data.weeklyRecords.filter(
-      (record) => record.weekStart === weekStart,
+      (record) => isActiveWeeklyRecord(record) && record.weekStart === weekStart,
     ),
-    submitted = records.filter((record) => record.submitted);
+    submitted = records.filter(isEffectiveWeeklyRecord);
   const pending = plans.filter((plan) => plan.status === "submitted"),
     approved = plans.filter((plan) => plan.status === "approved");
   const reviewScope = plans.filter((plan) =>
@@ -150,7 +151,7 @@ export function buildOverview(data: Bootstrap, today = shanghaiToday()) {
     (plan) => plan.acceptanceStatus === "submitted",
   );
   const returned = plans.filter((plan) => plan.status === "returned");
-  const drafts = records.filter((record) => !record.submitted);
+  const drafts = records.filter((record) => !isEffectiveWeeklyRecord(record));
   const monthTrend = monthlyPoints(data, month),
     weekTrend = weeklyPoints(data, weekStart);
   const previousMonth = monthTrend.at(-2)!.value,
@@ -168,7 +169,7 @@ export function buildOverview(data: Bootstrap, today = shanghaiToday()) {
   );
   const planExecution = (plan: MonthlyPlan) => {
     const linked = records.filter((record) => record.monthlyPlanId === plan.id),
-      official = linked.filter((record) => record.submitted);
+      official = linked.filter(isEffectiveWeeklyRecord);
     return {
       records: linked.length,
       submitted: official.length,

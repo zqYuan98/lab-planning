@@ -47,7 +47,7 @@ export function requireIntegrationAuth(store: Store): RequestHandler {
     const user = token ? store.get<StoredUser>('users', token.userId) : undefined
     if (!token || token.revokedAt || Date.parse(token.expiresAt) <= Date.now() || !user || !canUseAccount(user) || token.credentialVersion !== user.credentialVersion) return next(new HttpError(401, '集成令牌无效、已到期或已撤销'))
     const routePath = req.path.toLowerCase().replace(/\/+$/, '')
-    const scope = routePath.startsWith('/data') || routePath === '/context' ? 'data:read' : ['GET', 'HEAD'].includes(req.method) ? 'imports:read' : routePath.endsWith('/commit') || /^\/imports\/history\//.test(routePath) ? 'imports:commit' : 'imports:write'
+    const scope = routePath.startsWith('/data') || routePath === '/context' ? 'data:read' : ['GET', 'HEAD'].includes(req.method) ? 'imports:read' : req.method === 'DELETE' || routePath.endsWith('/commit') || /^\/imports\/history\//.test(routePath) ? 'imports:commit' : 'imports:write'
     if (!token.scopes.includes(scope)) return next(new HttpError(403, `令牌缺少${scope}权限`))
     const now = Date.now()
     for (const [key, value] of usage) if (value.expires <= now) usage.delete(key)

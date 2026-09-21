@@ -9,6 +9,7 @@ import { WorkService } from './domain-work.ts'
 import { Store } from './store.ts'
 import { planReference, visiblePlan, visiblePublications } from './plan-visibility.ts'
 import { aiConfigured } from './reports.ts'
+import { isActiveWeeklyRecord } from '../shared/weekly-record-state.ts'
 
 /** Facade shared by HTTP routes and domain integration tests. */
 export class Domain extends DomainBase {
@@ -27,6 +28,8 @@ export class Domain extends DomainBase {
   reviewRegistration = (...args: Parameters<AdminService['reviewRegistration']>) => this.admin.reviewRegistration(...args)
   createUser = (...args: Parameters<AdminService['createUser']>) => this.admin.createUser(...args)
   updateUser = (...args: Parameters<AdminService['updateUser']>) => this.admin.updateUser(...args)
+  userDeletionPreview = (...args: Parameters<AdminService['userDeletionPreview']>) => this.admin.userDeletionPreview(...args)
+  deleteUser = (...args: Parameters<AdminService['deleteUser']>) => this.admin.deleteUser(...args)
   createProject = (...args: Parameters<AdminService['createProject']>) => this.admin.createProject(...args)
   updateProject = (...args: Parameters<AdminService['updateProject']>) => this.admin.updateProject(...args)
   createAnnualGoal = (...args: Parameters<AdminService['createAnnualGoal']>) => this.admin.createAnnualGoal(...args)
@@ -41,20 +44,23 @@ export class Domain extends DomainBase {
   planHistory = (...args: Parameters<MonthlyService['history']>) => this.monthly.history(...args)
   carryPlan = (...args: Parameters<MonthlyService['carry']>) => this.monthly.carry(...args)
   createTask = (...args: Parameters<WorkService['createTask']>) => this.work.createTask(...args)
+  captureTasks = (...args: Parameters<WorkService['captureTasks']>) => this.work.captureTasks(...args)
   updateTask = (...args: Parameters<WorkService['updateTask']>) => this.work.updateTask(...args)
   relinkTask = (...args: Parameters<WorkService['relinkTask']>) => this.work.relinkTask(...args)
   createWeeklyRecord = (...args: Parameters<WorkService['createWeeklyRecord']>) => this.work.createWeeklyRecord(...args)
+  createWeeklyAssignment = (...args: Parameters<WorkService['createWeeklyAssignment']>) => this.work.createWeeklyAssignment(...args)
   updateWeeklyRecord = (...args: Parameters<WorkService['updateWeeklyRecord']>) => this.work.updateWeeklyRecord(...args)
+  deleteWeeklyRecord = (...args: Parameters<WorkService['deleteWeeklyRecord']>) => this.work.deleteWeeklyRecord(...args)
   carryWeeklyRecord = (...args: Parameters<WorkService['carryWeeklyRecord']>) => this.work.carryWeeklyRecord(...args)
 
-  bootstrap(actor: User, includeLegacyOrigins = true): Bootstrap {
+  bootstrap(actor: User, includeLegacyOrigins = true, includeDeleted = false): Bootstrap {
     const isManager = actor.role === 'manager'
     const plans = this.store.list<MonthlyPlan>('plans').flatMap(plan => {
       const visible = visiblePlan(this.store, actor, plan)
       return visible ? [visible] : []
     })
     const tasks = this.store.list<Task>('tasks').filter(task => isManager || task.ownerId === actor.id)
-    const weeklyRecords = this.store.list<WeeklyRecord>('weeklyRecords').filter(record => isManager || record.ownerId === actor.id)
+    const weeklyRecords = this.store.list<WeeklyRecord>('weeklyRecords').filter(record => (includeDeleted || isActiveWeeklyRecord(record)) && (isManager || record.ownerId === actor.id))
     // Backfill only this member's own task snapshot when a historical record outlives its task.
     const visibleTaskIds = new Set(tasks.map(task => task.id))
     for (const record of weeklyRecords) {

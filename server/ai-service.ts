@@ -146,8 +146,12 @@ export async function callAiJson(store: Store, messages: AiMessage[], options: {
       void response.body?.cancel().catch(() => {})
       throw new Error('AI upstream returned an unsuccessful status')
     }
-    const envelope = JSON.parse(await responseText(response, controller.signal)) as { choices?: Array<{ message?: { content?: unknown } }> } | null
-    const content = envelope?.choices?.[0]?.message?.content
+    const envelope = JSON.parse(await responseText(response, controller.signal)) as { choices?: Array<{ finish_reason?: unknown; message?: { content?: unknown; refusal?: unknown } }> } | null
+    if (!Array.isArray(envelope?.choices) || envelope.choices.length !== 1) throw new Error('AI response must contain one complete choice')
+    const answer = envelope.choices[0]
+    if (answer.finish_reason !== undefined && answer.finish_reason !== null && answer.finish_reason !== 'stop') throw new Error('AI response did not finish normally')
+    if (answer.message?.refusal) throw new Error('AI response was refused')
+    const content = answer.message?.content
     if (typeof content !== 'string' || !content.trim()) throw new Error('AI response has no JSON content')
     const trimmed = content.trim()
     const fenced = /^```(?:json)?[\t ]*\r?\n([\s\S]*?)\r?\n```$/i.exec(trimmed)

@@ -51,7 +51,7 @@ async function parsedFile(t: TestContext, f: ReturnType<typeof fixture>, row: Re
 }
 
 function setMode(f: ReturnType<typeof fixture>, batch: ImportBatch, mode: ImportBatch['mode']): ImportBatch {
-  return f.service.edit(f.actor, batch.id, { version: batch.version, mode, rows: batch.rows })
+  return f.service.edit(f.actor, batch.id, { version: batch.version, mode, rows: batch.rows, completionReview: { confirmed: true, sourceItemCount: batch.rows.length } })
 }
 
 test('manager activates an existing file plan directly, preserves original facts, and allows fields absent from the old form', async t => {
@@ -70,7 +70,7 @@ test('manager activates an existing file plan directly, preserves original facts
   assert.equal(plan.dueDate, '')
   assert.equal(plan.category, '')
   assert.equal(plan.ownerId, f.member.id)
-  assert.deepEqual(plan.importSource, { batchId: batch.id, sourceId: batch.sourceId, rowId: batch.rows[0].id, sourceStatus: '已完成' })
+  assert.deepEqual(plan.importSource, { batchId: batch.id, sourceId: batch.sourceId, rowId: batch.rows[0].id, sourceStatus: '已完成', mode: 'existing', notificationMode: 'silent' })
   assert.equal(f.service.source(f.actor, batch.id).base64, parsed.bytes.toString('base64'))
   assert.equal(f.store.list<AuditEvent>('events').filter(event => event.entityId === plan.id && ['submit', 'approve'].includes(event.action)).length, 0)
   assert.ok(f.store.list<Publication>('publications').some(publication => publication.plans.some(snapshot => snapshot.id === plan.id && snapshot.status === 'published')))

@@ -8,7 +8,7 @@ import { Domain } from '../server/domain.ts'
 import { ImportService } from '../server/import-service.ts'
 import { updateAiSettings } from '../server/ai-service.ts'
 import { createApp } from '../server/app.ts'
-import { applyMigrations } from '../server/storage-migrations.ts'
+import { applyMigrations, STORAGE_VERSION } from '../server/storage-migrations.ts'
 import type { ImportBatch } from '../shared/import-types.ts'
 import type { MonthlyPlan, User, WeeklyRecord } from '../shared/types.ts'
 
@@ -117,8 +117,9 @@ test('existing database rows survive baseline migration; newer data format block
     db.prepare('INSERT INTO entities VALUES(?,?,?,?)').run('plans', 'stable-id', 8, '{"title":"旧计划"}')
     applyMigrations(db); applyMigrations(db)
     assert.equal(db.prepare('SELECT version FROM entities').get()?.version, 8)
-    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM schema_migrations').get()?.n, 1)
-    db.prepare('INSERT INTO schema_migrations VALUES(?,?,?)').run(2, 'future', new Date().toISOString())
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM schema_migrations').get()?.n, STORAGE_VERSION)
+    assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='delivery_due'").get())
+    db.prepare('INSERT INTO schema_migrations VALUES(?,?,?)').run(STORAGE_VERSION + 1, 'future', new Date().toISOString())
     assert.throws(() => applyMigrations(db), /数据库版本高于/)
     assert.equal(db.prepare('SELECT data FROM entities').get()?.data, '{"title":"旧计划"}')
   } finally { db.close() }

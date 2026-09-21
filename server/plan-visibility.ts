@@ -11,24 +11,30 @@ function planSnapshot(value: unknown, id: string): MonthlyPlan | undefined {
   return plan.id === id && typeof plan.ownerId === 'string' && Array.isArray(plan.collaboratorIds) ? plan : undefined
 }
 
+export function planHasMergedSource(plan: MonthlyPlan, store?: Store): boolean {
+  const visited = new Set<string>()
+  let source: MonthlyPlan | undefined = plan
+  while (source && !visited.has(source.id)) {
+    visited.add(source.id)
+    if (source.mergedFromIds?.length) return true
+    source = source.sourcePlanId && store ? store.get<MonthlyPlan>('plans', source.sourcePlanId) : undefined
+  }
+  return false
+}
+
 /** Never split legacy merged prose by strings: the source ownership is not recoverable that way. */
 export function projectPlan(actor: User, plan: MonthlyPlan, store?: Store): MonthlyPlan {
   if (actor.role === 'manager') return plan
-  const visited = new Set<string>()
-  let source: MonthlyPlan | undefined = plan
-  let mergedSource = false
-  while (source && !visited.has(source.id)) {
-    visited.add(source.id)
-    if (source.mergedFromIds?.length) { mergedSource = true; break }
-    source = source.sourcePlanId && store ? store.get<MonthlyPlan>('plans', source.sourcePlanId) : undefined
-  }
+  const mergedSource = planHasMergedSource(plan, store)
   const { mergedFromIds: _merged, mergedIntoId: _target, ...safe } = plan
   return {
-    ...safe, sourcePlanId: null, reviewComment: '',
+    ...safe, sourcePlanId: null,
+    reviewComment: plan.isTemporary && plan.ownerId === actor.id && plan.status === 'returned' && !mergedSource ? plan.reviewComment : '',
     ...(plan.importSource ? { importSource: { ...plan.importSource, sourceStatus: '' } } : {}),
     ...(mergedSource ? { expectedOutcome: '团队合并目标，请按整体成果要求执行', acceptanceCriteria: '由管理者确认整体成果验收要求' } : {}),
     ...(plan.status === 'merged' && plan.ownerId !== actor.id ? {
       title: '已合并的来源提报', expectedOutcome: '来源个人内容不在当前读取范围', acceptanceCriteria: '请参照团队合并目标', actualOutcome: '', acceptanceNote: '',
+      ...(plan.isTemporary ? { temporaryReason: '来源临时事项的个人说明不在当前读取范围' } : {}),
     } : {}),
   }
 }

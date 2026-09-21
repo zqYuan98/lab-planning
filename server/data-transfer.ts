@@ -5,6 +5,7 @@ import { visibleImportHistory } from './import-service.ts'
 import { Domain } from './domain.ts'
 import { HttpError, Store } from './store.ts'
 import { businessEventCollections, collectionNames, emptyCollections, parsePacket, projectRow, rowReferences, type BusinessCollections, type BusinessDataPacket, type TransferCollection, type TransferType } from './data-transfer-schema.ts'
+import { collaborationCollectionNames, emptyCollaborationCollections } from './collaboration-transfer.ts'
 
 export type { BusinessDataPacket, BusinessCollections, TransferType } from './data-transfer-schema.ts'
 export { previewRestore, restoreBusinessData } from './data-restore.ts'
@@ -25,10 +26,11 @@ export function exportBusinessData(store: Store, actor: User, options: ExportOpt
   if (options.month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(options.month)) throw new HttpError(400, '导出月份须为 YYYY-MM')
   for (const filter of [options.ownerId, options.projectId]) if (filter !== undefined && (typeof filter !== 'string' || filter.length > 200)) throw new HttpError(400, '导出筛选条件无效')
   return store.transaction(() => {
-    const visible = new Domain(store).bootstrap(actor, false)
+    const visible = new Domain(store).bootstrap(actor, false, true)
     const isManager = actor.role === 'manager'
     const complete = type === 'all' && !options.month && !options.ownerId && !options.projectId
     const sources: BusinessCollections = {
+      ...emptyCollaborationCollections(),
       users: visible.users, projects: visible.projects, annualGoals: visible.annualGoals, plans: visible.plans, tasks: visible.tasks, weeklyRecords: visible.weeklyRecords,
       history: visibleImportHistory(store, actor),
       publications: visible.publications, reports: visible.reports,
@@ -40,11 +42,19 @@ export function exportBusinessData(store: Store, actor: User, options: ExportOpt
       weeklySubmissions: store.list<BusinessCollections['weeklySubmissions'][number]>('weeklySubmissions').filter(row => isManager || row.ownerId === actor.id),
       weeklyMissing: store.list<BusinessCollections['weeklyMissing'][number]>('weeklyMissing').filter(row => isManager || row.ownerId === actor.id),
       weeklyAdjustments: store.list<BusinessCollections['weeklyAdjustments'][number]>('weeklyAdjustments').filter(row => isManager || row.ownerId === actor.id),
+      weeklyPlanReviews: store.list<BusinessCollections['weeklyPlanReviews'][number]>('weeklyPlanReviews').filter(row => isManager || row.ownerId === actor.id),
     }
+    for (const name of collaborationCollectionNames) (sources[name] as Entity[]) = store.list<Entity & { ownerId: string; taskId?: string; parentTaskId?: string }>(name)
+      .filter(row => (isManager || row.ownerId === actor.id) && visible.tasks.some(task => task.id === (row.taskId ?? row.parentTaskId)))
     const plans = new Map(visible.plans.map(row => [row.id, row]))
     const matches = (name: TransferCollection, value: Entity) => {
       const row = value as unknown as Record<string, unknown>
       if (name === 'users' || name === 'events') return complete
+      if ((collaborationCollectionNames as readonly string[]).includes(name)) {
+        const task = visible.tasks.find(task => task.id === (row.taskId ?? row.parentTaskId))
+        return !!task && (!options.ownerId || task.ownerId === options.ownerId) && (!options.projectId || plans.get(String(task.monthlyPlanId))?.projectId === options.projectId)
+          && (!options.month || task.dueDate.startsWith(options.month) || plans.get(String(task.monthlyPlanId))?.month === options.month)
+      }
       if (name === 'weeklyRules' || name === 'weeklyCycles') return complete
       if ((name === 'reports' || name === 'publications') && (options.ownerId || options.projectId)) return false
       if (name === 'history') {
@@ -60,7 +70,7 @@ export function exportBusinessData(store: Store, actor: User, options: ExportOpt
       if (!options.month) return true
       if (name === 'plans' || name === 'publications') return row.month === options.month
       if (name === 'weeklyRecords') return overlapsMonth(String(row.weekStart), options.month)
-      if (['weeklyDuties', 'weeklySubmissions', 'weeklyMissing', 'weeklyAdjustments'].includes(name)) return overlapsMonth(String(row.cycleWeek), options.month)
+      if (['weeklyDuties', 'weeklySubmissions', 'weeklyMissing', 'weeklyAdjustments', 'weeklyPlanReviews'].includes(name)) return overlapsMonth(String(row.cycleWeek), options.month)
       if (name === 'tasks') return String(row.dueDate).startsWith(options.month) || plans.get(String(row.monthlyPlanId))?.month === options.month
       if (name === 'annualGoals') return row.year === Number(options.month.slice(0, 4))
       if (name === 'reports') return row.type === 'monthly' ? row.period === options.month : overlapsMonth(String(row.period), options.month)
@@ -81,6 +91,8 @@ export function exportBusinessData(store: Store, actor: User, options: ExportOpt
     for (let index = 0; index < queue.length; index++) {
       const { name, row } = queue[index]
       for (const ref of rowReferences(name, row)) add(ref.collection, ref.id)
+      if (name === 'weeklySubmissions') for (const review of sources.weeklyPlanReviews) if (review.submissionId === row.id) add('weeklyPlanReviews', review.id)
+      if (name === 'tasks') for (const collection of collaborationCollectionNames) for (const entry of sources[collection] as (Entity & { taskId?: string; parentTaskId?: string })[]) if ((entry.taskId ?? entry.parentTaskId) === row.id) add(collection, entry.id)
       if (name === 'plans' && (row as MonthlyPlan).status === 'published') {
         const plan = row as MonthlyPlan
         for (const publication of sources.publications) if (publication.month === plan.month && publication.revision === plan.publishedVersion) add('publications', publication.id)
@@ -91,7 +103,7 @@ export function exportBusinessData(store: Store, actor: User, options: ExportOpt
     }
     const collections = emptyCollections()
     for (const name of collectionNames) (collections[name] as unknown[]) = (sources[name] as Entity[]).filter(row => selected[name].has(row.id)).map(row => projectRow(name, row))
-    return parsePacket({ application: 'lab-planning', formatVersion: 2, exportedAt: new Date().toISOString(), collections })
+    return parsePacket({ application: 'lab-planning', formatVersion: collaborationCollectionNames.some(name => collections[name].length) ? 3 : 2, exportedAt: new Date().toISOString(), collections })
   })
 }
 

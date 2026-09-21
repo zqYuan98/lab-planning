@@ -1,0 +1,374 @@
+/* Technology palette for the authenticated workspace. Loaded after page styles. */
+:root {
+  --tech-primary: #1769e8;
+  --tech-primary-hover: #1057c6;
+  --tech-primary-soft: #eaf3ff;
+  --tech-primary-border: #c1d8f7;
+  --tech-focus: #347ce4;
+  --tech-canvas: #f0f5fb;
+  --tech-surface: #ffffff;
+  --tech-surface-subtle: #f5f8fc;
+  --tech-line: #dce5ef;
+  --tech-control: #b9c9dc;
+  --tech-ink: #14263d;
+  --tech-body: #2e425b;
+  --tech-muted: #53657a;
+  --tech-nav: #081a30;
+  --tech-nav-raised: #102b47;
+  --tech-nav-selected: #123d61;
+  --tech-nav-line: #203952;
+  --tech-nav-text: #d4e3f5;
+  --tech-nav-muted: #98aec9;
+  --tech-nav-accent: #65dbfa;
+}
+
+/* Body scope also reaches Arco portals; the login keeps its own theme. */
+body:has(.workspace-shell) {
+  --primary: var(--tech-primary);
+  --primary-hover: var(--tech-primary-hover);
+  --primary-soft: var(--tech-primary-soft);
+  --primary-1: 234, 243, 255;
+  --primary-2: 210, 229, 253;
+  --primary-3: 173, 207, 251;
+  --primary-4: 120, 174, 246;
+  --primary-5: 58, 133, 240;
+  --primary-6: 23, 105, 232;
+  --primary-7: 16, 87, 198;
+  --primary-8: 16, 68, 156;
+  --primary-9: 14, 51, 115;
+  --primary-10: 9, 33, 77;
+  --forest: var(--tech-primary);
+  --paper: var(--tech-canvas);
+  --surface: var(--tech-surface);
+  --surface-subtle: var(--tech-surface-subtle);
+  --border: var(--tech-line);
+  --control-border: var(--tech-control);
+  --text-primary: var(--tech-ink);
+  --text-body: var(--tech-body);
+  --text-secondary: var(--tech-muted);
+  --text-placeholder: #5d7088;
+  --ink: var(--tech-ink);
+  --muted: var(--tech-muted);
+  background: var(--tech-canvas);
+}
+
+.workspace-shell,
+.workspace-shell .workspace-body {
+  background: var(--tech-canvas);
+}
+
+/* Use an opaque navy base at every Arco layer, including the mobile portal. */
+.workspace-shell .workspace-sider,
+.workspace-mobile-drawer,
+.workspace-mobile-drawer .arco-drawer,
+.workspace-mobile-drawer .arco-drawer-inner,
+.workspace-mobile-drawer .arco-drawer-scroll,
+.workspace-mobile-drawer .arco-drawer-content,
+.workspace-mobile-drawer .workspace-drawer-inner {
+  background: var(--tech-nav);
+  color: var(--tech-nav-text);
+  --color-menu-light-bg: var(--tech-nav);
+  --color-fill-2: var(--tech-nav-raised);
+  --color-text-1: var(--tech-nav-text);
+  --color-text-2: var(--tech-nav-text);
+  --color-text-3: var(--tech-nav-muted);
+}
+
+.workspace-shell .workspace-sider {
+  border-right-color: var(--tech-nav-line);
+  box-shadow: 4px 0 20px #081a3008;
+}
+
+.workspace-sider .arco-layout-sider-children {
+  background: linear-gradient(180deg, #0d2440 0, var(--tech-nav) 260px);
+}
+
+.workspace-brand-row .brand,
+.workspace-brand-row .brand-name {
+  color: #f0f7ff;
+}
+
+.workspace-brand-row .brand-name small {
+  color: var(--tech-nav-muted);
+}
+
+.workspace-navigation {
+  scrollbar-color: #35506d transparent;
+}
+
+.workspace-navigation .arco-menu,
+.workspace-navigation .arco-menu-inner {
+  background: transparent;
+}
+
+.workspace-navigation .arco-menu-group-title,
+.workspace-navigation .arco-menu-item-group-title {
+  color: var(--tech-nav-muted);
+  background: transparent;
+  font-size: 12px;
+}
+
+.workspace-navigation .arco-menu-item {
+  color: var(--tech-nav-text);
+  background: transparent;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.workspace-navigation .arco-menu-item .workspace-menu-icon {
+  color: var(--tech-nav-muted);
+}
+
+.workspace-navigation .arco-menu-item:hover {
+  color: #f0f7ff;
+  background: var(--tech-nav-raised);
+}
+
+.workspace-navigation .arco-menu-item:hover .workspace-menu-icon {
+  color: var(--tech-nav-accent);
+}
+
+.workspace-navigation .arco-menu-item.arco-menu-selected,
+.workspace-navigation .arco-menu-item.arco-menu-selected:hover {
+  color: #e7f8ff;
+  background: var(--tech-nav-selected);
+}
+
+.workspace-navigation .arco-menu-item.arco-menu-selected .workspace-menu-icon {
+  color: var(--tech-nav-accent);
+}
+
+.workspace-navigation .arco-menu-item.arco-menu-selected::before {
+  background: var(--tech-nav-accent);
+}
+
+.workspace-navigation [role='menuitem']:focus-visible {
+  outline: 2px solid var(--tech-nav-accent);
+  outline-offset: -2px;
+  box-shadow: none;
+}
+
+.workspace-sider-bottom,
+.workspace-mobile-drawer .arco-drawer-header,
+.workspace-drawer-footer {
+  border-color: var(--tech-nav-line);
+}
+
+.workspace-sider-bottom .workspace-collapse-button,
+.workspace-mobile-drawer .arco-drawer-header-title,
+.workspace-drawer-heading .arco-btn,
+.workspace-drawer-footer {
+  color: var(--tech-nav-muted);
+}
+
+.workspace-mobile-drawer .arco-drawer-header {
+  background: var(--tech-nav);
+}
+
+.workspace-sider-bottom .workspace-collapse-button:hover,
+.workspace-drawer-heading .arco-btn:hover {
+  color: var(--tech-nav-accent);
+  background: var(--tech-nav-raised);
+}
+
+.workspace-sider-bottom .workspace-collapse-button:focus-visible,
+.workspace-drawer-heading .arco-btn:focus-visible {
+  outline: 2px solid var(--tech-nav-accent);
+  outline-offset: -2px;
+}
+
+.workspace-navigation .workspace-unread-count {
+  color: #d9f7ff;
+  background: #235574;
+}
+
+/* Keep dense work surfaces calm, with blue used for actions and selection. */
+.workspace-header {
+  background: var(--tech-surface);
+  border-bottom-color: var(--tech-line);
+}
+
+.workspace-header .workspace-primary-action {
+  box-shadow: 0 3px 9px #1769e815;
+}
+
+.workspace-account-button .arco-avatar {
+  color: var(--tech-primary-hover);
+  background: var(--tech-primary-soft);
+}
+
+.workspace-search .workspace-search-input {
+  border-color: var(--tech-line);
+  background: var(--tech-surface-subtle);
+}
+
+.workspace-search .workspace-search-input:hover {
+  border-color: var(--tech-control);
+}
+
+.workspace-search .workspace-search-input:focus-within {
+  border-color: var(--tech-focus);
+  background: var(--tech-surface);
+  box-shadow: 0 0 0 3px #1769e812;
+}
+
+.workspace-header .search-result.selected,
+.workspace-account-popup .arco-menu-item:hover {
+  background: var(--tech-primary-soft);
+}
+
+.workspace-header .search-result.selected .search-result-icon {
+  color: var(--tech-primary);
+  border-color: var(--tech-primary-border);
+  background: var(--tech-primary-soft);
+}
+
+.workspace-skip-link {
+  background: var(--tech-primary);
+}
+
+body:has(.workspace-shell) :is(button, a, input, select, textarea, summary):focus-visible {
+  outline-color: var(--tech-focus);
+}
+
+body:has(.workspace-shell) :is(input, select, textarea):focus {
+  border-color: var(--tech-focus);
+  box-shadow: 0 0 0 3px #1769e812;
+}
+
+body:has(.workspace-shell) :is(input[type='checkbox'], input[type='radio']) {
+  accent-color: var(--tech-primary);
+}
+
+body:has(.workspace-shell) :is(.badge-blue, .tabs button.selected span, .avatar.light, .project-icon, .goal-icon) {
+  color: var(--tech-primary-hover);
+  background: var(--tech-primary-soft);
+}
+
+body:has(.workspace-shell) :is(.row-actions button:not(.danger), .evidence-link, .goal-progress > strong, .toast svg, .report-table-wrap td a) {
+  color: var(--tech-primary);
+}
+
+body:has(.workspace-shell) .button.secondary:hover:not(:disabled) {
+  border-color: var(--tech-primary-border);
+  background: var(--tech-primary-soft);
+}
+
+body:has(.workspace-shell) :is(.icon-button:hover, .note, .context-box) {
+  background: var(--tech-surface-subtle);
+}
+
+body:has(.workspace-shell) .progress-track > div {
+  background: var(--tech-primary);
+}
+
+body:has(.workspace-shell) :is(.navigation-highlight, .report-history-item.is-selected) {
+  box-shadow: inset 3px 0 var(--tech-primary);
+}
+
+body:has(.workspace-shell) .navigation-context {
+  border-color: var(--tech-primary-border);
+  background: var(--tech-primary-soft);
+  color: var(--tech-body);
+}
+
+.workspace-shell .ow-page {
+  --ow-line: var(--tech-line);
+  --ow-text: var(--tech-body);
+  --ow-title: var(--tech-ink);
+  --ow-control: var(--tech-control);
+  --ow-soft: var(--tech-surface-subtle);
+  --ow-muted: var(--tech-muted);
+  --ow-blue-soft: var(--tech-primary-soft);
+  --ow-doing: var(--tech-primary);
+}
+
+.workspace-shell .ow-metric[data-tone='blue'] {
+  --ow-metric-color: var(--tech-primary);
+  --ow-metric-bg: var(--tech-primary-soft);
+}
+
+.workspace-shell .ow-metric.is-active {
+  border-color: var(--tech-primary-border);
+  background: #f7fbff;
+  box-shadow: inset 0 0 0 1px var(--tech-primary-border);
+}
+
+.workspace-shell :is(.ow-button.is-active, .ow-filter-chips button, .ow-density button[aria-pressed='true']) {
+  color: var(--tech-primary-hover);
+  border-color: var(--tech-primary-border);
+  background: var(--tech-primary-soft);
+}
+
+.workspace-shell :is(.ow-filter-count, .ow-page :is(.ow-col-doing, .ow-member-total) .ow-count, .wr-view-tabs button.is-selected) {
+  color: var(--tech-primary-hover);
+  background: var(--tech-primary-soft);
+}
+
+.workspace-shell .wr-page {
+  --wr-ink: var(--tech-ink);
+  --wr-muted: var(--tech-muted);
+  --wr-line: var(--tech-line);
+  --wr-blue: var(--tech-primary);
+}
+
+.workspace-shell :is(.wr-summary button:hover, .wr-summary button.is-selected, .notification-item:hover, .notification-item.is-selected, .feedback-counts button.is-active) {
+  background: var(--tech-primary-soft);
+}
+
+.workspace-shell .notification-shortcuts button {
+  color: var(--tech-body);
+  background: var(--tech-surface);
+  border-color: var(--tech-line);
+}
+
+.workspace-shell .notification-shortcuts button:hover {
+  color: var(--tech-primary-hover);
+  background: var(--tech-primary-soft);
+  border-color: var(--tech-primary-border);
+}
+
+.workspace-shell .notification-unread-dot {
+  background: var(--tech-primary);
+}
+
+.workspace-shell :is(.notification-content-item, .notification-source-action, .notification-acknowledgement, .feedback-state-note) {
+  background: var(--tech-surface-subtle);
+  border-color: var(--tech-line);
+}
+
+body:has(.workspace-shell) .feedback-attachments-editor.is-dragging {
+  border-color: var(--tech-primary);
+  background: var(--tech-primary-soft);
+}
+
+body:has(.workspace-shell) .feedback-upload-zone > svg {
+  color: var(--tech-primary);
+}
+
+/* Restore the brighter keyboard ring on navy navigation after shared focus rules. */
+body:has(.workspace-shell) .workspace-navigation [role='menuitem']:focus-visible,
+body:has(.workspace-shell) .workspace-sider-bottom .workspace-collapse-button:focus-visible,
+body:has(.workspace-shell) .workspace-drawer-heading .arco-btn:focus-visible {
+  outline-color: var(--tech-nav-accent);
+}
+
+@media (max-width: 900px) {
+  .workspace-mobile-drawer .arco-drawer-header-title {
+    width: 100%;
+  }
+
+  .workspace-drawer-heading .arco-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .workspace-drawer-footer {
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-navigation .arco-menu-item {
+    transition: none;
+  }
+}

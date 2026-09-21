@@ -10,6 +10,8 @@ import {
 } from 'lucide-react'
 import Input, { type RefInputType } from '@arco-design/web-react/es/Input'
 import type { Bootstrap } from '../../shared/types'
+import { canUseAccount } from '../../shared/auth-policy'
+import { accountDisplayName } from '../account-options'
 import type { Navigate, NavigationIntent, PageId } from '../navigation'
 import { shanghaiToday, weekMonday } from '../overview-data'
 
@@ -39,7 +41,7 @@ const categories: SearchCategory[] = [
 ]
 
 export function buildWorkspaceSearchIndex(data: Bootstrap, currentWeek = weekMonday(shanghaiToday())): SearchResult[] {
-    const people = new Map(data.users.map((user) => [user.id, user.name]))
+    const people = new Map(data.users.map((user) => [user.id, accountDisplayName(user)]))
     const projects = new Map(
       data.projects.map((project) => [project.id, project.name]),
     )
@@ -99,7 +101,7 @@ export function buildWorkspaceSearchIndex(data: Bootstrap, currentWeek = weekMon
         intent: { id: project.id, query: project.name },
       })
     if (data.user.role === 'manager')
-      for (const user of data.users)
+      for (const user of data.users.filter(canUseAccount))
         entries.push({
           key: `user-${user.id}`,
           category: '团队成员',

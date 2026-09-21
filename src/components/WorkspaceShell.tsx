@@ -9,7 +9,7 @@ import Drawer from '@arco-design/web-react/es/Drawer'
 import {
   ArrowLeftToLine, ArrowRightFromLine, CalendarDays, ChartNoAxesCombined,
   Check, ChevronDown, ClipboardList, FileInput, FileText, FolderKanban,
-  Goal, LogOut, Menu as MenuIcon, Users, X,
+  Goal, LogOut, Menu as MenuIcon, Users, X, Bell, Settings2, ListTodo, MessageSquarePlus,
 } from 'lucide-react'
 import type { Bootstrap } from '../../shared/types'
 import type { Navigate, PageId } from '../navigation'
@@ -17,16 +17,22 @@ import { currentMonth, monday } from '../ui'
 import { shanghaiToday } from '../overview-data'
 import WorkspaceBrand from './WorkspaceBrand'
 import WorkspaceSearch from './WorkspaceSearch'
+import { appVersion } from '../error-context'
 
 const navigation = [
   { id: 'overview', label: '部门概览', memberLabel: '我的工作台', group: '规划', icon: ChartNoAxesCombined },
+  { id: 'work-register', label: '我的工作清单', group: '规划', icon: ListTodo },
   { id: 'monthly', label: '月度目标', memberLabel: '我的月度目标', group: '规划', icon: CalendarDays },
   { id: 'weekly', label: '每周执行', memberLabel: '我的周计划', group: '规划', icon: ClipboardList },
+  { id: 'messages', label: '我的工作与消息', group: '规划', icon: Bell },
+  { id: 'collaboration', label: '进展与催办', memberLabel: '我的进展与回应', group: '规划', icon: ClipboardList },
+  { id: 'feedback', label: '问题与建议', memberLabel: '我的反馈', group: '团队', icon: MessageSquarePlus },
   { id: 'goals', label: '年度目标', group: '规划', icon: Goal },
   { id: 'projects', label: '项目档案', group: '资产', icon: FolderKanban },
   { id: 'imports', label: '数据导入', group: '资产', icon: FileInput },
   { id: 'reports', label: '报告中心', group: '资产', icon: FileText, manager: true },
   { id: 'team', label: '成员管理', group: '团队', icon: Users, manager: true },
+  { id: 'notification-settings', label: '通知设置', group: '团队', icon: Settings2, manager: true },
 ] satisfies { id: PageId; label: string; memberLabel?: string; group: string; icon: typeof Goal; manager?: boolean }[]
 const collapseKey = 'tianshu.workspace.sidebar-collapsed.v1'
 
@@ -49,17 +55,18 @@ function menuKeys(event: KeyboardEvent<HTMLElement>) {
   items[next].focus()
 }
 
-function WorkspaceNavigation({ manager, collapsed, page, navigate }: {
-  manager: boolean; collapsed: boolean; page: PageId; navigate: Navigate
+function WorkspaceNavigation({ manager, collapsed, page, navigate, unreadCount }: {
+  manager: boolean; collapsed: boolean; page: PageId; navigate: Navigate; unreadCount: number
 }) {
   const visible = navigation.filter(item => !item.manager || manager)
   const renderItem = (item: typeof navigation[number]) => {
     const label = !manager && item.memberLabel ? item.memberLabel : item.label
     return (
-      <Menu.Item key={item.id} aria-label={label} aria-current={page === item.id ? 'page' : undefined}
+      <Menu.Item key={item.id} aria-label={`${label}${item.id === 'messages' && unreadCount ? `，${unreadCount} 条未查看` : ''}`} aria-current={page === item.id ? 'page' : undefined}
         renderItemInTooltip={() => label}>
         <item.icon size={18} className="workspace-menu-icon" aria-hidden="true" />
         <span className="workspace-menu-label">{label}</span>
+        {item.id === 'messages' && unreadCount > 0 && <span className="workspace-unread-count" aria-hidden="true">{unreadCount > 99 ? '99+' : unreadCount}</span>}
       </Menu.Item>
     )
   }
@@ -121,8 +128,8 @@ function AccountMenu({ data, onLogout }: { data: Bootstrap; onLogout: () => void
   )
 }
 
-export default function WorkspaceShell({ data, page, navigate, onLogout, leaveConfirmationOpen, children }: {
-  data: Bootstrap; page: PageId; navigate: Navigate; onLogout: () => void; leaveConfirmationOpen: boolean; children: ReactNode
+export default function WorkspaceShell({ data, page, navigate, onLogout, onFeedback, leaveConfirmationOpen, children, unreadCount = 0 }: {
+  data: Bootstrap; page: PageId; navigate: Navigate; onLogout: () => void; onFeedback?: () => void; leaveConfirmationOpen: boolean; children: ReactNode; unreadCount?: number
 }) {
   const manager = data.user.role === 'manager'
   const [collapsed, setCollapsed] = useState(() => {
@@ -166,8 +173,10 @@ export default function WorkspaceShell({ data, page, navigate, onLogout, leaveCo
         <a href="#workspace-content" className="workspace-skip-link">跳至主要内容</a>
         <Layout.Sider className="workspace-sider" width={232} collapsedWidth={72} collapsed={collapsed} trigger={null}>
           <div className="workspace-brand-row" aria-label="天枢实验室 · 部门工作空间"><WorkspaceBrand /></div>
-          <WorkspaceNavigation manager={manager} collapsed={collapsed} page={page} navigate={navigateFromShell} />
+          <WorkspaceNavigation manager={manager} collapsed={collapsed} page={page} navigate={navigateFromShell} unreadCount={unreadCount} />
           <div className="workspace-sider-bottom">
+            {onFeedback && <Button type="text" long className="workspace-collapse-button" aria-label="提报问题与建议" onClick={onFeedback}
+              icon={<MessageSquarePlus size={17} />}>{!collapsed && '提报问题与建议'}</Button>}
             <Button type="text" long className="workspace-collapse-button" aria-label={collapsed ? '展开侧栏' : '收起侧栏'}
               aria-expanded={!collapsed} onClick={() => setCollapsed(value => !value)}
               icon={collapsed ? <ArrowRightFromLine size={17} /> : <ArrowLeftToLine size={17} />}>
@@ -187,6 +196,7 @@ export default function WorkspaceShell({ data, page, navigate, onLogout, leaveCo
             </div>
             <div className="workspace-header-search"><WorkspaceSearch data={data} navigate={navigateFromShell} /></div>
             <div className="workspace-header-actions">
+              {onFeedback && <Button type="text" aria-label="提报问题与建议" onClick={onFeedback} icon={<MessageSquarePlus size={18} />} />}
               <Button type="primary" className="workspace-primary-action" icon={manager ? <Check size={16} /> : <CalendarDays size={16} />}
                 onClick={() => navigateFromShell(manager ? 'monthly' : 'weekly', manager
                   ? { action: 'review', month: currentMonth(), status: 'submitted' }
@@ -201,7 +211,7 @@ export default function WorkspaceShell({ data, page, navigate, onLogout, leaveCo
             {children}
           </Layout.Content>
           <Layout.Footer className="workspace-shell-footer">
-            <span>天枢实验室 · 部门工作空间</span>
+            <span>天枢实验室 · 部门工作空间 <small title="反馈问题时会自动关联此版本">版本 {appVersion}</small></span>
             <time dateTime={today}>{new Date(`${today}T12:00:00+08:00`).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai', month: 'long', day: 'numeric', weekday: 'long' })}</time>
           </Layout.Footer>
         </Layout>
@@ -214,7 +224,7 @@ export default function WorkspaceShell({ data, page, navigate, onLogout, leaveCo
         onCancel={() => setMobileOpen(false)}>
         <div className="shell-light workspace-drawer-inner">
           <div className="workspace-brand-row"><WorkspaceBrand /></div>
-          <WorkspaceNavigation manager={manager} collapsed={false} page={page} navigate={navigateFromShell} />
+          <WorkspaceNavigation manager={manager} collapsed={false} page={page} navigate={navigateFromShell} unreadCount={unreadCount} />
           <div className="workspace-drawer-footer">天枢实验室 · 部门工作空间</div>
         </div>
       </Drawer>

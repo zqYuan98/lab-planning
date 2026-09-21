@@ -7,6 +7,8 @@ import App from './App'
 import './styles.css'
 import './theme.css'
 import './workspace-shell.css'
+import './workspace-tech.css'
+import './auth-tech.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

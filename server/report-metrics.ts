@@ -1,9 +1,10 @@
-import type { MonthlyPlan, Report, ReportSnapshot, WeeklyRecord } from '../shared/types.ts'
+import type { MonthlyPlan, Report, ReportSnapshot, Task, WeeklyRecord } from '../shared/types.ts'
+import { isActiveWeeklyRecord, isEffectiveWeeklyRecord } from '../shared/weekly-record-state.ts'
 
 /** Pure snapshot calculations, shared by the browser and all export formats. */
 export function reportMetrics(snapshot: ReportSnapshot) {
   const plans = snapshot.plans.filter(plan => plan.status === 'published')
-  const weekly = snapshot.weeklyRecords.filter(record => record.submitted)
+  const weekly = snapshot.weeklyRecords.filter(isEffectiveWeeklyRecord)
   const accepted = plans.filter(plan => plan.acceptanceStatus === 'accepted').length
   const done = weekly.filter(record => record.status === 'done').length
   return {
@@ -11,7 +12,7 @@ export function reportMetrics(snapshot: ReportSnapshot) {
       notCompleted: plans.filter(p => p.acceptanceStatus === 'not_completed').length,
       rate: plans.length ? Math.round(accepted * 1000 / plans.length) / 10 : null },
     weekly: { total: weekly.length, done, blocked: weekly.filter(r => r.status === 'blocked' || r.status === 'not_done').length,
-      drafts: snapshot.weeklyRecords.length - weekly.length,
+      drafts: snapshot.weeklyRecords.filter(isActiveWeeklyRecord).length - weekly.length,
       rate: weekly.length ? Math.round(done * 1000 / weekly.length) / 10 : null }
   }
 }
@@ -34,6 +35,11 @@ export function planOriginLabel(snapshot: ReportSnapshot, plan: MonthlyPlan): st
   }
   return describe(plan, new Set())
 }
+function ordinaryImportedWork(record: WeeklyRecord, task?: Task): boolean {
+  // Relinking clears isTemporary but retains its immutable reason. Both values
+  // come from the report's frozen task snapshot, never the live task.
+  return !!record.importSource && !task?.isTemporary && !task?.temporaryReason?.trim()
+}
 /** Historical record attribution never changes when the stable task is later relinked. */
 export function weeklyAssociationLabel(snapshot: ReportSnapshot, record: WeeklyRecord): string {
   const task = snapshot.tasks.find(t => t.id === record.taskId)
@@ -42,7 +48,7 @@ export function weeklyAssociationLabel(snapshot: ReportSnapshot, record: WeeklyR
     return plan ? `${plan.month} · ${plan.title}` : id
   }
   if (record.monthlyPlanId) return `当期月计划：${planName(record.monthlyPlanId)}`
-  if (record.importSource) return task?.monthlyPlanId
+  if (ordinaryImportedWork(record, task)) return task?.monthlyPlanId
     ? `原资料导入时未关联月计划；生成报告时任务已补关联：${planName(task.monthlyPlanId)}`
     : '原资料导入时未关联月计划；生成报告时仍未关联'
   const reason = task?.temporaryReason ? `；临时原因：${task.temporaryReason}` : ''
@@ -54,12 +60,13 @@ export function snapshotWarnings(report: Pick<Report, 'snapshot' | 'type'>): str
   const { snapshot } = report
   const warnings: string[] = []
   const taskTitle = (id: string) => snapshot.tasks.find(t => t.id === id)?.title || id
-  for (const record of snapshot.weeklyRecords.filter(r => r.submitted)) {
+  for (const record of snapshot.weeklyRecords.filter(isEffectiveWeeklyRecord)) {
     if (record.status === 'done' && !record.actualOutcome.trim()) warnings.push(`「${taskTitle(record.taskId)}」${record.importSource ? '原资料标记完成，未注明实际成果' : '自报完成，缺少实际成果'}。`)
     if (record.status === 'done' && !record.evidenceUrl.trim()) warnings.push(`「${taskTitle(record.taskId)}」自报完成，缺少验收证据链接。`)
     if (['blocked', 'not_done'].includes(record.status) && !record.blocker.trim()) warnings.push(`「${taskTitle(record.taskId)}」缺少阻塞或未完成原因。`)
     if (['blocked', 'not_done'].includes(record.status) && !record.nextAction.trim()) warnings.push(`「${taskTitle(record.taskId)}」缺少下一步措施。`)
-    if (!record.monthlyPlanId && !snapshot.tasks.find(t => t.id === record.taskId)?.monthlyPlanId) warnings.push(`「${taskTitle(record.taskId)}」${record.importSource ? '原资料导入时未关联月计划' : '当期为临时工作'}，生成报告时仍未补充月计划关联。`)
+    const task = snapshot.tasks.find(t => t.id === record.taskId)
+    if (!record.monthlyPlanId && !task?.monthlyPlanId) warnings.push(`「${taskTitle(record.taskId)}」${ordinaryImportedWork(record, task) ? '原资料导入时未关联月计划' : '当期为临时工作'}，生成报告时仍未补充月计划关联。`)
   }
   for (const plan of snapshot.plans.filter(p => p.status === 'published')) {
     if (plan.acceptanceStatus === 'submitted') warnings.push(`月计划「${plan.title}」已提交成果，待管理者验收。`)
@@ -67,7 +74,7 @@ export function snapshotWarnings(report: Pick<Report, 'snapshot' | 'type'>): str
   }
   if (snapshot.nextPlans.length === 0) warnings.push('下一月尚无计划；下月安排待提报。')
   else if (snapshot.nextPlans.some(p => p.status !== 'published')) warnings.push('下月安排包含未发布草案，尚未成为正式承诺。')
-  if (report.type === 'weekly' && !snapshot.nextWeeklyRecords.some(r => r.submitted)) warnings.push('下周尚无已提交周计划，安排待确认。')
+  if (report.type === 'weekly' && !snapshot.nextWeeklyRecords.some(isEffectiveWeeklyRecord)) warnings.push('下周尚无已生效周计划，安排待提交或审核。')
   return warnings
 }
 
