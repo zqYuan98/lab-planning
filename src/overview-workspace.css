@@ -2778,6 +2778,7 @@ button.ow-count:hover,
 
   .workspace-shell .workspace-main > .ow-page .ow-period-label,
   .workspace-shell .workspace-main > .ow-page .ow-button,
+  .workspace-shell .workspace-main > .ow-page .ow-search input,
   .workspace-shell .workspace-main > .ow-page .ow-mobile-view select,
   .workspace-shell .workspace-main > .ow-page .ow-select select {
     min-height: 44px;
