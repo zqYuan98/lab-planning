@@ -141,7 +141,9 @@ body {
 .workspace-account-popup .arco-menu-item:hover { background: #f5f6f9; }
 .workspace-account-popup .arco-menu-item:focus-visible { outline: 2px solid #7187ff; outline-offset: -2px; }
 .workspace-content-region { min-width: 0; }
-.workspace-shell .workspace-main { max-width: 1600px; width: 100%; padding: 34px 36px 48px; margin: 0 auto; animation: workspace-page-enter 220ms ease-out both; }
+/* Keep fixed dialogs anchored to the viewport: a retained transform here would
+   make every inline modal use the full page as its containing block. */
+.workspace-shell .workspace-main { max-width: 1600px; width: 100%; padding: 34px 36px 48px; margin: 0 auto; animation: workspace-page-enter 180ms ease-out; }
 .workspace-shell:is(.workspace-page-overview, .workspace-page-work-register) .workspace-main { max-width: 1800px; padding-inline: 40px; }
 .workspace-main:focus { outline: none; }
 .workspace-shell-footer { display: flex; align-items: center; justify-content: space-between; gap: 15px; width: 100%; max-width: 1600px; padding: 0 36px 24px; margin: auto auto 0; color: var(--text-secondary); font-size: 12px; }
@@ -224,8 +226,8 @@ body {
 }
 
 @keyframes workspace-page-enter {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 
