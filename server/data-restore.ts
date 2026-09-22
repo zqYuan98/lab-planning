@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import type { Entity, MonthlyPlan, Project, Publication, Report, Task, User, WeeklyRecord } from '../shared/types.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
 import { isActiveWeeklyRecord, isWeeklyPlanReviewCycle } from '../shared/weekly-record-state.ts'
+import { isActiveTask } from '../shared/task-state.ts'
 import { addWeekDays } from './weekly-submission-clock.ts'
 import { manager } from './domain-common.ts'
 import { HttpError, Store } from './store.ts'
@@ -218,6 +219,12 @@ function inspectRestore(store: Store, packet: BusinessDataPacket, requestedMappi
       if (plan.month < row.weekStart.slice(0, 7) || plan.month > end.toISOString().slice(0, 7)) issue(`weeklyRecords/${row.id}：所属周与历史月计划月份不相交`)
       if (row.submitted && plan.status !== 'published') issue(`weeklyRecords/${row.id}：已提交周记录的月计划未发布`)
     } else if (task && !task.temporaryReason.trim() && !row.importSource) issue(`weeklyRecords/${row.id}：未关联月计划的历史记录缺少临时工作来源说明`)
+  }
+  // Check the merged live state, including references already present in the
+  // target. Historical report/audit/receipt snapshots keep their original facts.
+  for (const row of available.weeklyRecords.values() as Iterable<WeeklyRecord>) {
+    const task = tasks.get(row.taskId)
+    if (task && !isActiveTask(task) && isActiveWeeklyRecord(row)) issue(`weeklyRecords/${row.id}：已作废任务不能保留有效周安排`)
   }
   const unique = <T extends Entity>(name: TransferCollection, key: (row: T) => string, include: (row: T) => boolean = () => true) => {
     const seen = new Map<string, string>()

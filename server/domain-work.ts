@@ -7,8 +7,9 @@ import { DomainBase, bool, choice, date, manager, monday, own, participates, tex
 import { collaborationWorkMutation, validateCollaborationWorkUpdate } from './collaboration-hooks.ts'
 import { isSilentImport } from './import-notification-context.ts'
 import { isActiveWeeklyRecord, weeklyPlanFingerprint } from '../shared/weekly-record-state.ts'
+import { isActiveTask } from '../shared/task-state.ts'
 import { weeklyPlanApprovalMetadata } from './weekly-plan-review.ts'
-import { endTaskRequests } from './collaboration-tracking.ts'
+import { cancelTaskCollaboration, endTaskRequests } from './collaboration-tracking.ts'
 import type { BlockerEpisode } from '../shared/collaboration.ts'
 
 const registerFields = ['workSource', 'assignedBy', 'assignedOn', 'requestedOutcome', 'priority', 'estimatedEffort', 'currentProgress', 'decisionNeeded', 'waitingForFeedback'] as const
@@ -51,6 +52,7 @@ export class WorkService extends DomainBase {
         if (receipt.actorId !== actor.id || receipt.payloadHash !== payloadHash) throw new HttpError(409, '此提交标识已用于其他内容，请重新提交')
         const tasks = receipt.taskIds.map(id => this.need<Task>('tasks', id))
         if (tasks.some(task => task.ownerId !== actor.id)) throw new HttpError(403, '工作清单只能读取本人的事项')
+        if (tasks.some(task => !isActiveTask(task))) throw new HttpError(409, '原收件任务已作废，请核对后重新记录')
         return { tasks }
       }
       const source = { leader: '领导交办', self: '自行安排', coordination: '协作事项' }[metadata.workSource!]
@@ -78,6 +80,7 @@ export class WorkService extends DomainBase {
         if (receipt.payloadHash !== payloadHash) throw new HttpError(409, '此提交标识已用于其他内容，请重新提交')
         const task = this.need<Task>('tasks', receipt.taskId), record = this.need<WeeklyRecord>('weeklyRecords', receipt.recordId)
         own(actor, record.ownerId)
+        if (!isActiveTask(task)) throw new HttpError(409, '原任务已作废，不能重新安排')
         if (!isActiveWeeklyRecord(record)) throw new HttpError(409, '原周安排已删除，请重新发起安排')
         return { task, record }
       }
@@ -131,6 +134,7 @@ export class WorkService extends DomainBase {
     return collaborationWorkMutation(this.store, actor, input, 'task', () => {
       const before = this.need<Task>('tasks', id)
       own(actor, before.ownerId)
+      if (!isActiveTask(before)) throw new HttpError(409, '任务已作废，不能继续修改')
       this.current<Task>('tasks', id, input)
       validateCollaborationWorkUpdate(this.store, actor, before, input, 'task')
       for (const field of ['monthlyPlanId', 'ownerId', 'isTemporary', 'temporaryReason'] as const) {
@@ -162,6 +166,7 @@ export class WorkService extends DomainBase {
     manager(actor)
     return collaborationWorkMutation(this.store, actor, input, 'task', () => {
       const before = this.current<Task>('tasks', id, input)
+      if (!isActiveTask(before)) throw new HttpError(409, '任务已作废，不能调整关联')
       const monthlyPlanId = text(input.monthlyPlanId, '新的月计划')
       const reason = text(input.reason, '调整关联原因')
       const target = this.usablePlan(monthlyPlanId, before.ownerId, true)
@@ -179,6 +184,24 @@ export class WorkService extends DomainBase {
         const updated = this.store.update<WeeklyRecord>('weeklyRecords', record.id, record.version, { monthlyPlanId })
         this.audit(actor, 'weeklyRecord', record.id, 'relink_draft', record, updated, reason)
       }
+      return task
+    })
+  }
+  cancelTask(actor: User, id: string, input: Input): Task {
+    manager(actor)
+    return this.store.transaction(() => {
+      const before = this.current<Task>('tasks', id, input)
+      if (!isActiveTask(before)) throw new HttpError(409, '此任务已经作废，请刷新列表')
+      const reason = text(input.reason, '作废原因')
+      if (this.store.list<WeeklyRecord>('weeklyRecords').some(record => record.taskId === id && isActiveWeeklyRecord(record))) {
+        throw new HttpError(409, '此任务仍有周安排（含草稿），请先核对并删除相关周安排')
+      }
+      const now = new Date()
+      const task = this.store.update<Task>('tasks', id, before.version, {
+        cancellation: { cancelledAt: now.toISOString(), cancelledBy: actor.id, reason },
+      })
+      cancelTaskCollaboration(this.store, id, now, actor.id, reason)
+      this.audit(actor, 'task', id, 'cancel', before, task, reason)
       return task
     })
   }
@@ -214,6 +237,7 @@ export class WorkService extends DomainBase {
     return collaborationWorkMutation(this.store, actor, input, 'weeklyRecord', () => {
       const task = this.need<Task>('tasks', text(input.taskId, '个人任务'))
       own(actor, task.ownerId)
+      if (!isActiveTask(task)) throw new HttpError(409, '任务已作废，不能新增周安排')
       this.activeUser(task.ownerId)
       const workOrigin = createWorkOrigin(actor, task.ownerId, input)
       const weekStart = monday(input.weekStart)
@@ -240,6 +264,8 @@ export class WorkService extends DomainBase {
       const before = this.need<WeeklyRecord>('weeklyRecords', id)
       own(actor, before.ownerId)
       if (!isActiveWeeklyRecord(before)) throw new HttpError(409, '周安排已删除，不能继续修改')
+      const task = this.store.get<Task>('tasks', before.taskId)
+      if (task && !isActiveTask(task)) throw new HttpError(409, '任务已作废，不能继续修改周安排')
       this.current<WeeklyRecord>('weeklyRecords', id, input)
       validateCollaborationWorkUpdate(this.store, actor, before, input, 'weeklyRecord')
       for (const field of ['taskId', 'ownerId', 'weekStart', 'monthlyPlanId'] as const) {

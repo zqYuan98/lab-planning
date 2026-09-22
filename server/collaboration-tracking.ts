@@ -1,4 +1,4 @@
-import type { DeadlineChangeRequest, FollowupRequest, TaskTracking } from '../shared/collaboration.ts'
+import type { BlockerEpisode, DeadlineChangeRequest, FollowupRequest, TaskTracking } from '../shared/collaboration.ts'
 import type { Task, User, WeeklyRecord } from '../shared/types.ts'
 import { readCollaborationSettings, taskTrackingEligible, validManagerIds } from './collaboration-policy.ts'
 import { HttpError, type Store } from './store.ts'
@@ -24,6 +24,20 @@ export function endTaskRequests(store: Store, taskId: string, now: Date, actorId
   }
   if (!recordId) for (const request of store.list<DeadlineChangeRequest>('deadlineChangeRequests')) if (request.taskId === taskId && request.status === 'open') {
     store.update<DeadlineChangeRequest>('deadlineChangeRequests', request.id, request.version, { status, decidedAt: now.toISOString(), decidedBy: actorId, decisionNote: reason })
+  }
+}
+/** The task cancellation transaction owns this cleanup; historical progress and receipts stay immutable. */
+export function cancelTaskCollaboration(store: Store, taskId: string, now: Date, actorId: string, reason: string): void {
+  const closureReason = `任务已作废：${reason}`
+  const tracking = store.get<TaskTracking>('taskTrackings', taskId)
+  if (tracking && tracking.state !== 'closed') store.update<TaskTracking>('taskTrackings', tracking.id, tracking.version, {
+    state: 'closed', closedAt: now.toISOString(), closedReason: closureReason, reviewAt: null,
+  })
+  endTaskRequests(store, taskId, now, actorId, closureReason)
+  for (const episode of store.list<BlockerEpisode>('blockerEpisodes')) if (episode.parentTaskId === taskId && !episode.resolvedAt) {
+    store.update<BlockerEpisode>('blockerEpisodes', episode.id, episode.version, {
+      resolvedAt: now.toISOString(), resolvedBy: actorId, closureReason,
+    })
   }
 }
 export function weeklyActiveFrom(record: WeeklyRecord, now: Date): string {

@@ -8,6 +8,7 @@ import { HttpError, type Store } from './store.ts'
 import { publishCollaborationEvents, recordPlanLifecycleEvent } from './collaboration-notifications.ts'
 import { isSilentImport } from './import-notification-context.ts'
 import { isActiveWeeklyRecord, isEffectiveWeeklyRecord } from '../shared/weekly-record-state.ts'
+import { isActiveTask } from '../shared/task-state.ts'
 
 interface MutationContext {
   actor: User; mutationId: string; now: Date; input: ProgressContent; source: ProgressEvent['source'];
@@ -130,7 +131,7 @@ function updateBlocker(store: Store, context: MutationContext, event: AuditEvent
   const before = (event.before ?? { status: 'planned' }) as Task | WeeklyRecord, after = event.after as Task | WeeklyRecord
   const tracking = store.get<TaskTracking>('taskTrackings', task.id)
   const current = store.list<BlockerEpisode>('blockerEpisodes').find(row => row.sourceType === event.entityType && row.sourceId === event.entityId && !row.resolvedAt)
-  const blocked = after.status === 'blocked' && (event.entityType !== 'weeklyRecord' || isEffectiveWeeklyRecord(after as WeeklyRecord))
+  const blocked = isActiveTask(task) && after.status === 'blocked' && (event.entityType !== 'weeklyRecord' || isEffectiveWeeklyRecord(after as WeeklyRecord))
   if (!blocked && current) store.update<BlockerEpisode>('blockerEpisodes', current.id, current.version, { resolvedAt: context.now.toISOString(), resolvedBy: context.actor.id, closureReason: after.status === 'done' ? '已完成' : '阻塞已解除或周安排已撤回' })
   const details = { reason: event.entityType === 'task' ? (after as Task).blockerReason ?? '' : (after as WeeklyRecord).blocker, impact: context.input.blockerImpact ?? after.blockerImpact ?? '', supportNeeded: context.input.supportNeeded ?? after.supportNeeded ?? '' }
   if (blocked && current && (current.reason !== details.reason || current.impact !== details.impact || current.supportNeeded !== details.supportNeeded)) store.update<BlockerEpisode>('blockerEpisodes', current.id, current.version, details)
@@ -151,7 +152,7 @@ function processAudits(store: Store, context: MutationContext): ProgressEvent | 
   const workEvents = context.events.filter(event => ['task', 'weeklyRecord'].includes(event.entityType) && event.after)
   const first = workEvents[0], firstWork = first?.after as Task | WeeklyRecord | undefined
   const task = firstWork ? store.get<Task>('tasks', first!.entityType === 'task' ? firstWork.id : (firstWork as WeeklyRecord).taskId) : undefined
-  if (!task || !collaborationEnabledFor(store, task.ownerId)) return null
+  if (!task || !isActiveTask(task) || !collaborationEnabledFor(store, task.ownerId)) return null
   for (const event of workEvents) {
     const work = event.after as Task | WeeklyRecord
     const eventTask = store.get<Task>('tasks', event.entityType === 'task' ? work.id : (work as WeeklyRecord).taskId)

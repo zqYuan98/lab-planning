@@ -6,6 +6,7 @@ import { captureNotificationFacts, notificationEventChanges } from './notificati
 import { isSilentImport } from './import-notification-context.ts'
 import { collaborationEnabledFor } from './collaboration-policy.ts'
 import { isEffectiveWeeklyRecord } from '../shared/weekly-record-state.ts'
+import { isActiveTask } from '../shared/task-state.ts'
 
 const suppressedTasks = new WeakSet<Store>()
 export function withTaskNotificationSuppressed<T>(store: Store, operation: () => T): T {
@@ -24,6 +25,8 @@ export function notifyBusinessEvent(store: Store, actor: User, event: AuditEvent
   if (!event.after || isSilentImport(store)) return
   if (event.entityType === 'task' || event.entityType === 'weeklyRecord') {
     const work = event.after as Task | WeeklyRecord
+    const currentTask = store.get<Task>('tasks', event.entityType === 'task' ? work.id : (work as WeeklyRecord).taskId)
+    if (currentTask && !isActiveTask(currentTask) || event.entityType === 'task' && !isActiveTask(work as Task)) return
     if (actor.role !== 'manager' || actor.id === work.ownerId || work.importSource && work.importSource.mode !== 'draft' || work.workOrigin?.kind !== 'assigned') return
     if (event.entityType === 'task' && work.importSource?.mode === 'draft' && !store.list<WeeklyRecord>('weeklyRecords').some(row => row.taskId === work.id && isEffectiveWeeklyRecord(row))) return
     // Only effective work is an assignment. A saved weekly draft becomes a

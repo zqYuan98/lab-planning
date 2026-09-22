@@ -53,6 +53,12 @@ export function remapCollaborationUsers(row: Record<string, unknown>, mapping: R
 }
 export function collaborationTransferIssues(rows: BusinessCollections, available: Record<TransferCollection, Map<string, Entity>>, issue: (message: string) => void) {
   const tasks = available.tasks as Map<string, Task>
+  for (const tracking of available.taskTrackings.values() as Iterable<TaskTracking>) {
+    if (tasks.get(tracking.taskId)?.cancellation && tracking.state !== 'closed') issue(`taskTrackings/${tracking.id}：已作废任务的督办必须关闭`)
+  }
+  for (const episode of available.blockerEpisodes.values() as Iterable<BlockerEpisode>) {
+    if (tasks.get(episode.parentTaskId)?.cancellation && !episode.resolvedAt) issue(`blockerEpisodes/${episode.id}：已作废任务的阻塞必须关闭`)
+  }
   for (const tracking of rows.taskTrackings) {
     if (tracking.id !== tracking.taskId) issue(`taskTrackings/${tracking.id}：跟踪主键必须为任务标识`)
     if (tasks.get(tracking.taskId)?.ownerId !== tracking.ownerId) issue(`taskTrackings/${tracking.id}：跟踪与任务负责人不一致`)
@@ -71,6 +77,7 @@ export function collaborationTransferIssues(rows: BusinessCollections, available
   for (const name of ['followupRequests', 'deadlineChangeRequests'] as const) {
     const open = new Set<string>()
     for (const row of available[name].values() as Iterable<FollowupRequest | DeadlineChangeRequest>) if (row.status === 'open') {
+      if (tasks.get(row.taskId)?.cancellation) issue(`${name}/${row.id}：已作废任务不能有待处理请求`)
       if (open.has(row.taskId)) issue(`${name}：同一任务存在多个待处理请求`)
       open.add(row.taskId)
     }

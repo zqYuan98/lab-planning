@@ -10,6 +10,7 @@ import { Store } from './store.ts'
 import { planReference, visiblePlan, visiblePublications } from './plan-visibility.ts'
 import { aiConfigured } from './reports.ts'
 import { isActiveWeeklyRecord } from '../shared/weekly-record-state.ts'
+import { isActiveTask } from '../shared/task-state.ts'
 
 /** Facade shared by HTTP routes and domain integration tests. */
 export class Domain extends DomainBase {
@@ -46,6 +47,7 @@ export class Domain extends DomainBase {
   createTask = (...args: Parameters<WorkService['createTask']>) => this.work.createTask(...args)
   captureTasks = (...args: Parameters<WorkService['captureTasks']>) => this.work.captureTasks(...args)
   updateTask = (...args: Parameters<WorkService['updateTask']>) => this.work.updateTask(...args)
+  cancelTask = (...args: Parameters<WorkService['cancelTask']>) => this.work.cancelTask(...args)
   relinkTask = (...args: Parameters<WorkService['relinkTask']>) => this.work.relinkTask(...args)
   createWeeklyRecord = (...args: Parameters<WorkService['createWeeklyRecord']>) => this.work.createWeeklyRecord(...args)
   createWeeklyAssignment = (...args: Parameters<WorkService['createWeeklyAssignment']>) => this.work.createWeeklyAssignment(...args)
@@ -59,8 +61,10 @@ export class Domain extends DomainBase {
       const visible = visiblePlan(this.store, actor, plan)
       return visible ? [visible] : []
     })
-    const tasks = this.store.list<Task>('tasks').filter(task => isManager || task.ownerId === actor.id)
-    const weeklyRecords = this.store.list<WeeklyRecord>('weeklyRecords').filter(record => (includeDeleted || isActiveWeeklyRecord(record)) && (isManager || record.ownerId === actor.id))
+    const storedTasks = this.store.list<Task>('tasks')
+    const cancelledTaskIds = new Set(storedTasks.filter(task => !isActiveTask(task)).map(task => task.id))
+    const tasks = storedTasks.filter(task => (includeDeleted || isActiveTask(task)) && (isManager || task.ownerId === actor.id))
+    let weeklyRecords = this.store.list<WeeklyRecord>('weeklyRecords').filter(record => (includeDeleted || isActiveWeeklyRecord(record) && !cancelledTaskIds.has(record.taskId)) && (isManager || record.ownerId === actor.id))
     // Backfill only this member's own task snapshot when a historical record outlives its task.
     const visibleTaskIds = new Set(tasks.map(task => task.id))
     for (const record of weeklyRecords) {
@@ -70,8 +74,12 @@ export class Domain extends DomainBase {
           const task = value as Task | null
           return !!task && task.id === record.taskId && (isManager || task.ownerId === actor.id)
         }).sort((a, b) => b.version - a.version)[0]
-      if (historical) { tasks.push(historical); visibleTaskIds.add(historical.id) }
+      if (historical) {
+        if (!includeDeleted && !isActiveTask(historical)) { cancelledTaskIds.add(historical.id); continue }
+        tasks.push(historical); visibleTaskIds.add(historical.id)
+      }
     }
+    if (!includeDeleted) weeklyRecords = weeklyRecords.filter(record => !cancelledTaskIds.has(record.taskId))
     const visiblePlanIds = new Set(plans.map(plan => plan.id))
     for (const work of [...tasks, ...weeklyRecords]) {
       if (!work.monthlyPlanId || visiblePlanIds.has(work.monthlyPlanId)) continue

@@ -3,6 +3,7 @@ import type { Entity, MonthlyPlan, Task, User, WeeklyRecord } from '../shared/ty
 import type { Notification, NotificationDelivery, NotificationSettings, NotificationTarget, NotificationView } from '../shared/notifications.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
 import { isActiveWeeklyRecord, isEffectiveWeeklyRecord } from '../shared/weekly-record-state.ts'
+import { isActiveTask } from '../shared/task-state.ts'
 import { appOrigin } from './auth.ts'
 import { HttpError, Store } from './store.ts'
 import { captureNotificationFacts, contentAsText, mergeNotificationChanges, notificationSubject, projectNotificationContent, targetKey } from './notification-content.ts'
@@ -25,8 +26,16 @@ export function getNotificationSettings(store: Store): NotificationSettings {
 export function currentIdentity(store: Store, userId: string): Identity | undefined {
   return store.list<Identity>('externalIdentities').find(row => row.provider === 'dingtalk' && row.corpId === process.env.DINGTALK_CORP_ID && row.userId === userId)
 }
+function cancelledTaskTarget(store: Store, target: NotificationTarget): boolean {
+  const reference = target.type === 'weeklyRecord' ? store.get<WeeklyRecord>('weeklyRecords', target.id)
+    : target.type === 'followup' || target.type === 'deadlineRequest'
+      ? store.get<{ taskId: string }>(target.type === 'followup' ? 'followupRequests' : 'deadlineChangeRequests', target.id) : undefined
+  const task = target.type === 'task' ? store.get<Task>('tasks', target.id) : reference ? store.get<Task>('tasks', reference.taskId) : undefined
+  return !!task && !isActiveTask(task)
+}
 export function targetAccessible(store: Store, actor: User, target: NotificationTarget): boolean {
   if (!canUseAccount(actor)) return false
+  if (cancelledTaskTarget(store, target)) return false
   if (target.type === 'feedback') {
     const row = store.get<{ reporterId: string }>('feedback', target.id)
     return !!row && (actor.role === 'manager' || row.reporterId === actor.id)
@@ -61,6 +70,9 @@ export function enqueueNotification(store: Store, input: Input, now = new Date()
     const id = notificationId(input.eventKey, input.recipientId)
     const previous = store.get<Notification>('notifications', id)
     if (previous) return previous
+    const targets = input.targets.filter(target => !cancelledTaskTarget(store, target))
+    if (input.targets.length && !targets.length) return null
+    input = { ...input, targets }
     const permittedTargets = input.targets.filter(target => targetAccessible(store, actor, target))
     let row = store.insert<Notification>('notifications', { ...input, id, contentSchemaVersion: 1, eventTime: input.eventTime ?? now.toISOString(),
       contentFacts: input.contentFacts ?? captureNotificationFacts(store, permittedTargets, actor), openedAt: null, acknowledgedAt: null, supersededAt: null })

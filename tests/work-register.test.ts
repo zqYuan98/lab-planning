@@ -15,6 +15,21 @@ function weekly(id: string, taskId: string, weekStart: string, patch: Partial<We
   return { ...entity, id, taskId, monthlyPlanId: null, ownerId: user.id, weekStart, commitment: '推进事项', actualOutcome: '', evidenceUrl: '', blocker: '', nextAction: '', status: 'planned', submitted: false, ...patch }
 }
 
+test('cancelled work is neither active, waiting, unscheduled nor completed', () => {
+  const obsolete = task('obsolete', { status: 'doing', dueDate: '2025-12-01', waitingForFeedback: true, workSource: 'leader' })
+  const cancelled = { ...obsolete, version: 2, cancellation: { cancelledAt: '2026-01-01T01:00:00Z', cancelledBy: 'manager', reason: '已另建任务' } }
+  const data = { user, tasks: [obsolete, cancelled, task('keep')], weeklyRecords: [] }
+  const result = buildWorkRegister(data, { today })
+  assert.deepEqual(result.rows.map(row => row.id), ['keep'])
+  assert.equal(result.counts.active, 1)
+  assert.equal(result.counts.unscheduled, 1)
+  assert.equal(result.counts.waiting, 0)
+  assert.equal(result.counts.done, 0)
+  assert.equal(result.counts.leader, 0)
+  assert.deepEqual(createWorkRegisterSnapshot(result).rows.map(row => row.id), ['keep'])
+  assert.equal(obsolete.status, 'doing')
+})
+
 test('Beijing calendar and Monday are stable across UTC day and year boundaries', () => {
   assert.equal(workRegisterToday(new Date('2025-12-31T15:59:59Z')), '2025-12-31')
   assert.equal(workRegisterToday(new Date('2025-12-31T16:00:00Z')), '2026-01-01')

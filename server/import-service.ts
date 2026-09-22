@@ -299,7 +299,7 @@ export class ImportService {
       const candidate = row.taskId ? this.store.get<Task>('tasks', row.taskId) : undefined
       const task = candidate && (actor.role === 'manager' || candidate.ownerId === actor.id) ? candidate : undefined
       issues.push(...temporaryImportIssues(row, task))
-      if (row.taskId && (!task || task.ownerId !== row.ownerId)) issues.push('关联任务无效或负责人不一致')
+      if (row.taskId && (!task || task.cancellation || task.ownerId !== row.ownerId)) issues.push('关联任务无效、已作废或负责人不一致')
       const planId = task?.monthlyPlanId || row.monthlyPlanId
       const candidatePlan = planId ? this.store.get<MonthlyPlan>('plans', planId) : undefined
       const plan = candidatePlan && (actor.role === 'manager' || participates(candidatePlan, actor.id)) ? candidatePlan : undefined

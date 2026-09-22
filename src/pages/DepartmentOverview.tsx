@@ -37,6 +37,7 @@ import { Modal, type PageProps } from "../ui";
 import type { Navigate } from "../navigation";
 import WorkOriginLabel from "../components/WorkOriginLabel";
 import { TaskLegend } from "../components/TaskSignals";
+import { TaskCancellationAction, TaskCancellationModal } from "../components/TaskCancellation";
 import { createSubmissionRequestId, weeklyRecordState } from "../weekly-submission-flow";
 import { isEffectiveWeeklyRecord } from "../../shared/weekly-record-state";
 import {
@@ -79,6 +80,7 @@ const compareName = (a: WorkRow, b: WorkRow) =>
 
 export default function DepartmentOverview({
   data,
+  refresh,
   navigate,
   notify,
 }: PageProps & { navigate: Navigate }) {
@@ -92,6 +94,8 @@ export default function DepartmentOverview({
   const [saveName, setSaveName] = useState("");
   const [saving, setSaving] = useState(false);
   const [detail, setDetail] = useState<WorkRow | null>(null);
+  const [cancellationTaskId, setCancellationTaskId] = useState<string | null>(null);
+  const cancellationTask = data.tasks.find(task => task.id === cancellationTaskId);
   const [drill, setDrill] = useState<{ title: string; rows: WorkRow[] } | null>(
     null,
   );
@@ -941,7 +945,7 @@ export default function DepartmentOverview({
           </div>
         </Modal>
       )}
-      {detail && (
+      {detail && !cancellationTask && (
         <Modal wide title={detail.title} onClose={() => setDetail(null)}>
           <div className={`ow-page ${workRowClass(detail)}`}>
             <div className="ow-detail-meta">
@@ -1027,6 +1031,7 @@ export default function DepartmentOverview({
                 </NoRows>
               )}
             </div>
+            <TaskCancellationAction data={data} task={data.tasks.find(task => task.id === detail.taskId)} onCancel={task => setCancellationTaskId(task.id)} />
             {detail.planId && (
               <button
                 className="ow-button"
@@ -1045,6 +1050,13 @@ export default function DepartmentOverview({
           </div>
         </Modal>
       )}
+      {cancellationTask && <TaskCancellationModal data={data} task={cancellationTask} onClose={() => setCancellationTaskId(null)} onSaved={async () => {
+        await refresh();
+        setCancellationTaskId(null);
+        setDetail(null);
+        setDrill(null);
+        notify('任务已作废，已退出任务总数和待办，历史记录保留');
+      }} />}
       {saving && (
         <Modal title="保存常用视图" onClose={() => setSaving(false)}>
           <form

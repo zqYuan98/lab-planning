@@ -24,6 +24,8 @@ export type WorkSource = 'leader' | 'self' | 'coordination'
 export interface Task extends Entity {
   title: string; monthlyPlanId: string | null; ownerId: string; description: string; dueDate: string;
   status: 'todo' | 'doing' | 'blocked' | 'done'; isTemporary: boolean; temporaryReason: string;
+  /** Explicit withdrawal of the whole task; execution status and historical evidence remain intact. */
+  cancellation?: { cancelledAt: string; cancelledBy: string; reason: string };
   importSource?: ImportProvenance; workOrigin?: WorkOrigin; completionNote?: string; evidenceUrl?: string;
   blockerReason?: string; blockerImpact?: string; supportNeeded?: string; nextAction?: string;
   /** Personal work context, independent of the audited identity that created the task. */

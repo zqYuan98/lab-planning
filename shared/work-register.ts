@@ -1,5 +1,6 @@
 import type { Bootstrap, MonthlyPlan, Task, WeeklyRecord, WorkSource } from './types'
 import { isActiveWeeklyRecord, isEffectiveWeeklyRecord } from './weekly-record-state'
+import { isActiveTask } from './task-state'
 
 export type WorkRegisterView = 'active' | 'leader' | 'unscheduled' | 'week' | 'waiting' | 'done' | 'source-review' | 'completion-review'
 
@@ -145,6 +146,7 @@ export function buildWorkRegister(
     if (!previous || task.version > previous.version ||
       (task.version === previous.version && task.updatedAt > previous.updatedAt)) ownTasks.set(task.id, task)
   }
+  for (const [id, task] of ownTasks) if (!isActiveTask(task)) ownTasks.delete(id)
   const recordsByTask = new Map<string, WeeklyRecord[]>()
   for (const record of data.weeklyRecords) {
     if (!isActiveWeeklyRecord(record) || record.ownerId !== data.user.id || !ownTasks.has(record.taskId)) continue

@@ -42,6 +42,7 @@ export function planFingerprintParts(value: string): [string, string, string, st
 }
 const planFingerprint = z.string().max(80000).refine(value => !!planFingerprintParts(value), '计划指纹格式无效')
 const deletionSchema = z.object({ deletedAt: timestamp, deletedBy: id, reason: line.refine(value => !!value.trim()) }).strict()
+const cancellationSchema = z.object({ cancelledAt: timestamp, cancelledBy: id, reason: line.refine(value => !!value.trim()) }).strict()
 const planApprovalSchema = z.object({ required: z.literal(true), approvedSubmissionId: id.nullable(), approvedFingerprint: planFingerprint.nullable(), suspended: z.literal(true).optional() }).strict()
   .refine(row => (row.approvedSubmissionId === null) === (row.approvedFingerprint === null), '批准回执和指纹必须同时存在')
 const entity = { id, version: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER), createdAt: timestamp, updatedAt: timestamp }
@@ -61,6 +62,7 @@ const planSchema = z.object({ ...entity, month, title: z.string().min(1).max(300
   if (row.isTemporary && !row.temporaryReason?.trim()) ctx.addIssue({ code: 'custom', message: '临时月度目标需要填写原因' })
 })
 const taskSchema = z.object({ ...entity, title: z.string().min(1).max(300), monthlyPlanId: id.nullable(), ownerId: id, description: z.string().max(20000), dueDate: z.union([day, z.literal('')]),
+  cancellation: cancellationSchema.optional(),
   status: z.enum(['todo', 'doing', 'blocked', 'done']), isTemporary: z.boolean(), temporaryReason: line, workOrigin: workOriginSchema.optional(), importSource: importSourceSchema.optional(),
   completionNote: line.optional(), evidenceUrl: z.string().max(2000).refine(value => { if (!value) return true; try { return ['http:', 'https:'].includes(new URL(value).protocol) } catch { return false } }).optional(), blockerReason: line.optional(), blockerImpact: line.optional(), supportNeeded: line.optional(), nextAction: line.optional(),
   workSource: z.enum(['leader', 'self', 'coordination']).optional(), assignedBy: z.string().max(100).optional(), assignedOn: z.union([day, z.literal('')]).optional(),
@@ -161,6 +163,7 @@ export function projectRow(collection: TransferCollection, value: unknown): Reco
   const row = pick(value, collection === 'events' ? auditFields : Object.keys((schema as typeof projectSchema).shape))
   if (row.workOrigin) row.workOrigin = pick(row.workOrigin, ['kind', 'actorId', 'reason'])
   if (row.importSource) row.importSource = pick(row.importSource, Object.keys(importSourceSchema.shape))
+  if (collection === 'tasks' && row.cancellation) row.cancellation = pick(row.cancellation, ['cancelledAt', 'cancelledBy', 'reason'])
   if (collection === 'weeklyRecords') {
     if (row.deletion) row.deletion = pick(row.deletion, ['deletedAt', 'deletedBy', 'reason'])
     if (row.planApproval) row.planApproval = pick(row.planApproval, ['required', 'approvedSubmissionId', 'approvedFingerprint', 'suspended'])
@@ -228,6 +231,7 @@ export function rowReferences(collection: TransferCollection, value: unknown): D
       for (const id of (row.mergedFromIds ?? []) as string[]) add('plans', id)
     }
     if (target === 'tasks' || target === 'weeklyRecords') add('plans', row.monthlyPlanId)
+    if (target === 'tasks' && row.cancellation) add('users', (row.cancellation as NonNullable<Task['cancellation']>).cancelledBy)
     if (target === 'weeklyRecords') {
       add('tasks', row.taskId)
       if (row.deletion) add('users', (row.deletion as WeeklyRecord['deletion'])!.deletedBy)
@@ -299,6 +303,10 @@ export function remapUsers(collection: TransferCollection, value: unknown, mappi
     return JSON.stringify(parts)
   }
   if (collection === 'users') replace('id')
+  if (collection === 'tasks' && row.cancellation) {
+    const cancellation = row.cancellation as NonNullable<Task['cancellation']>
+    cancellation.cancelledBy = mapping[cancellation.cancelledBy] ?? cancellation.cancelledBy
+  }
   if ((collection === 'tasks' || collection === 'weeklyRecords') && row.workOrigin) { const origin = row.workOrigin as { actorId: string }; origin.actorId = mapping[origin.actorId] ?? origin.actorId }
   if (['projects', 'annualGoals', 'plans', 'tasks', 'weeklyRecords'].includes(collection)) replace('ownerId')
   if (['weeklyDuties', 'weeklySubmissions', 'weeklyMissing', 'weeklyAdjustments', 'weeklyPlanReviews'].includes(collection)) replace('ownerId')

@@ -2,6 +2,7 @@ import type { BlockerAction, BlockerEpisode, CollaborationSettings, Collaboratio
 import type { AuditEvent, Task, User, WeeklyRecord } from '../shared/types.ts'
 import { summarizeCollaborationTask } from '../shared/collaboration-task-summary.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
+import { isActiveTask } from '../shared/task-state.ts'
 import { isActiveWeeklyRecord, isEffectiveWeeklyRecord } from '../shared/weekly-record-state.ts'
 import { WorkService } from './domain-work.ts'
 import { date } from './domain-common.ts'
@@ -21,6 +22,7 @@ export class CollaborationService {
   }
   private task(actor: User, id: string, requireEnabled = true): Task {
     const task = collaborationTask(this.store, actor, id)
+    if (requireEnabled && !isActiveTask(task)) throw new HttpError(409, '任务已作废，不能继续更新或催办')
     if (requireEnabled) this.enabled(task)
     return task
   }
@@ -46,7 +48,7 @@ export class CollaborationService {
     const rows = <T extends { taskId?: string; parentTaskId?: string; ownerId: string }>(collection: string): T[] => this.store.list<T>(collection).filter(row => (row.taskId ?? row.parentTaskId) === task.id && (manager || row.ownerId === actor.id))
     return { task, ...summarizeCollaborationTask(task, this.store.list<WeeklyRecord>('weeklyRecords'), viewer, this.clock()), tracking: this.store.get<TaskTracking>('taskTrackings', task.id) ?? null,
       progressEvents: rows('progressEvents'), followups: rows('followupRequests'), responses: rows('followupResponses'), blockerEpisodes: rows('blockerEpisodes'), blockerActions: rows('blockerActions'), deadlineRequests: rows('deadlineChangeRequests'),
-      effectiveManagerIds: effectiveManagerIds(this.store, task), enabled: collaborationEnabledFor(this.store, task.ownerId), eligible: taskTrackingEligible(this.store, task, this.clock()) }
+      effectiveManagerIds: effectiveManagerIds(this.store, task), enabled: isActiveTask(task) && collaborationEnabledFor(this.store, task.ownerId), eligible: taskTrackingEligible(this.store, task, this.clock()) }
   }
   previewTracking(actor: User, taskId: string): TrackingPreview {
     this.manager(actor)

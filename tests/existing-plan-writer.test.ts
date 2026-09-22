@@ -21,6 +21,18 @@ function row(ownerId: string, patch: Partial<ImportRow> = {}): ImportRow {
     actualOutcome: '', blocker: '', nextAction: '', sourceStatus: '', monthlyPlanId: '', linkedRowId: '', taskId: '', issues: [], ...patch }
 }
 
+test('existing import cannot reschedule an explicitly cancelled task or overwrite its retained history', t => {
+  const f = fixture(t)
+  const task = f.domain.createTask(f.member, { title: '旧任务', isTemporary: true, temporaryReason: '旧临时工作', dueDate: '2026-09-25' })
+  const cancelled = f.domain.cancelTask(f.manager, task.id, { version: task.version, reason: '不再使用旧任务' })
+  const input = row(f.member.id, { kind: 'weekly', taskId: task.id, ownerId: f.member.id, weekStart: '2026-09-21', isTemporary: true, temporaryReason: '旧临时工作' })
+  assert.ok(validateExistingRow(f.store, f.manager, input, [input]).some(issue => issue.includes('作废')))
+  const writer = new ExistingPlanWriter(f.store, f.manager, { id: 'cancelled-batch', sourceId: 'cancelled-source' })
+  assert.throws(() => writer.weekly(input), /作废/)
+  assert.deepEqual(f.store.get('tasks', task.id), cancelled)
+  assert.equal(f.store.list('weeklyRecords').length, 0)
+})
+
 test('existing monthly plans publish directly with one complete snapshot per month and honest result states', t => {
   const f = fixture(t)
   const imported = f.store.transaction(() => {

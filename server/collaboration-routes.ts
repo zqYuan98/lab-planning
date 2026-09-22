@@ -3,6 +3,7 @@ import type { DeadlineChangeRequest, FollowupRequest, TaskTracking } from '../sh
 import type { CollaborationPreference, DigestItem, NotificationDigest } from '../shared/collaboration-notifications.ts'
 import type { Entity, Task, User, WeeklyRecord } from '../shared/types.ts'
 import { summarizeCollaborationTask } from '../shared/collaboration-task-summary.ts'
+import { isActiveTask } from '../shared/task-state.ts'
 import { HttpError, type Store } from './store.ts'
 import { requireManager } from './auth.ts'
 import { CollaborationService, readCollaborationSettings } from './collaboration-service.ts'
@@ -18,7 +19,7 @@ export function collaborationRouter(store: Store) {
   const router = Router(), service = new CollaborationService(store)
   router.get('/collaboration', (req, res) => {
     const settings = readCollaborationSettings(store)
-    const tasks = store.list<Task>('tasks').filter(task => req.user.role === 'manager' || task.ownerId === req.user.id)
+    const tasks = store.list<Task>('tasks').filter(isActiveTask).filter(task => req.user.role === 'manager' || task.ownerId === req.user.id)
     const followups = store.list<FollowupRequest>('followupRequests')
     const now = new Date(), weeklyByTask = new Map<string, WeeklyRecord[]>()
     for (const record of store.list<WeeklyRecord>('weeklyRecords')) {

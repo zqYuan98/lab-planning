@@ -97,7 +97,7 @@ function botText(store: Store, inbox: CallbackInbox, client: DingTalkNativeClien
   if (!actor || !canUseAccount(actor) || !identity || identity.identityId !== data.bindingId || identity.bindingVersion !== data.bindingVersion || !settings.pilotUserIds.includes(actor.id)) return `请先在平台登录并绑定当前企业钉钉账号：${entry}`
   const command = String(data.content).trim()
   if (command === '我的待办') {
-    const tasks = store.list<Task>('tasks').filter(row => row.ownerId === actor.id && row.status !== 'done').slice(0, 10)
+    const tasks = store.list<Task>('tasks').filter(row => !row.cancellation && row.ownerId === actor.id && row.status !== 'done').slice(0, 10)
     return `我的待办（最多10项）\n${tasks.map(row => `${row.title}｜${row.status === 'blocked' ? '受阻' : row.status === 'doing' ? '进行中' : '未开始'}｜事项编号 ${row.id}`).join('\n') || '暂无未完成事项'}\n${entry}`
   }
   if (command === '我的催办') {

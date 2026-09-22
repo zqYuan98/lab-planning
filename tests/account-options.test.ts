@@ -49,6 +49,18 @@ test('search hides unavailable member shortcuts and preserves labeled historical
   assert.equal(history.intent.weekStart, '2026-09-14')
 })
 
+test('search omits cancelled tasks and never uses deleted weeks as active navigation targets', () => {
+  const data = fixture()
+  data.tasks.find(task => task.ownerId === 'active')!.cancellation = { cancelledAt: '2026-09-22T02:00:00Z', cancelledBy: 'manager', reason: '旧任务不用' }
+  data.weeklyRecords.find(record => record.ownerId === 'manager')!.deletion = { deletedAt: '2026-09-22T01:00:00Z', deletedBy: 'manager', reason: '重排' }
+  const index = buildWorkspaceSearchIndex(data, '2026-09-21')
+  assert.ok(!index.some(item => item.intent.id === 'task-active'))
+  const retained = index.find(item => item.intent.id === 'task-manager')!
+  assert.match(retained.description, /尚未安排周记录/)
+  assert.equal(retained.intent.weekStart, '2026-09-21')
+  assert.deepEqual(retained.taskWeeks, [])
+})
+
 test('weekly default view excludes inactive records and an explicit historical task opens them', () => {
   const props = { data: fixture(), refresh: async () => {}, notify: () => {} }
   const normal = renderToStaticMarkup(createElement(Weekly, { ...props, intent: { weekStart: '2026-09-14' } }))

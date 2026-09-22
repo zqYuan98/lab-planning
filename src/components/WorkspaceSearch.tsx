@@ -11,6 +11,8 @@ import {
 import Input, { type RefInputType } from '@arco-design/web-react/es/Input'
 import type { Bootstrap } from '../../shared/types'
 import { canUseAccount } from '../../shared/auth-policy'
+import { isActiveTask } from '../../shared/task-state'
+import { isActiveWeeklyRecord } from '../../shared/weekly-record-state'
 import { accountDisplayName } from '../account-options'
 import type { Navigate, NavigationIntent, PageId } from '../navigation'
 import { shanghaiToday, weekMonday } from '../overview-data'
@@ -61,8 +63,9 @@ export function buildWorkspaceSearchIndex(data: Bootstrap, currentWeek = weekMon
       intent: { id: plan.id, month: plan.month, query: plan.title },
     }))
     for (const task of data.tasks) {
+      if (!isActiveTask(task)) continue
       const records = data.weeklyRecords.filter(
-        (record) => record.taskId === task.id,
+        (record) => record.taskId === task.id && isActiveWeeklyRecord(record),
       ).sort((a, b) => Number(b.weekStart === currentWeek) - Number(a.weekStart === currentWeek) || b.weekStart.localeCompare(a.weekStart))
       const record = records[0]
       const taskKeywords = [task.title, task.description, people.get(task.ownerId)].join(' ')

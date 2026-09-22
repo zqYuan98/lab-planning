@@ -6,6 +6,7 @@ import type { WeeklyDuty } from '../shared/weekly-submissions.ts'
 import type { Store } from './store.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
 import { isActiveWeeklyRecord } from '../shared/weekly-record-state.ts'
+import { isActiveTask } from '../shared/task-state.ts'
 import { readCollaborationSettings, taskTrackingEligible } from './collaboration-policy.ts'
 import { evaluateWorkRisks } from './collaboration-rules.ts'
 import { planHasMergedSource, projectPlan } from './plan-visibility.ts'
@@ -30,13 +31,15 @@ export function collaborationTargetAccessible(store: Store, actor: User, target:
   if (target.type === 'followup' || target.type === 'deadlineRequest') {
     const row = store.get<FollowupRequest | DeadlineChangeRequest>(target.type === 'followup' ? 'followupRequests' : 'deadlineChangeRequests', target.id)
     const task = row ? store.get<Task>('tasks', row.taskId) : undefined
-    return !!row && !!task && (actor.role === 'manager' || row.ownerId === actor.id && task.ownerId === actor.id)
+    return !!row && !!task && isActiveTask(task) && (actor.role === 'manager' || row.ownerId === actor.id && task.ownerId === actor.id)
   }
   if (target.type === 'report') return actor.role === 'manager' && !!store.get<Report>('reports', target.id)
   if (target.type === 'summary') return actor.role === 'manager'
   if (target.type === 'plan') { const plan = store.get<MonthlyPlan>('plans', target.id); return !!plan && plan.status !== 'merged' && (actor.role === 'manager' || plan.ownerId === actor.id || plan.collaboratorIds.includes(actor.id)) }
   const collection = target.type === 'task' ? 'tasks' : target.type === 'weeklyRecord' ? 'weeklyRecords' : 'weeklyDuties'
   const row = store.get<Task | WeeklyRecord | WeeklyDuty>(collection, target.id)
+  const task = target.type === 'task' ? row as Task | undefined : target.type === 'weeklyRecord' && row ? store.get<Task>('tasks', (row as WeeklyRecord).taskId) : undefined
+  if (task && !isActiveTask(task)) return false
   return !!row && (target.type !== 'weeklyRecord' || isActiveWeeklyRecord(row as WeeklyRecord)) && (actor.role === 'manager' || row.ownerId === actor.id)
 }
 export function visibleDigestItems(store: Store, actor: User, digest: NotificationDigest): DigestItem[] {
@@ -155,6 +158,7 @@ function obligationCurrent(store: Store, type: 'followup' | 'deadlineRequest', i
   return !!obligation && obligation.status === 'open' && !!task && !!tracking && tracking.state === 'active' && tracking.generation === obligation.generation && task.ownerId === obligation.ownerId && taskTrackingEligible(store, task, now)
 }
 function itemStillActionable(store: Store, item: DigestItem, now: Date) {
+  if (item.taskId) { const task = store.get<Task>('tasks', item.taskId); if (!task || !isActiveTask(task)) return false }
   if (item.target.type === 'followup' || item.target.type === 'deadlineRequest') return obligationCurrent(store, item.target.type, item.target.id, now)
   if (item.target.type === 'plan') {
     const plan = store.get<MonthlyPlan>('plans', item.target.id)

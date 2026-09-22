@@ -20,6 +20,7 @@ import { assignmentAttempt, type SubmissionAttempt } from '../notification-navig
 import WorkOriginLabel, { workSource } from '../components/WorkOriginLabel'
 import WeeklySubmissionPanel from '../components/WeeklySubmissionPanel'
 import NotificationStatus from '../components/NotificationStatus'
+import { TaskCancellationAction, TaskCancellationModal } from '../components/TaskCancellation'
 import { PriorityBadge, WorkTypeBadge, TaskLegend, ContextHelp } from '../components/TaskSignals'
 import { taskPriority, workKind } from '../task-presentation'
 import { recordTarget, advanceWeek, weeklyRecordState, type WorkTarget, type ReviewRequest } from '../weekly-submission-flow'
@@ -110,6 +111,7 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
     ),
     [selected, setSelected] = useState<WeeklyRecord | null>(null)
   const [deletedRecord, setDeletedRecord] = useState<WeeklyRecord | null>(null)
+  const [cancellationTaskId, setCancellationTaskId] = useState<string | null>(null)
   const [creationTask, setCreationTask] = useState<Task | undefined>(
     intent?.action === 'create' ? initialTask : undefined,
   )
@@ -162,6 +164,7 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
     close()
   })
   const selectedTask = data.tasks.find((task) => task.id === selected?.taskId)
+  const cancellationTask = data.tasks.find(task => task.id === cancellationTaskId)
   return (
     <>
       <PageHeader
@@ -202,7 +205,7 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
       </div>
       {deletedRecord && <DeletedWeeklyRecordNotice data={data} record={deletedRecord} onRelink={() => { setSelected(deletedRecord); setModal('relink') }} onRecreate={task => {
         setWeek(deletedRecord.weekStart); showOwner(deletedRecord.ownerId); setWorkContext(recordTarget(deletedRecord, cycleWeek)); setFilter('all'); setSearch(''); setSourceFilter('all'); setDeletedRecord(null); openCreate(task.isTemporary, task)
-      }} onDismiss={() => setDeletedRecord(null)} />}
+      }} onCancelTask={task => setCancellationTaskId(task.id)} onDismiss={() => setDeletedRecord(null)} />}
       <div className="toolbar">
         <div className="week-switcher">
           <button
@@ -569,6 +572,12 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
           />
         </div>
       )}
+      {cancellationTask && manager && <TaskCancellationModal data={data} task={cancellationTask} onClose={() => setCancellationTaskId(null)} onSaved={async () => {
+        await refresh()
+        setCancellationTaskId(null)
+        setDeletedRecord(null)
+        notify('原任务已作废，已退出任务总数和待办，历史记录保留')
+      }} />}
       {modal === 'delete' && selected && manager && <Modal title="删除这条周安排" onClose={close}>
         <div className="context-box"><strong>{nameOf(data, selected.ownerId)} · {selected.weekStart} ～ {advanceWeek(selected.weekStart, 6)}</strong><p>{selected.commitment || selectedTask?.title || '未填写本周承诺'}</p><p>任务：{selectedTask?.title || selected.taskId}</p></div>
         <p className="modal-intro">删除后，该条安排退出当前列表与统计；原任务、其他周安排和已有提交、报告快照保留。已提交的整份计划需要重新核对，删除原因会留痕。</p>
@@ -823,8 +832,8 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
     </>
   )
 }
-export function DeletedWeeklyRecordNotice({ data, record, onRelink, onRecreate, onDismiss }: {
-  data: PageProps['data']; record: WeeklyRecord; onRelink: () => void; onRecreate: (task: Task) => void; onDismiss: () => void
+export function DeletedWeeklyRecordNotice({ data, record, onRelink, onRecreate, onCancelTask, onDismiss }: {
+  data: PageProps['data']; record: WeeklyRecord; onRelink: () => void; onRecreate: (task: Task) => void; onCancelTask?: (task: Task) => void; onDismiss: () => void
 }) {
   // Resolve from refreshed data, so relinking after deletion cannot recreate from stale task ownership.
   const task = data.tasks.find(item => item.id === record.taskId)
@@ -833,6 +842,7 @@ export function DeletedWeeklyRecordNotice({ data, record, onRelink, onRecreate, 
     <div><strong>已删除{nameOf(data, record.ownerId)}在 {record.weekStart} 当周的安排</strong><p>原任务及历史提交、报告仍保留。调整完成后请重新核对整份提报。</p>{task && <p>原任务当前月度关联：{plan ? `${plan.month} · ${plan.title}` : task.monthlyPlanId ? `目标 #${task.monthlyPlanId.slice(-6).toUpperCase()}` : '未关联月度目标'}</p>}</div>
     {data.user.role === 'manager' && task && <button className="button secondary" onClick={onRelink}>调整原任务月度关联</button>}
     {task && data.users.some(user => user.id === record.ownerId && canUseAccount(user)) && <button className="button secondary" onClick={() => onRecreate(task)}>沿用原任务重新安排该周</button>}
+    {onCancelTask && <TaskCancellationAction data={data} task={task} onCancel={onCancelTask} label="作废原任务" />}
     <button className="text-button" aria-label="关闭删除结果提示" onClick={onDismiss}>关闭</button>
   </div>
 }

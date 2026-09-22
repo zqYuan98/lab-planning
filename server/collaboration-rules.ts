@@ -4,6 +4,7 @@ import { workRiskLabels } from '../shared/collaboration-notifications.ts'
 import type { Task, User, WeeklyRecord } from '../shared/types.ts'
 import type { Store } from './store.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
+import { isActiveTask } from '../shared/task-state.ts'
 import { isEffectiveWeeklyRecord } from '../shared/weekly-record-state.ts'
 import { readCollaborationSettings, effectiveManagerIds, taskTrackingEligible } from './collaboration-policy.ts'
 import { adjacentWorkday, dayAt, shanghaiDate, shanghaiTime, shiftDay, weekOf, workdayCount, workingDay } from './collaboration-calendar.ts'
@@ -17,7 +18,7 @@ export function evaluateWorkRisks(store: Store, now = new Date()): WorkRisk[] {
   const requests = store.list<FollowupRequest>('followupRequests'), episodes = store.list<BlockerEpisode>('blockerEpisodes')
   for (const tracking of store.list<TaskTracking>('taskTrackings')) {
     const task = store.get<Task>('tasks', tracking.taskId), owner = store.get<User>('users', tracking.ownerId)
-    if (!task || !owner || !canUseAccount(owner) || task.ownerId !== tracking.ownerId || !settings.pilotUserIds.includes(owner.id) || task.status === 'done') continue
+    if (!task || !isActiveTask(task) || !owner || !canUseAccount(owner) || task.ownerId !== tracking.ownerId || !settings.pilotUserIds.includes(owner.id) || task.status === 'done') continue
     const managerIds = effectiveManagerIds(store, task)
     const add = (kind: WorkRiskKind, episode: string, dueAt: string, detail: string, managerOnly = false, target = { type: 'task' as const, id: task.id }) => {
       results.push({ key: notificationId(task.id, String(tracking.generation), kind, episode), taskId: task.id, ownerId: task.ownerId,

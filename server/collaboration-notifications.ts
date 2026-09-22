@@ -5,6 +5,7 @@ import type { Notification, NotificationDelivery, NotificationTarget } from '../
 import type { WeeklySubmission } from '../shared/weekly-submissions.ts'
 import type { Store } from './store.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
+import { isActiveTask } from '../shared/task-state.ts'
 import { enqueueNotification, notificationId } from './notifications.ts'
 import { readCollaborationSettings } from './collaboration-policy.ts'
 import { addDigestItem, createDigest } from './collaboration-digests.ts'
@@ -97,7 +98,8 @@ export function publishCollaborationEvents(store: Store, now = new Date()): void
       const receiptId = notificationId('collaboration-event-consumed', event.id)
       if (store.get('collaborationEventConsumptions', receiptId)) continue
       // Restored facts and events before enablement never become an external replay.
-      if (!settings.enabledAt || event.occurredAt < settings.enabledAt) {
+      const task = event.taskId ? store.get<Task>('tasks', event.taskId) : undefined
+      if (!settings.enabledAt || event.occurredAt < settings.enabledAt || task && !isActiveTask(task)) {
         store.insert<CollaborationEventConsumption>('collaborationEventConsumptions', { id: receiptId, eventId: event.id, consumedAt: now.toISOString() }); continue
       }
       const target = targetFor(event), owner = store.get<User>('users', event.ownerId), actor = store.get<User>('users', event.actorId)

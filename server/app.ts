@@ -168,6 +168,7 @@ export function createApp(options: AppOptions = {}) {
   app.post('/api/plans/:id/carry', mutate(domain.carryPlan))
   app.post('/api/tasks', create(domain.createTask))
   app.patch('/api/tasks/:id', mutate(domain.updateTask))
+  app.post('/api/tasks/:id/cancel', mutate(domain.cancelTask))
   app.post('/api/tasks/:id/relink', mutate(domain.relinkTask))
   app.post('/api/weekly-records', create(domain.createWeeklyRecord))
   app.post('/api/weekly-assignments', create(domain.createWeeklyAssignment))

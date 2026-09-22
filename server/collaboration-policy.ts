@@ -1,6 +1,7 @@
 import type { CollaborationSettings, TaskTracking } from '../shared/collaboration.ts'
 import type { MonthlyPlan, Project, Task, User } from '../shared/types.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
+import { isActiveTask } from '../shared/task-state.ts'
 import { HttpError, type Store } from './store.ts'
 
 export const COLLABORATION_SETTINGS_ID = 'collaboration'
@@ -47,7 +48,7 @@ export function effectiveManagerIds(store: Store, task: Task): string[] {
 }
 /** Business eligibility only; callers separately require an active tracking generation. */
 export function taskTrackingEligible(store: Store, task: Task, _now = new Date()): boolean {
-  if (!collaborationEnabledFor(store, task.ownerId) || task.status === 'done') return false
+  if (!isActiveTask(task) || !collaborationEnabledFor(store, task.ownerId) || task.status === 'done') return false
   const owner = store.get<User>('users', task.ownerId)
   if (!owner || !canUseAccount(owner)) return false
   if (task.monthlyPlanId) {

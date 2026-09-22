@@ -1,6 +1,7 @@
 import type { Bootstrap, Task, User, WeeklyRecord } from '../shared/types'
 import { canUseAccount, registrationApproved } from '../shared/auth-policy'
 import { isActiveWeeklyRecord, isEffectiveWeeklyRecord } from '../shared/weekly-record-state'
+import { isActiveTask } from '../shared/task-state'
 import { addCalendarDays, shanghaiToday, shiftCalendarMonth, weekMonday } from './overview-data'
 import { priorityRank, taskPriority, workKind, type WorkKind } from './task-presentation'
 
@@ -70,9 +71,12 @@ export function buildWorkspace(
     const previous = tasks.get(task.id)
     if (!previous || task.version > previous.version || task.version === previous.version && task.updatedAt > previous.updatedAt) tasks.set(task.id, task)
   }
+  const cancelledTaskIds = new Set([...tasks.values()].filter(task => !isActiveTask(task)).map(task => task.id))
+  for (const id of cancelledTaskIds) tasks.delete(id)
   // The domain enforces task/week uniqueness. Tolerate duplicated historical input as well.
   const recordsByIdentity = new Map<string, WeeklyRecord>()
   for (const record of [...data.weeklyRecords].filter(isActiveWeeklyRecord).filter(canRead).sort(latestFirst)) {
+    if (cancelledTaskIds.has(record.taskId)) continue
     const identity = `${record.taskId}\u0000${record.weekStart}`
     if (!recordsByIdentity.has(identity)) recordsByIdentity.set(identity, record)
   }

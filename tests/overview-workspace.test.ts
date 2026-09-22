@@ -13,6 +13,30 @@ const record = (id: string, patch: Partial<WeeklyRecord> = {}): WeeklyRecord => 
 const base = (): Bootstrap => ({ user: manager, users: [manager, member], projects: [], plans: [plan('september')], tasks: [], weeklyRecords: [], annualGoals: [], publications: [], reports: [], aiConfigured: false })
 const all = (data: Bootstrap) => buildWorkspace(data, { period: 'all', date: '2026-09-17' }, '2026-09-17')
 
+test('explicitly cancelled work exits every overview period while deleted scheduling alone preserves the task', () => {
+  const data = base()
+  const deletion = { deletedAt: '2026-09-17T01:00:00Z', deletedBy: manager.id, reason: '关联错误' }
+  const original = task('obsolete', { dueDate: '2026-09-16', status: 'doing', monthlyPlanId: null, isTemporary: true })
+  const cancelled = { ...original, version: 2, cancellation: { cancelledAt: '2026-09-17T02:00:00Z', cancelledBy: manager.id, reason: '旧任务已不用' } }
+  data.tasks = [original, task('keep', { dueDate: '2026-09-16', status: 'doing' })]
+  data.weeklyRecords = [record('removed', { taskId: original.id, weekStart: '2026-09-14', deletion })]
+  assert.equal(all(data).rows.find(row => row.taskId === original.id)?.status, 'unscheduled', 'a deleted week never implicitly cancels real work')
+  data.tasks.push(cancelled)
+  // A broad or cached payload must not revive a cancelled task from old record data.
+  data.weeklyRecords.push(record('stale', { taskId: original.id, weekStart: '2026-09-14' }))
+  const before = JSON.stringify(data)
+  for (const period of ['all', 'month', 'week'] as const) {
+    const { rows } = buildWorkspace(data, { period, date: '2026-09-17' }, '2026-09-17')
+    assert.deepEqual(rows.map(row => row.taskId), ['keep'])
+    const summary = summarizeWorkRows(rows)
+    assert.equal(summary.total, 1)
+    assert.equal(summary.unscheduled, 1)
+    assert.equal(summary.drafts, 0)
+    assert.equal(summary.overdue, 1)
+  }
+  assert.equal(JSON.stringify(data), before, 'statistics preserve historical objects')
+})
+
 test('one task across weeks is counted once; latest draft remains distinct from official completion', () => {
   const data = base()
   data.tasks = [task('task', { dueDate: '2026-09-16', status: 'done' }), task('task', { dueDate: '2026-09-16', status: 'done' })]

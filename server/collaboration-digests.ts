@@ -3,6 +3,7 @@ import type { BusinessNotificationEvent, FollowupRequest, TaskTracking } from '.
 import type { Entity, Task, User } from '../shared/types.ts'
 import type { Notification, NotificationDelivery, NotificationTarget } from '../shared/notifications.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
+import { isActiveTask } from '../shared/task-state.ts'
 import type { Store } from './store.ts'
 import { enqueueNotification, notificationId } from './notifications.ts'
 import { notificationText } from './notification-content.ts'
@@ -20,7 +21,12 @@ export function addDigestItem(store: Store, recipientId: string, sourceId: strin
     sourceKind: input.sourceKind, target: input.target, taskId: input.taskId, ownerId: input.ownerId, occurredAt: input.occurredAt, generation: input.generation, actionable: input.actionable,
     title: notificationText(input.title), lines: input.lines.map(notificationText), consumedBy: null })
 }
+function itemTaskActive(store: Store, item: Pick<DigestItem, 'taskId'>): boolean {
+  const task = item.taskId ? store.get<Task>('tasks', item.taskId) : undefined
+  return !item.taskId || !!task && isActiveTask(task)
+}
 export function createDigest(store: Store, recipientId: string, type: NotificationDigest['type'], slot: string, items: DigestItem[], now: Date, external = true) {
+  items = items.filter(item => itemTaskActive(store, item))
   if (!items.length) return
   const settings = readCollaborationSettings(store), day = shanghaiDate(now), id = notificationId('digest', recipientId, type, day, slot)
   const existing = store.get<NotificationDigest>('notificationDigests', id)
@@ -99,7 +105,7 @@ export function runCollaborationDigests(store: Store, now = new Date()): void {
       }
     }
     if (!workingDay(day, settings.calendarOverrides)) return
-    const pending = store.list<DigestItem>('digestItems').filter(item => !item.consumedBy)
+    const pending = store.list<DigestItem>('digestItems').filter(item => !item.consumedBy && itemTaskActive(store, item))
     if (time >= '09:00' && time < '17:30') {
       for (const recipient of store.list<User>('users').filter(user => canUseAccount(user) && user.role === 'manager')) {
         const carryover = pending.filter(item => item.recipientId === recipient.id && shanghaiDate(new Date(item.occurredAt)) < day)
@@ -113,7 +119,7 @@ export function runCollaborationDigests(store: Store, now = new Date()): void {
       if (!manager && (!settings.memberActionsEnabled || store.get<CollaborationPreference>('collaborationPreferences', recipient.id)?.memberActionsEnabled === false)) continue
       const fullManagerDigest = manager && (friday && settings.weeklyManagerEnabled || settings.dailyManagerEnabled)
       const type = manager ? friday && settings.weeklyManagerEnabled ? 'weekly_manager' : 'daily_manager' : 'member_actions'
-      const fresh = store.list<DigestItem>('digestItems').filter(item => item.recipientId === recipient.id && !item.consumedBy)
+      const fresh = store.list<DigestItem>('digestItems').filter(item => item.recipientId === recipient.id && !item.consumedBy && itemTaskActive(store, item))
       if (manager && !fullManagerDigest) {
         // Minimum management digest remains available for overflow facts, independently of optional daily summaries.
         createDigest(store, recipient.id, 'daily_manager', '17:30', fresh, now)
@@ -128,7 +134,7 @@ export function runCollaborationDigests(store: Store, now = new Date()): void {
       }
       // A weekly statistical summary may reference already delivered facts, as a new period summary.
       if (type === 'weekly_manager') {
-        const prior = store.list<DigestItem>('digestItems').filter(item => item.recipientId === recipient.id && item.consumedBy && item.sourceKind !== 'risk'
+        const prior = store.list<DigestItem>('digestItems').filter(item => item.recipientId === recipient.id && item.consumedBy && item.sourceKind !== 'risk' && itemTaskActive(store, item)
           && shanghaiDate(new Date(item.occurredAt)) >= weekOf(day) && !item.sourceId.startsWith('weekly-reference:'))
         for (const item of prior) fresh.push(addDigestItem(store, recipient.id, `weekly-reference:${weekOf(day)}:${item.id}`, { ...item, lines: ['本周期已回告的进展事实', ...item.lines] }))
       }

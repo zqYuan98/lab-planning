@@ -5,6 +5,7 @@ import { canUseAccount } from '../shared/auth-policy.ts'
 import { bool, choice, date, manager, monday, month, participates, text } from './domain-common.ts'
 import { HttpError, Store } from './store.ts'
 import { isActiveWeeklyRecord } from '../shared/weekly-record-state.ts'
+import { isActiveTask } from '../shared/task-state.ts'
 
 function overlaps(weekStart: string, period: string) {
   const end = new Date(`${weekStart}T00:00:00Z`)
@@ -102,7 +103,7 @@ export function validateExistingRow(store: Store, actor: User, row: ImportRow, r
     const candidate = typeof row.taskId === 'string' && row.taskId ? store.get<Task>('tasks', row.taskId) : undefined
     const task = candidate && (actor.role === 'manager' || candidate.ownerId === actor.id) ? candidate : undefined
     issues.push(...temporaryImportIssues(row, task))
-    if (row.taskId && (!task || task.ownerId !== row.ownerId)) issues.push('关联任务不存在或负责人不一致')
+    if (row.taskId && (!task || !isActiveTask(task) || task.ownerId !== row.ownerId)) issues.push('关联任务不存在、已作废或负责人不一致')
     const linked = row.linkedRowId ? rows.find(item => item.id === row.linkedRowId && item.kind === 'monthly' && item.selected) : undefined
     if (row.linkedRowId && !linked && !row.monthlyPlanId) issues.push('请选择本批次中有效的月计划行')
     const planId = row.monthlyPlanId || (!linked ? task?.monthlyPlanId : '')
@@ -190,6 +191,7 @@ export class ExistingPlanWriter {
       const taskId = row.taskId || before?.taskId || ''
       let task = taskId ? this.store.get<Task>('tasks', taskId) : undefined
       if (taskId && !task) throw new HttpError(404, '关联任务不存在')
+      if (task && !isActiveTask(task)) throw new HttpError(409, '原任务已作废，不能继续导入周安排')
       if (before && (before.ownerId !== row.ownerId || before.taskId !== taskId || before.weekStart !== monday(row.weekStart))) throw new HttpError(409, '原周记录的负责人、任务或所属周与导入资料不一致')
       const planId = monthlyPlanId === undefined ? row.monthlyPlanId || task?.monthlyPlanId || '' : monthlyPlanId
       const checkedRow = { ...row, taskId, monthlyPlanId: planId, linkedRowId: planId ? '' : row.linkedRowId }

@@ -36,11 +36,11 @@ export function nativeDesired(store: Store, recipientId: string, action: NativeA
     summary = view.body; done = !view.canAcknowledge; state = view.confirmationToken ?? view.acknowledgedAt ?? view.supersededAt
   } else if (action.kind === 'followup') {
     const request = store.get<FollowupRequest>('followupRequests', action.id), task = request && store.get<Task>('tasks', request.taskId)
-    if (!request || request.ownerId !== actor.id || !task || task.ownerId !== actor.id) return
+    if (!request || request.ownerId !== actor.id || !task || task.cancellation || task.ownerId !== actor.id) return
     title = `回应催办：${task.title}`; summary = request.requirement; done = request.status !== 'open'; dueTime = Date.parse(request.dueAt); state = [request.version, task.version]
   } else if (action.kind === 'progress') {
     const task = action.taskId && store.get<Task>('tasks', action.taskId)
-    if (!task || task.ownerId !== actor.id) return
+    if (!task || task.cancellation || task.ownerId !== actor.id) return
     const progress = store.list<ProgressEvent>('progressEvents').filter(row => row.taskId === task.id && row.ownerId === actor.id && row.meaningfulOwnerProgress && row.occurredAt >= note.createdAt).at(-1)
     title = `更新进展：${task.title}`; summary = view.body; done = !!progress; state = [task.version, progress?.id]
   } else if (action.kind === 'review' || action.kind === 'acceptance') {
@@ -56,7 +56,7 @@ export function nativeDesired(store: Store, recipientId: string, action: NativeA
     summary = '进入平台核对完整条目后正式提报。'; done = projected.status === 'exempt' || !!projected.latestSubmission && !projected.changedSinceSubmission; dueTime = Date.parse(duty.deadlineAt); state = [duty.version, projected.latestSubmission?.id, projected.changedSinceSubmission]
   } else if (action.kind === 'blocker') {
     const blocker = store.get<BlockerEpisode>('blockerEpisodes', action.id), task = blocker && store.get<Task>('tasks', blocker.parentTaskId)
-    if (!blocker || !task || actor.role !== 'manager') return
+    if (!blocker || !task || task.cancellation || actor.role !== 'manager') return
     title = `核对支持请求：${task.title}`; summary = [blocker.reason, blocker.supportNeeded].filter(Boolean).join('；'); done = !!blocker.resolvedAt || !!blocker.managementClosedAt; state = blocker.version
   } else {
     title = view.content?.items[0]?.title ?? view.title; summary = view.body; done = !!view.acknowledgedAt || !!view.supersededAt; state = [view.version, view.confirmationToken]
