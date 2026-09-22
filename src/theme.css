@@ -1,8 +1,10 @@
 /* Shared light product theme. Layout-specific rules live with the shell and overview. */
 :root {
   font-family:
-    'Microsoft YaHei',
+    'Segoe UI Variable Text',
     'PingFang SC',
+    'Microsoft YaHei UI',
+    'Microsoft YaHei',
     -apple-system,
     BlinkMacSystemFont,
     'Segoe UI',
@@ -781,11 +783,11 @@ th {
 /* Shared workspace finish: readable type, aligned controls, quiet surfaces. */
 :root {
   --surface: #fff;
-  --surface-subtle: #f8f9fc;
-  --control-border: #c7ccd6;
-  --radius-control: 6px;
-  --radius-panel: 8px;
-  --space-section: 24px;
+  --surface-subtle: #f7f9fc;
+  --control-border: #cbd7e6;
+  --radius-control: 10px;
+  --radius-panel: 14px;
+  --space-section: 28px;
 }
 html { scroll-padding-top: 96px; }
 .workspace-main :is(button, input, select, textarea, summary, a) { scroll-margin-block: 20px; }

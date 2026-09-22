@@ -14,13 +14,13 @@
 
 /* Reading hierarchy comes from weight and spacing, not washed-out blue-gray text. */
 body:has(.workspace-shell) {
-  --tech-canvas: #f4f6fa;
-  --tech-line: #e1e6ee;
-  --tech-ink: #18181b;
-  --tech-body: #27272a;
-  --tech-muted: #414147;
-  --text-metadata: #5e5e67;
-  --text-placeholder: #6b6b73;
+  --tech-canvas: #f3f7fc;
+  --tech-line: #dfe8f2;
+  --tech-ink: #0d2342;
+  --tech-body: #2b4565;
+  --tech-muted: #5b6f88;
+  --text-metadata: #667b94;
+  --text-placeholder: #7a8ca2;
 }
 .workspace-shell .workspace-main { padding-top: 30px; }
 .workspace-shell :is(.page-header h1, .ow-heading h1, .ov-page-heading h1) { font-size: 28px; letter-spacing: -.7px; font-weight: 700; }

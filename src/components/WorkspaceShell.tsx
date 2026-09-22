@@ -180,9 +180,9 @@ export default function WorkspaceShell({ data, page, navigate, onLogout, onFeedb
   }
   return (
     <>
-      <Layout className={`shell-light workspace-shell ${collapsed ? 'workspace-collapsed' : ''}`} hasSider inert={mobileOpen || undefined}>
+      <Layout className={`shell-light workspace-shell workspace-page-${page} ${collapsed ? 'workspace-collapsed' : ''}`} data-page={page} hasSider inert={mobileOpen || undefined}>
         <a href="#workspace-content" className="workspace-skip-link">跳至主要内容</a>
-        <Layout.Sider className="workspace-sider" width={232} collapsedWidth={72} collapsed={collapsed} trigger={null}>
+        <Layout.Sider className="workspace-sider" width={252} collapsedWidth={76} collapsed={collapsed} trigger={null}>
           <div className="workspace-brand-row" aria-label="天枢实验室 · 部门工作空间"><WorkspaceBrand /></div>
           <WorkspaceNavigation manager={manager} collapsed={collapsed} page={page} navigate={navigateFromShell} unreadCount={unreadCount} />
           <div className="workspace-sider-bottom">

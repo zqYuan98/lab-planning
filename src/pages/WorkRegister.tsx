@@ -10,7 +10,7 @@ import {
   type WorkRegisterView,
 } from '../../shared/work-register'
 import type { Navigate } from '../navigation'
-import { Badge, Empty, PageHeader, type PageProps } from '../ui'
+import { Badge, Empty, type PageProps } from '../ui'
 import WorkRegisterCapture from '../components/WorkRegisterCapture'
 import WorkRegisterEditor from '../components/WorkRegisterEditor'
 import WorkRegisterReport from '../components/WorkRegisterReport'
@@ -97,16 +97,37 @@ export default function WorkRegister({ data, refresh, notify, navigate }: PagePr
   }
 
   return <div className="wr-page">
-    <PageHeader eyebrow="MY WORK" title="我的工作清单" description="看清优先级，专注下一步。" actions={<>
-      <button className="button secondary" onClick={previewReport}><FileText size={16} />汇报预览</button>
-      <button className="button primary" onClick={() => setCapture(true)}><Plus size={17} />快速记录</button>
-    </>} />
+    <header className="wr-hero">
+      <div className="wr-hero-main">
+        <span className="wr-hero-mark" aria-hidden="true"><ListTodo size={27} /></span>
+        <div className="wr-hero-copy">
+          <h1>我的工作清单</h1>
+          <p>看清优先级，专注下一步。</p>
+        </div>
+      </div>
+      <div className="wr-hero-actions">
+        <button type="button" className="button secondary wr-report-action" onClick={previewReport}><FileText size={17} />汇报进度</button>
+        <button type="button" className="button primary wr-create-action" onClick={() => setCapture(true)}><Plus size={18} />新建任务</button>
+      </div>
+    </header>
 
     <section className="wr-summary" aria-label="本人工作概况">
-      <button data-tone="blue" aria-pressed={view === 'active' && !priority && !kind} className={view === 'active' && !priority && !kind ? 'is-selected' : ''} onClick={() => selectView('active')}><span><ListTodo size={16} />在手事项</span><strong>{result.counts.active}<small>件</small></strong><p>持续推进的工作</p></button>
-      <button data-tone="red" aria-pressed={view === 'active' && priority === 'high'} className={view === 'active' && priority === 'high' ? 'is-selected' : ''} onClick={() => { selectView('active'); setPriority('high') }}><span><SignalHigh size={16} />高优先级</span><strong>{highCount}<small>件</small></strong><p>优先关注与处理</p></button>
-      <button data-tone="amber" aria-pressed={view === 'unscheduled'} className={view === 'unscheduled' ? 'is-selected' : ''} onClick={() => selectView('unscheduled')}><span><Clock3 size={16} />待安排</span><strong>{result.counts.unscheduled}<small>件</small></strong><p>尚无后续周安排</p></button>
-      <div data-tone="purple" className="wr-summary-coordination"><span><LifeBuoy size={16} />待协调</span><strong>{result.counts.coordination}<small>件</small></strong><p>反馈、决策与支持</p></div>
+      <button type="button" data-tone="blue" aria-pressed={view === 'active' && !priority && !kind} className={view === 'active' && !priority && !kind ? 'is-selected' : ''} onClick={() => selectView('active')}>
+        <span className="wr-summary-heading"><span className="wr-summary-icon"><ListTodo size={18} /></span><span>在手事项</span><ArrowRight className="wr-summary-arrow" size={16} /></span>
+        <strong>{result.counts.active}<small>件</small></strong><p>持续推进的工作</p>
+      </button>
+      <button type="button" data-tone="red" aria-pressed={view === 'active' && priority === 'high'} className={view === 'active' && priority === 'high' ? 'is-selected' : ''} onClick={() => { selectView('active'); setPriority('high') }}>
+        <span className="wr-summary-heading"><span className="wr-summary-icon"><SignalHigh size={18} /></span><span>高优先级</span><ArrowRight className="wr-summary-arrow" size={16} /></span>
+        <strong>{highCount}<small>件</small></strong><p>优先关注与处理</p>
+      </button>
+      <button type="button" data-tone="amber" aria-pressed={view === 'unscheduled'} className={view === 'unscheduled' ? 'is-selected' : ''} onClick={() => selectView('unscheduled')}>
+        <span className="wr-summary-heading"><span className="wr-summary-icon"><Clock3 size={18} /></span><span>待安排</span><ArrowRight className="wr-summary-arrow" size={16} /></span>
+        <strong>{result.counts.unscheduled}<small>件</small></strong><p>尚无后续周安排</p>
+      </button>
+      <div data-tone="purple" className="wr-summary-coordination">
+        <span className="wr-summary-heading"><span className="wr-summary-icon"><LifeBuoy size={18} /></span><span>待协调</span></span>
+        <strong>{result.counts.coordination}<small>件</small></strong><p>反馈、决策与支持</p>
+      </div>
     </section>
 
     {refreshError && <div className="wr-refresh-note" role="status"><p>{refreshError}</p><button className="button secondary" disabled={refreshing} onClick={() => { void reload() }}><RefreshCw size={15} className={refreshing ? 'spin' : ''} />{refreshing ? '刷新中…' : '重试刷新'}</button></div>}

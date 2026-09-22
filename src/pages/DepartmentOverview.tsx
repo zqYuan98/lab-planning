@@ -18,6 +18,7 @@ import {
   CircleDashed,
   AlertCircle,
   FileClock,
+  LayoutGrid,
 } from "lucide-react";
 import {
   addCalendarDays,
@@ -380,9 +381,14 @@ export default function DepartmentOverview({
   return (
     <div className="ow-page" data-density={config.density || "comfortable"}>
       <header className="ow-heading">
-        <div className="ow-heading-copy">
-          <h1>部门概览</h1>
-          <p>团队进展与交付安排</p>
+        <div className="ow-heading-title">
+          <span className="ow-heading-icon" aria-hidden="true">
+            <LayoutGrid size={26} strokeWidth={2.15} />
+          </span>
+          <div className="ow-heading-copy">
+            <h1>部门概览</h1>
+            <p>团队进展与交付安排</p>
+          </div>
         </div>
         <div className="ow-heading-controls">
           <div className="ow-period-bar">
@@ -486,12 +492,13 @@ export default function DepartmentOverview({
             onClick={metric.action}
           >
             <span className="ow-metric-top">
-              <span>{metric.label}</span>
-              <metric.icon
-                className="ow-metric-icon"
-                size={17}
-                aria-hidden="true"
-              />
+              <span className="ow-metric-label">
+                <span className="ow-metric-icon-shell" aria-hidden="true">
+                  <metric.icon className="ow-metric-icon" size={18} />
+                </span>
+                <span>{metric.label}</span>
+              </span>
+              <ArrowRight className="ow-metric-arrow" size={16} aria-hidden="true" />
             </span>
             <strong>
               {metric.value}

@@ -1,25 +1,25 @@
 /* Technology palette for the authenticated workspace. Loaded after page styles. */
 :root {
-  --tech-primary: #1769e8;
-  --tech-primary-hover: #1057c6;
-  --tech-primary-soft: #eaf3ff;
-  --tech-primary-border: #c1d8f7;
-  --tech-focus: #347ce4;
-  --tech-canvas: #f0f5fb;
+  --tech-primary: #1769ee;
+  --tech-primary-hover: #0f58ce;
+  --tech-primary-soft: #edf5ff;
+  --tech-primary-border: #c9defb;
+  --tech-focus: #2f78e8;
+  --tech-canvas: #f3f7fc;
   --tech-surface: #ffffff;
   --tech-surface-subtle: #f5f8fc;
-  --tech-line: #dce5ef;
-  --tech-control: #b9c9dc;
-  --tech-ink: #14263d;
-  --tech-body: #2e425b;
-  --tech-muted: #53657a;
-  --tech-nav: #081a30;
-  --tech-nav-raised: #102b47;
-  --tech-nav-selected: #123d61;
-  --tech-nav-line: #203952;
-  --tech-nav-text: #d4e3f5;
-  --tech-nav-muted: #98aec9;
-  --tech-nav-accent: #65dbfa;
+  --tech-line: #dfe8f2;
+  --tech-control: #c5d3e3;
+  --tech-ink: #0d2342;
+  --tech-body: #2b4565;
+  --tech-muted: #5b6f88;
+  --tech-nav: #071d3a;
+  --tech-nav-raised: #102e50;
+  --tech-nav-selected: #1769ee;
+  --tech-nav-line: #1d3b5e;
+  --tech-nav-text: #e5effc;
+  --tech-nav-muted: #9bb1cc;
+  --tech-nav-accent: #75dcff;
 }
 
 /* Body scope also reaches Arco portals; the login keeps its own theme. */
@@ -54,7 +54,9 @@ body:has(.workspace-shell) {
 
 .workspace-shell,
 .workspace-shell .workspace-body {
-  background: var(--tech-canvas);
+  background:
+    radial-gradient(circle at 72% 4%, #eaf3ff 0, transparent 30%),
+    linear-gradient(180deg, #f7faff 0, var(--tech-canvas) 260px);
 }
 
 /* Use an opaque navy base at every Arco layer, including the mobile portal. */
@@ -80,7 +82,9 @@ body:has(.workspace-shell) {
 }
 
 .workspace-sider .arco-layout-sider-children {
-  background: linear-gradient(180deg, #0d2440 0, var(--tech-nav) 260px);
+  background:
+    radial-gradient(circle at 18% 0, #123e6f 0, transparent 32%),
+    linear-gradient(180deg, #0b2a4d 0, var(--tech-nav) 320px);
 }
 
 .workspace-brand-row .brand,
@@ -111,7 +115,7 @@ body:has(.workspace-shell) {
 .workspace-navigation .arco-menu-item {
   color: var(--tech-nav-text);
   background: transparent;
-  transition: background-color 160ms ease, color 160ms ease;
+  transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
 .workspace-navigation .arco-menu-item .workspace-menu-icon {
@@ -129,8 +133,9 @@ body:has(.workspace-shell) {
 
 .workspace-navigation .arco-menu-item.arco-menu-selected,
 .workspace-navigation .arco-menu-item.arco-menu-selected:hover {
-  color: #e7f8ff;
-  background: var(--tech-nav-selected);
+  color: #fff;
+  background: linear-gradient(135deg, #2780ff 0, var(--tech-nav-selected) 72%);
+  box-shadow: 0 8px 20px #0758c43d, inset 0 1px 0 #ffffff2e;
 }
 
 .workspace-navigation .arco-menu-item.arco-menu-selected .workspace-menu-icon {
@@ -138,7 +143,11 @@ body:has(.workspace-shell) {
 }
 
 .workspace-navigation .arco-menu-item.arco-menu-selected::before {
-  background: var(--tech-nav-accent);
+  width: 3px;
+  top: 10px;
+  bottom: 10px;
+  left: -1px;
+  background: #d9f6ff;
 }
 
 .workspace-navigation [role='menuitem']:focus-visible {
@@ -185,10 +194,13 @@ body:has(.workspace-shell) {
 .workspace-header {
   background: var(--tech-surface);
   border-bottom-color: var(--tech-line);
+  box-shadow: 0 1px 0 #dfe8f2, 0 8px 24px #244f7905;
 }
 
 .workspace-header .workspace-primary-action {
-  box-shadow: 0 3px 9px #1769e815;
+  background: linear-gradient(135deg, #247aff, #1162e5);
+  border-color: #1769ee;
+  box-shadow: 0 8px 18px #1769e82b, inset 0 1px 0 #ffffff38;
 }
 
 .workspace-account-button .arco-avatar {
