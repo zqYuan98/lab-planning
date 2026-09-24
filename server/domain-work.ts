@@ -1,18 +1,27 @@
-import type { AuditEvent, Entity, MonthlyPlan, Task, User, WeeklyRecord } from '../shared/types.ts'
+import { assertBusinessActor } from './object-access.ts'
+import type { Entity, MonthlyPlan, Task, User, WeeklyRecord } from '../shared/types.ts'
+import { submittedWeeklyEvidence } from './carry-workflows-history.ts'
 import { createHash } from 'node:crypto'
 import { withTaskNotificationSuppressed } from './notification-events.ts'
 import { createWorkOrigin } from './work-origin.ts'
-import { HttpError } from './store.ts'
+import { HttpError, type Store } from './store.ts'
 import { DomainBase, bool, choice, date, manager, monday, own, participates, text, type Input } from './domain-common.ts'
-import { collaborationWorkMutation, validateCollaborationWorkUpdate } from './collaboration-hooks.ts'
+import { collaborationWorkMutation, currentCollaborationMutation, validateCollaborationWorkUpdate } from './collaboration-hooks.ts'
 import { isSilentImport } from './import-notification-context.ts'
 import { isActiveWeeklyRecord, weeklyPlanFingerprint } from '../shared/weekly-record-state.ts'
 import { isActiveTask } from '../shared/task-state.ts'
 import { weeklyPlanApprovalMetadata } from './weekly-plan-review.ts'
 import { cancelTaskCollaboration, endTaskRequests } from './collaboration-tracking.ts'
 import type { BlockerEpisode } from '../shared/collaboration.ts'
+import { validateWorkChange } from './work-validation.ts'
 
-const registerFields = ['workSource', 'assignedBy', 'assignedOn', 'requestedOutcome', 'priority', 'estimatedEffort', 'currentProgress', 'decisionNeeded', 'waitingForFeedback'] as const
+function progressInput(store: Store, input: Input, type: 'task' | 'weeklyRecord'): Input {
+  const context = currentCollaborationMutation(store)
+  const effective = { ...input }
+  const fields = type === 'task' ? ['completionNote', 'blockerReason', 'blockerImpact', 'supportNeeded'] as const : ['blockerImpact', 'supportNeeded'] as const
+  for (const field of fields) if (effective[field] === undefined && context?.[field] !== undefined) effective[field] = context[field]
+  return effective
+}
 
 function taskMetadata(input: Input): Partial<Task> {
   const fields: Partial<Task> = {}
@@ -29,6 +38,7 @@ function taskMetadata(input: Input): Partial<Task> {
 
 export class WorkService extends DomainBase {
   captureTasks(actor: User, input: Input): { tasks: Task[] } {
+    actor = assertBusinessActor(this.store, actor)
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new HttpError(400, '请填写收件内容')
     const requestId = text(input.requestId, '提交标识', true, 100)
     if (!/^[a-zA-Z0-9_-]{16,100}$/.test(requestId)) throw new HttpError(400, '提交标识格式不正确')
@@ -65,6 +75,7 @@ export class WorkService extends DomainBase {
     })
   }
   createWeeklyAssignment(actor: User, input: Input): { task: Task; record: WeeklyRecord } {
+    actor = assertBusinessActor(this.store, actor)
     const requestId = text(input.requestId, '提交标识', true, 100)
     if (!/^[a-zA-Z0-9_-]{16,100}$/.test(requestId)) throw new HttpError(400, '提交标识格式不正确')
     if (!input.record || typeof input.record !== 'object' || Array.isArray(input.record)) throw new HttpError(400, '请填写周记录')
@@ -107,6 +118,7 @@ export class WorkService extends DomainBase {
     return plan
   }
   createTask(actor: User, input: Input): Task {
+    actor = assertBusinessActor(this.store, actor)
     return collaborationWorkMutation(this.store, actor, input, 'task', () => {
       const ownerId = this.owner(actor, input.ownerId)
       const monthlyPlanId = input.monthlyPlanId ? text(input.monthlyPlanId, '月计划') : null
@@ -131,12 +143,13 @@ export class WorkService extends DomainBase {
     })
   }
   updateTask(actor: User, id: string, input: Input): Task {
+    actor = assertBusinessActor(this.store, actor)
     return collaborationWorkMutation(this.store, actor, input, 'task', () => {
       const before = this.need<Task>('tasks', id)
       own(actor, before.ownerId)
       if (!isActiveTask(before)) throw new HttpError(409, '任务已作废，不能继续修改')
       this.current<Task>('tasks', id, input)
-      validateCollaborationWorkUpdate(this.store, actor, before, input, 'task')
+      input = progressInput(this.store, input, 'task')
       for (const field of ['monthlyPlanId', 'ownerId', 'isTemporary', 'temporaryReason'] as const) {
         if (input[field] !== undefined && input[field] !== before[field]) throw new HttpError(400, '任务归属和临时工作标记不能直接修改，请由管理者调整关联')
       }
@@ -145,24 +158,24 @@ export class WorkService extends DomainBase {
       if (input.description !== undefined) patch.description = text(input.description, '任务说明', false, before.importSource ? 20000 : 12000)
       if (input.dueDate !== undefined) patch.dueDate = input.dueDate === '' ? '' : date(input.dueDate, '任务截止日期')
       if (input.status !== undefined) patch.status = choice(input.status, ['todo', 'doing', 'blocked', 'done'], '任务状态')
+      if (!isSilentImport(this.store) && (['dueDate', 'description', 'requestedOutcome', 'title'] as const).some(field => patch[field] !== undefined && patch[field] !== before[field])) {
+        text(input.reason || input.proxyReason, '承诺调整原因')
+      }
       for (const field of ['completionNote', 'blockerReason', 'blockerImpact', 'supportNeeded', 'nextAction', 'evidenceUrl'] as const) if (input[field] !== undefined) patch[field] = text(input[field], field === 'completionNote' ? '完成说明' : '进展内容', false, field === 'evidenceUrl' ? 2000 : 12000)
       if (patch.evidenceUrl) {
         try { if (!['http:', 'https:'].includes(new URL(patch.evidenceUrl).protocol)) throw new Error() }
         catch { throw new HttpError(400, '证据链接仅支持完整的 http 或 https 地址') }
       }
-      const nextStatus = patch.status ?? before.status
-      const inRegister = !isSilentImport(this.store) && registerFields.some(field => before[field] !== undefined || input[field] !== undefined)
-      if (nextStatus === 'done') {
-        if (inRegister && (before.status !== 'done' || patch.completionNote !== undefined) && !(patch.completionNote ?? before.completionNote)?.trim()) throw new HttpError(400, '完成整个任务需要填写完成说明')
-        if (inRegister || before.waitingForFeedback !== undefined || patch.waitingForFeedback !== undefined) patch.waitingForFeedback = false
-      }
-      if (inRegister && nextStatus === 'blocked' && (before.status !== 'blocked' || patch.blockerReason !== undefined) && !(patch.blockerReason ?? before.blockerReason)?.trim()) throw new HttpError(400, '任务受阻需要填写原因')
+      validateWorkChange(before, patch, { type: 'task', authority: isSilentImport(this.store) ? 'trusted-import' : 'human' })
+      if (!isSilentImport(this.store) && (patch.status ?? before.status) === 'done') patch.waitingForFeedback = false
+      validateCollaborationWorkUpdate(this.store, actor, before, { ...input, ...patch }, 'task')
       const task = this.store.update<Task>('tasks', id, before.version, patch)
-      this.audit(actor, 'task', id, 'update', before, task, text(input.reason ?? input.proxyReason, '修改原因', false))
+      this.audit(actor, 'task', id, 'update', before, task, text(input.reason || input.proxyReason, '修改原因', false))
       return task
     })
   }
   relinkTask(actor: User, id: string, input: Input): Task {
+    actor = assertBusinessActor(this.store, actor)
     manager(actor)
     return collaborationWorkMutation(this.store, actor, input, 'task', () => {
       const before = this.current<Task>('tasks', id, input)
@@ -175,10 +188,7 @@ export class WorkService extends DomainBase {
       this.audit(actor, 'task', id, 'relink', before, task, reason)
       // Legacy/provisional future drafts may have been created before a new month's plan existed.
       // Withdrawing a submitted record does not make its original month provisional again.
-      const submittedRecordIds = new Set(this.store.list<AuditEvent>('events')
-        .filter(event => event.entityType === 'weeklyRecord' && [event.before, event.after].some(snapshot =>
-          !!snapshot && typeof snapshot === 'object' && (snapshot as Partial<WeeklyRecord>).submitted === true))
-        .map(event => event.entityId))
+      const submittedRecordIds = submittedWeeklyEvidence(this.store).ids
       for (const record of this.store.list<WeeklyRecord>('weeklyRecords')) {
         if (!isActiveWeeklyRecord(record) || record.taskId !== id || record.submitted || submittedRecordIds.has(record.id) || record.monthlyPlanId === monthlyPlanId || !this.overlapsMonth(record.weekStart, target.month)) continue
         const updated = this.store.update<WeeklyRecord>('weeklyRecords', record.id, record.version, { monthlyPlanId })
@@ -188,6 +198,7 @@ export class WorkService extends DomainBase {
     })
   }
   cancelTask(actor: User, id: string, input: Input): Task {
+    actor = assertBusinessActor(this.store, actor)
     manager(actor)
     return this.store.transaction(() => {
       const before = this.current<Task>('tasks', id, input)
@@ -195,6 +206,9 @@ export class WorkService extends DomainBase {
       const reason = text(input.reason, '作废原因')
       if (this.store.list<WeeklyRecord>('weeklyRecords').some(record => record.taskId === id && isActiveWeeklyRecord(record))) {
         throw new HttpError(409, '此任务仍有周安排（含草稿），请先核对并删除相关周安排')
+      }
+      if (this.store.list<{ taskId: string; status: string }>('deliverySeries').some(series => series.taskId === id && series.status === 'pending_review')) {
+        throw new HttpError(409, '此任务仍有待验收成果，请先处理或撤回后再作废')
       }
       const now = new Date()
       const task = this.store.update<Task>('tasks', id, before.version, {
@@ -217,8 +231,6 @@ export class WorkService extends DomainBase {
       ...(input.blockerImpact !== undefined || before?.blockerImpact !== undefined ? { blockerImpact: text(input.blockerImpact ?? before?.blockerImpact, '阻塞影响', false) } : {}),
       ...(input.supportNeeded !== undefined || before?.supportNeeded !== undefined ? { supportNeeded: text(input.supportNeeded ?? before?.supportNeeded, '需要支持', false) } : {}),
     }
-    if (result.status === 'done' && !result.actualOutcome && !before?.importSource) throw new HttpError(400, '标记完成时需要填写实际成果')
-    if (['blocked', 'not_done'].includes(result.status) && !result.blocker && !before?.importSource) throw new HttpError(400, '阻塞或未完成时需要填写原因')
     if (result.evidenceUrl) {
       try { if (!['http:', 'https:'].includes(new URL(result.evidenceUrl).protocol)) throw new Error() }
       catch { throw new HttpError(400, '证据链接仅支持完整的 http 或 https 地址') }
@@ -234,6 +246,7 @@ export class WorkService extends DomainBase {
     }
   }
   createWeeklyRecord(actor: User, input: Input): WeeklyRecord {
+    actor = assertBusinessActor(this.store, actor)
     return collaborationWorkMutation(this.store, actor, input, 'weeklyRecord', () => {
       const task = this.need<Task>('tasks', text(input.taskId, '个人任务'))
       own(actor, task.ownerId)
@@ -247,7 +260,9 @@ export class WorkService extends DomainBase {
         const plan = this.need<MonthlyPlan>('plans', task.monthlyPlanId)
         if (plan.projectId) this.activeProject(plan.projectId)
       }
+      input = progressInput(this.store, input, 'weeklyRecord')
       const fields = this.fields(input)
+      validateWorkChange(undefined, fields, { type: 'weeklyRecord', authority: isSilentImport(this.store) ? 'trusted-import' : 'human' })
       const planApproval = weeklyPlanApprovalMetadata(this.store, task.ownerId, weekStart,
         workOrigin.kind === 'assigned' && !fields.submitted ? { ...workOrigin, kind: 'proxy' } : workOrigin)
       const data = { workOrigin, taskId: task.id, monthlyPlanId: task.monthlyPlanId, ownerId: task.ownerId, weekStart,
@@ -260,6 +275,7 @@ export class WorkService extends DomainBase {
     })
   }
   updateWeeklyRecord(actor: User, id: string, input: Input, options: { formalSubmission?: boolean } = {}): WeeklyRecord {
+    actor = assertBusinessActor(this.store, actor)
     return collaborationWorkMutation(this.store, actor, input, 'weeklyRecord', () => {
       const before = this.need<WeeklyRecord>('weeklyRecords', id)
       own(actor, before.ownerId)
@@ -267,11 +283,15 @@ export class WorkService extends DomainBase {
       const task = this.store.get<Task>('tasks', before.taskId)
       if (task && !isActiveTask(task)) throw new HttpError(409, '任务已作废，不能继续修改周安排')
       this.current<WeeklyRecord>('weeklyRecords', id, input)
-      validateCollaborationWorkUpdate(this.store, actor, before, input, 'weeklyRecord')
+      input = progressInput(this.store, input, 'weeklyRecord')
       for (const field of ['taskId', 'ownerId', 'weekStart', 'monthlyPlanId'] as const) {
         if (input[field] !== undefined && input[field] !== before[field]) throw new HttpError(400, '不能修改周记录的任务、负责人、所属周或历史月计划关联')
       }
       const patch: ReturnType<WorkService['fields']> & Pick<Partial<WeeklyRecord>, 'planApproval'> = this.fields(input, before)
+      // fields() fills the effective record; only explicitly supplied fields count as a new report.
+      const reportedPatch = Object.fromEntries(Object.entries(patch).filter(([field]) => input[field] !== undefined))
+      validateWorkChange(before, reportedPatch, { type: 'weeklyRecord', authority: isSilentImport(this.store) ? 'trusted-import' : 'human', formalSubmission: options.formalSubmission })
+      validateCollaborationWorkUpdate(this.store, actor, before, { ...input, ...patch }, 'weeklyRecord')
       const planApproval = before.planApproval ?? weeklyPlanApprovalMetadata(this.store, before.ownerId, before.weekStart, before.workOrigin)
       if (planApproval) patch.planApproval = planApproval
       const planChanged = weeklyPlanFingerprint(before) !== weeklyPlanFingerprint({ ...before, ...patch })
@@ -294,15 +314,16 @@ export class WorkService extends DomainBase {
       const record = this.store.update<WeeklyRecord>('weeklyRecords', id, before.version, patch)
       this.audit(actor, 'weeklyRecord', id, !before.submitted && record.submitted ? 'submit' : 'update', before, record, text(input.proxyReason, '代录原因', false))
       // Reuse the task write and its hooks in this same transaction/mutation context.
-      // An already completed task retains its original completion evidence.
-      if (completionTask && completionTask.status !== 'done') this.updateTask(actor, completionTask.id, {
-        version: completionTask.version, status: 'done', completionNote: patch.actualOutcome,
+      // Retain existing completion evidence; an explicit new confirmation may repair a historical gap.
+      if (completionTask && (completionTask.status !== 'done' || !completionTask.completionNote?.trim() || completionTask.waitingForFeedback)) this.updateTask(actor, completionTask.id, {
+        version: completionTask.version, status: 'done', completionNote: completionTask.status === 'done' && completionTask.completionNote?.trim() ? completionTask.completionNote : patch.actualOutcome,
         waitingForFeedback: false, proxyReason: input.proxyReason,
       })
       return record
     })
   }
   deleteWeeklyRecord(actor: User, id: string, input: Input): WeeklyRecord {
+    actor = assertBusinessActor(this.store, actor)
     manager(actor)
     return this.store.transaction(() => {
       const before = this.current<WeeklyRecord>('weeklyRecords', id, input)
@@ -323,6 +344,7 @@ export class WorkService extends DomainBase {
     })
   }
   carryWeeklyRecord(actor: User, id: string, input: Input): WeeklyRecord {
+    actor = assertBusinessActor(this.store, actor)
     return this.store.transaction(() => {
       const before = this.need<WeeklyRecord>('weeklyRecords', id)
       own(actor, before.ownerId)

@@ -12,7 +12,8 @@
     "start": "tsx server/index.ts",
     "test": "tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "backup": "tsx scripts/backup.ts"
+    "backup": "tsx scripts/backup.ts",
+    "reset-operation-context": "tsx scripts/reset-operation-context.ts"
   },
   "dependencies": {
     "@arco-design/web-react": "2.66.16",

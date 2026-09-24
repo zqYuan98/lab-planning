@@ -17,6 +17,8 @@ import type { AuditEvent, MonthlyPlan, Task } from '../../shared/types'
 import type { Navigate } from '../navigation'
 import { api, json, finishSaved } from '../api'
 import MergeProposals from './MergeProposals'
+import CarryWorkflowWizard from '../components/CarryWorkflowWizard'
+import MonthlyResultForm from '../components/MonthlyResultForm'
 import {
   Badge,
   Empty,
@@ -83,7 +85,7 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
     [search, setSearch] = useState(intent?.query || '')
   const [modal, setModal] = useState(
       initialPlan
-        ? intent?.action === 'create-task' && canCreateOwnTask(initialPlan) ? 'task' : 'detail'
+        ? manager && intent?.action==='review' && initialPlan.status==='submitted' ? 'review' : manager && intent?.action==='result' && initialPlan.status==='published' ? 'result' : intent?.action === 'create-task' && canCreateOwnTask(initialPlan) ? 'task' : 'detail'
         : manager && intent?.action === 'create'
           ? 'create'
           : readyToPublish
@@ -381,7 +383,7 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
                                 !archivedProjectIds.has(plan.projectId)) &&
                               manager && (
                                 <button onClick={() => open('carry', plan)}>
-                                  跨月承接
+                                  跨期处理
                                 </button>
                               )}
                             {canCreateOwnTask(plan) && <button onClick={() => open('task', plan)}>关联个人任务</button>}
@@ -564,101 +566,17 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
         </Modal>
       )}
       {modal === 'result' && selected && (
-        <Modal
-          title={manager ? '确认月度成果' : '提交本月成果'}
-          onClose={close}
-        >
-          <div className="context-box">
-            <strong>{selected.title}</strong>
-            <p>
-              验收标准：
-              {selected.acceptanceCriteria ||
-                (selected.importSource ? '原表未注明' : '')}
-            </p>
-          </div>
-          <Form
-            onCancel={close}
-            submitLabel={manager ? '保存验收结论' : '提交管理者验收'}
-            draftKey={`monthly-result:${data.user.id}:${selected.id}:v${selected.version}`}
-            onSubmit={async (event) => {
-              const values = Object.fromEntries(
-                new FormData(event.currentTarget),
-              )
-              await api(
-                `/plans/${selected.id}/result`,
-                json({
-                  ...values,
-                  version: selected.version,
-                  acceptanceStatus: manager
-                    ? values.acceptanceStatus
-                    : 'submitted',
-                }),
-              )
-              await saved('月度成果已更新')
-            }}
-          >
-            <Field label="实际交付成果">
-              <textarea
-                name="actualOutcome"
-                defaultValue={selected.actualOutcome}
-                rows={4}
-                placeholder="描述已经交付的事实，避免重复计划内容"
-              />
-            </Field>
-            {manager && (
-              <Field label="验收结论">
-                <select
-                  name="acceptanceStatus"
-                  defaultValue={
-                    selected.acceptanceStatus === 'not_completed'
-                      ? 'not_completed'
-                      : 'accepted'
-                  }
-                >
-                  <option value="accepted">达到验收标准，确认完成</option>
-                  <option value="not_completed">未完成，保留本月结果</option>
-                </select>
-              </Field>
-            )}
-            <Field label={manager ? '验收说明 / 未完成原因' : '补充说明'}>
-              <textarea
-                name="acceptanceNote"
-                defaultValue={selected.acceptanceNote}
-                rows={3}
-              />
-            </Field>
-          </Form>
+        <Modal title={manager ? '确认月度成果' : '提交本月成果'} onClose={close}>
+          <MonthlyResultForm key={selected.id} plan={selected} manager={manager} userId={data.user.id} onCancel={close} onSaved={() => saved('月度成果已更新')} />
         </Modal>
       )}
       {modal === 'carry' && selected && (
-        <Modal title="承接到下月度目标" onClose={close}>
-          <p className="modal-intro">
-            保留 {selected.month} 的承诺和结果，新建有来源关系的月度草稿。
-            {selected.isTemporary && '临时目标标记和原因将保留，请在承接草稿中调整新月份的阶段成果。'}
-          </p>
-          <Form
-            onCancel={close}
-            submitLabel="创建承接草稿"
-            onSubmit={async (event) => {
-              await api(
-                `/plans/${selected.id}/carry`,
-                json(Object.fromEntries(new FormData(event.currentTarget))),
-              )
-              await saved('跨月承接草稿已创建，审核发布后生效')
-            }}
-          >
-            <div className="form-grid">
-              <Field label="承接月份">
-                <input type="month" name="month" required />
-              </Field>
-              <Field label="新的截止日期">
-                <input type="date" name="dueDate" required />
-              </Field>
-            </div>
-            <Field label="承接原因">
-              <textarea name="reason" required rows={3} />
-            </Field>
-          </Form>
+        <Modal title="跨期处理" onClose={close} wide>
+          <CarryWorkflowWizard key={`${data.user.id}:${selected.id}:${data.operationEpoch}`} sourcePlan={selected} actorId={data.user.id} operationEpoch={data.operationEpoch || ''} refresh={refresh} onClose={close} onOpenTarget={target => {
+            setMonth(target.month)
+            setSelected(target)
+            setModal(target.status === 'submitted' ? 'review' : target.status === 'approved' ? 'publish' : ['draft', 'returned'].includes(target.status) ? 'edit' : 'detail')
+          }} />
         </Modal>
       )}
       {modal === 'versions' && (
@@ -739,6 +657,7 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
       {modal === 'detail' && selected && (
         <Modal title={selected.title} onClose={close} wide>
           <div className="row-meta"><PriorityBadge priority={selected.priority} /><WorkTypeBadge isTemporary={selected.isTemporary} isMonthly /></div>
+          {manager && selected.status !== 'merged' && <div className="carry-actions"><button className="button secondary" onClick={() => setModal('carry')}>跨期处理 / 继续已有流程</button></div>}
           {manager && <NotificationStatus type="plan" id={selected.id} data={data} />}
           {selected.isTemporary && (
             <div className="context-box">

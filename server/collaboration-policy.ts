@@ -19,7 +19,7 @@ export function collaborationEnabledFor(store: Store, ownerId: string): boolean 
 }
 export function liveCollaborationActor(store: Store, actor: User, managerOnly = false): User {
   const current = store.get<User>('users', actor.id)
-  if (!current || !canUseAccount(current) || managerOnly && current.role !== 'manager') throw new HttpError(403, managerOnly ? '此操作需要有效管理者权限' : '账号当前不可用')
+  if (!current || !canUseAccount(current) || current.role === 'observer' || managerOnly && current.role !== 'manager') throw new HttpError(403, managerOnly ? '此操作需要有效管理者权限' : '账号当前无业务操作权限')
   return current
 }
 export function collaborationTask(store: Store, actor: User, id: string): Task {
@@ -50,7 +50,7 @@ export function effectiveManagerIds(store: Store, task: Task): string[] {
 export function taskTrackingEligible(store: Store, task: Task, _now = new Date()): boolean {
   if (!isActiveTask(task) || !collaborationEnabledFor(store, task.ownerId) || task.status === 'done') return false
   const owner = store.get<User>('users', task.ownerId)
-  if (!owner || !canUseAccount(owner)) return false
+  if (!owner || !canUseAccount(owner) || owner.role === 'observer') return false
   if (task.monthlyPlanId) {
     const plan = store.get<MonthlyPlan>('plans', task.monthlyPlanId)
     if (!plan || plan.status !== 'published' || plan.visibility) return false

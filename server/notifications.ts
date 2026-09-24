@@ -34,8 +34,19 @@ function cancelledTaskTarget(store: Store, target: NotificationTarget): boolean 
   return !!task && !isActiveTask(task)
 }
 export function targetAccessible(store: Store, actor: User, target: NotificationTarget): boolean {
-  if (!canUseAccount(actor)) return false
+  const current = store.get<User>('users', actor.id)
+  if (!current || !canUseAccount(current) || current.role === 'observer') return false
+  actor = current
   if (cancelledTaskTarget(store, target)) return false
+  if (target.type === 'blocker') {
+    const row = store.get<{ parentTaskId: string; coordinatorId?: string | null }>('blockerEpisodes', target.id)
+    const task = row && store.get<Task>('tasks', row.parentTaskId)
+    return !!task && isActiveTask(task) && (actor.role === 'manager' || task.ownerId === actor.id || row?.coordinatorId === actor.id)
+  }
+  if (target.type === 'decisionRequest') {
+    const row = store.get<{ taskId: string }>('decisionRequests', target.id), task = row && store.get<Task>('tasks', row.taskId)
+    return !!task && isActiveTask(task) && (actor.role === 'manager' || task.ownerId === actor.id)
+  }
   if (target.type === 'feedback') {
     const row = store.get<{ reporterId: string }>('feedback', target.id)
     return !!row && (actor.role === 'manager' || row.reporterId === actor.id)
@@ -66,7 +77,7 @@ function targetOwned(store: Store, actor: User, target: NotificationTarget): boo
 export function enqueueNotification(store: Store, input: Input, now = new Date()): Notification | null {
   return store.transaction(() => {
     const actor = store.get<User>('users', input.recipientId)
-    if (!actor || !canUseAccount(actor)) return null
+    if (!actor || !canUseAccount(actor) || actor.role === 'observer') return null
     const id = notificationId(input.eventKey, input.recipientId)
     const previous = store.get<Notification>('notifications', id)
     if (previous) return previous
@@ -125,6 +136,9 @@ export function sourceNotification(store: Store, actor: User, row: Notification)
   return source?.recipientId === actor.id && source.kind !== 'manual_reminder' ? source : undefined
 }
 export function notificationView(store: Store, actor: User, row: Notification, now = new Date()): NotificationView {
+  const current = store.get<User>('users', actor.id)
+  if (!current || !canUseAccount(current) || current.role === 'observer') throw new HttpError(403, '当前账号不能读取业务消息')
+  actor = current
   if (row.recipientId !== actor.id) throw new HttpError(404, '消息不存在')
   let targets = row.targets.filter(target => targetAccessible(store, actor, target))
   const redacted = targets.length !== row.targets.length

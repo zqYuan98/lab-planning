@@ -4,6 +4,7 @@ import { once } from 'node:events'
 import type { AddressInfo } from 'node:net'
 import { Store } from '../server/store.ts'
 import { Domain } from '../server/domain.ts'
+import { getOperationEpoch } from '../server/operation-context.ts'
 import { exportBusinessData } from '../server/data-transfer.ts'
 import { ExistingPlanWriter } from '../server/existing-plan-writer.ts'
 import { ImportService, type HistoricalRecord } from '../server/import-service.ts'
@@ -95,8 +96,8 @@ test('merged source prose is projected for member reads and result responses whi
   assert.ok(f.store.get<MonthlyPlan>('plans', merged.id)!.expectedOutcome.includes('B_SOURCE_SECRET'))
   const raw = f.domain.planHistory(f.manager, merged.id).find(event => event.action === 'merge_create')!
   assert.equal((raw.before as MonthlyPlan[]).length, 2)
-  let carried = f.publish(f.domain.carryPlan(f.manager, merged.id, { month: '2026-10', dueDate: '2026-10-30', reason: '跨月继续' }))
-  carried = f.publish(f.domain.carryPlan(f.manager, carried.id, { month: '2026-11', dueDate: '2026-11-30', reason: '再次承接' }))
+  let carried = f.publish(f.domain.carryPlan(f.manager, merged.id, { requestId: 'personal-scope-carry-oct', sourceVersion: result.version, operationEpoch: getOperationEpoch(f.store), month: '2026-10', dueDate: '2026-10-30', reason: '跨月继续' }))
+  carried = f.publish(f.domain.carryPlan(f.manager, carried.id, { requestId: 'personal-scope-carry-nov', sourceVersion: carried.version, operationEpoch: getOperationEpoch(f.store), month: '2026-11', dueDate: '2026-11-30', reason: '再次承接' }))
   for (const actor of [f.member, f.peer]) {
     for (const item of [f.domain.bootstrap(actor), f.domain.planHistory(actor, carried.id), exportBusinessData(f.store, actor)]) {
       // Each actor may still read their own original source; peer source must stay private through carries.

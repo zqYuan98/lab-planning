@@ -11,6 +11,7 @@ import { COLLABORATION_SETTINGS_ID, collaborationEnabledFor, collaborationTask, 
 import { collaborationCommand, collaborationId, ensureVersion, meaningfulText, requiredText, taskBusinessEvent, utcTime } from './collaboration-store.ts'
 import { endTaskRequests, enrollTaskTracking } from './collaboration-tracking.ts'
 import { withCollaborationMutation } from './collaboration-hooks.ts'
+import { TaskSupportService } from './task-support.ts'
 
 export { readCollaborationSettings, effectiveManagerIds, taskTrackingEligible } from './collaboration-policy.ts'
 type Input = Record<string, unknown>
@@ -42,12 +43,12 @@ export class CollaborationService {
     if (actor.role !== 'manager' && row.ownerId !== actor.id || task.ownerId !== row.ownerId) throw new HttpError(404, '催办请求不存在或负责人已变更')
     return row
   }
-  taskView(actor: User, taskId: string): CollaborationTaskView {
+  taskView(actor: User, taskId: string, options: { includeProgress?: boolean } = {}): CollaborationTaskView {
     const viewer = liveCollaborationActor(this.store, actor)
     const task = this.task(viewer, taskId, false), manager = viewer.role === 'manager'
     const rows = <T extends { taskId?: string; parentTaskId?: string; ownerId: string }>(collection: string): T[] => this.store.list<T>(collection).filter(row => (row.taskId ?? row.parentTaskId) === task.id && (manager || row.ownerId === actor.id))
     return { task, ...summarizeCollaborationTask(task, this.store.list<WeeklyRecord>('weeklyRecords'), viewer, this.clock()), tracking: this.store.get<TaskTracking>('taskTrackings', task.id) ?? null,
-      progressEvents: rows('progressEvents'), followups: rows('followupRequests'), responses: rows('followupResponses'), blockerEpisodes: rows('blockerEpisodes'), blockerActions: rows('blockerActions'), deadlineRequests: rows('deadlineChangeRequests'),
+      progressEvents: options.includeProgress === false ? [] : rows('progressEvents'), followups: rows('followupRequests'), responses: rows('followupResponses'), blockerEpisodes: rows('blockerEpisodes'), blockerActions: rows('blockerActions'), deadlineRequests: rows('deadlineChangeRequests'),
       effectiveManagerIds: effectiveManagerIds(this.store, task), enabled: isActiveTask(task) && collaborationEnabledFor(this.store, task.ownerId), eligible: taskTrackingEligible(this.store, task, this.clock()) }
   }
   previewTracking(actor: User, taskId: string): TrackingPreview {
@@ -235,24 +236,7 @@ export class CollaborationService {
     })
   }
   handleBlocker(actor: User, id: string, input: Input): { episode: BlockerEpisode; action: BlockerAction } {
-    actor = this.manager(actor)
-    const initial = this.store.get<BlockerEpisode>('blockerEpisodes', id)
-    if (!initial) throw new HttpError(404, '阻塞阶段不存在')
-    this.task(actor, initial.parentTaskId)
-    return collaborationCommand(this.store, actor, `blocker.handle:${id}`, input, this.clock(), mutationId => {
-      const before = this.store.get<BlockerEpisode>('blockerEpisodes', id)!, now = this.clock()
-      ensureVersion(before.version, input.version)
-      if (!['record', 'defer', 'close'].includes(String(input.action))) throw new HttpError(400, '请选择记录支持、延后复查或核实关闭')
-      const action = input.action as BlockerAction['action'], note = requiredText(input.note, '处理说明')
-      const reviewAt = action === 'defer' ? utcTime(input.reviewAt, '复查时间') : null
-      if (reviewAt && reviewAt <= now.toISOString()) throw new HttpError(400, '复查时间必须在未来')
-      const episode = this.store.update<BlockerEpisode>('blockerEpisodes', id, before.version, {
-        managementNote: note, ...(action === 'defer' ? { reviewAt, managementClosedAt: null } : action === 'close' ? { managementClosedAt: now.toISOString(), reviewAt: null } : {}),
-      })
-      const row = this.store.insert<BlockerAction>('blockerActions', { id: collaborationId('blocker-action', mutationId), episodeId: id, taskId: before.parentTaskId, ownerId: before.ownerId, actorId: actor.id, action, note, reviewAt, occurredAt: now.toISOString() })
-      this.audit(actor, 'blockerEpisode', id, action, before, episode, note)
-      return { episode, action: row }
-    })
+    return new TaskSupportService(this.store, this.clock).handleBlocker(actor, id, input)
   }
   requestDeadline(actor: User, taskId: string, input: Input): DeadlineChangeRequest {
     const initial = this.task(actor, taskId)

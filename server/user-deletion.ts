@@ -16,6 +16,8 @@ const labels: Record<TransferCollection, string> = {
   weeklySubmissions: '已提交的周报', weeklyMissing: '周提报缺交记录', weeklyAdjustments: '周提报调整记录', weeklyPlanReviews: '下周计划审核记录',
   taskTrackings: '督办纳入记录', progressEvents: '进展时间线', followupRequests: '催办请求', followupResponses: '催办回应', blockerEpisodes: '阻塞阶段', blockerActions: '阻塞支持处理', deadlineChangeRequests: '延期申请',
   reportAssets: '周报模板与 Word 文件', reportTemplates: '周报模板版本',
+  deliverySeries: '个人成果交付项及验收责任', taskDeliveries: '不可变成果提交版本', deliveryDecisions: '成果验收及更正决定', decisionRequests: '决策请求及责任记录',
+  taskCommitmentEvents: '任务历史承诺与责任变更', historicalEvidence: '历史补充佐证', periodReviewSnapshots: '历史周期复盘快照',
 }
 
 /** Keep exactly the user dependencies required by business export/restore, including nested snapshots. */
@@ -55,5 +57,20 @@ export function userDeletionPreview(store: Store, actor: User, user: User): User
   add('feedbackCommands', '问题反馈请求历史', store.list<{ actorId: string }>('feedbackCommands').filter(row => row.actorId === user.id).length)
   add('reportAgentJobs', '周报生成任务', store.list<{ actorId: string }>('reportAgentJobs').filter(row => row.actorId === user.id).length)
   add('reportAgentSchedule', '周报定时负责人', Number(store.get<{ actorId: string }>('settings', 'report-agent-schedule')?.actorId === user.id))
+  // Grants and scoped reports are local runtime objects, excluded from business packets,
+  // but their recipient and author identities remain part of the access audit trail.
+  add('objectGrants', '对象授权接收人及授权人', store.list<{ subjectId: string; grantedBy: string }>('objectGrants')
+    .filter(row => row.subjectId === user.id || row.grantedBy === user.id).length)
+  add('scopedReports', '授权摘要接收人及定稿人', store.list<{ subjectId: string; finalizedBy: string }>('scopedReports')
+    .filter(row => row.subjectId === user.id || row.finalizedBy === user.id).length)
+  add('carryWorkflows', '跨期流程创建记录', store.list<{ actorId: string }>('carryWorkflows').filter(row => row.actorId === user.id).length)
+  for (const [collection, label] of [
+    ['objectAccessCommands', '对象授权及摘要命令记录'], ['collaborationCommandReceipts', '协作、成果交付及支持决策命令记录'],
+    ['workRegisterCaptures', '工作收件命令记录'], ['weeklyAssignmentRequests', '周安排命令记录'], ['monthlyCarryRequests', '月目标承接命令记录'],
+    ['carryWorkflowRequests', '跨期流程命令记录'], ['periodReviewReceipts', '历史复盘命令记录'],
+  ] as const) {
+    add(collection, label, store.list<{ actorId: string; command?: string }>(collection)
+      .filter(row => row.actorId === user.id && !(collection === 'collaborationCommandReceipts' && row.command === 'preferences')).length)
+  }
   return { user: safeUser(user), canDelete: blockers.length === 0, blockers, retainedHistory: true }
 }

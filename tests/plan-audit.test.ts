@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { Store } from '../server/store.ts'
 import { Domain } from '../server/domain.ts'
+import { getOperationEpoch } from '../server/operation-context.ts'
 import type { MonthlyPlan, User, WeeklyRecord } from '../shared/types.ts'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -78,6 +79,7 @@ test('a previously submitted boundary-week record keeps its original month after
     const october = f.publish(
       f.member,
       f.domain.carryPlan(f.manager, september.id, {
+        requestId: 'plan-audit-carry-request', sourceVersion: september.version, operationEpoch: getOperationEpoch(f.store),
         month: '2026-10',
         dueDate: '2026-10-30',
         reason: '继续验证',
@@ -159,6 +161,7 @@ test('old-month collaborators cannot read peer task snapshots or weekly records'
       reason: '独立承接',
     })
     f.domain.updateTask(f.member, task.id, {
+      reason: '保留当前归属并修订任务说明',
       version: moved.version,
       title: '十月保密事项',
       description: '只属于十月新范围',
@@ -215,6 +218,7 @@ test('direct sourcePlanId creation cannot bypass carry ownership or revive a mer
     assert.throws(
       () =>
         f.domain.carryPlan(f.manager, first.id, {
+          requestId: 'plan-audit-merged-carry', sourceVersion: f.store.get<MonthlyPlan>('plans', first.id)!.version, operationEpoch: getOperationEpoch(f.store),
           month: '2026-10',
           dueDate: '2026-10-30',
           reason: '尝试复活来源',

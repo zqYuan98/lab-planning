@@ -123,7 +123,7 @@ export default function Team({ data, refresh, notify, intent }: PageProps) {
                     </td>
                     <td>{item.position || '待设置'}</td>
                     <td>{item.email}</td>
-                    <td>{item.role === 'manager' ? '管理员' : '成员'}</td>
+                    <td>{item.role === 'manager' ? '管理员' : item.role === 'observer' ? '观察者' : '成员'}</td>
                     <td>
                       <Badge tone={item.active ? 'green' : 'neutral'}>
                         {item.active ? '启用' : '停用'}
@@ -212,7 +212,7 @@ export default function Team({ data, refresh, notify, intent }: PageProps) {
             )}
             <Field label="角色">
               <select name="role" defaultValue={user?.role || 'member'}>
-                <option value="member">成员 · 本人提报与执行</option>
+                <option value="member">成员 · 本人提报与执行</option><option value="observer">观察者 · 仅明确授权的只读对象</option>
                 <option value="manager">管理员 · 审核发布、验收与管理</option>
               </select>
             </Field>

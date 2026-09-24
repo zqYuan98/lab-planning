@@ -40,7 +40,7 @@ function fixture(t: TestContext, suffix: string) {
     })
     domain.deleteWeeklyRecord(manager, original.id, { version: approved.version, reason: '本周安排需重新明确' })
     const replacement = create('重新安排的承诺'), second = approve()
-    domain.updateTask(member, task.id, { version: task.version, title: '后来修改的任务名称' })
+    domain.updateTask(member, task.id, { version: task.version, title: '后来修改的任务名称', reason: '名称核对更正' })
     return { task, original, replacement, first, second, report }
   }
   return { store, domain, service, manager, member, other, populate }

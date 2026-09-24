@@ -1,5 +1,5 @@
 import type { AuditEvent, Task, User, WeeklyRecord } from '../shared/types.ts'
-import type { BlockerEpisode, DeadlineChangeRequest, ProgressContent, ProgressEvent, ProgressFieldChange, TaskTracking } from '../shared/collaboration.ts'
+import type { BlockerAction, BlockerEpisode, DeadlineChangeRequest, ProgressContent, ProgressEvent, ProgressFieldChange, TaskTracking } from '../shared/collaboration.ts'
 import { randomUUID } from 'node:crypto'
 import { collaborationEnabledFor, readCollaborationSettings, taskTrackingEligible } from './collaboration-policy.ts'
 import { collaborationId, meaningfulText, requiredText, taskBusinessEvent } from './collaboration-store.ts'
@@ -52,24 +52,13 @@ function progressChanges(event: AuditEvent, includePendingWeekly = false): Progr
   })
 }
 
-/** Validate before every human domain write; imports never call this hook. */
+/** Collaboration policies only; basic work completeness is checked by WorkService. */
 export function validateCollaborationWorkUpdate(store: Store, actor: User, before: Task | WeeklyRecord, input: Record<string, unknown>, type: 'task' | 'weeklyRecord') {
   if (isSilentImport(store) || !collaborationEnabledFor(store, before.ownerId)) return
   const context = contexts.get(store)?.input ?? {}
   if (type === 'task') {
-    const task = before as Task, nextStatus = input.status ?? task.status
+    const task = before as Task
     if (input.dueDate !== undefined && input.dueDate !== task.dueDate && actor.id === task.ownerId && actor.role !== 'manager' && task.workOrigin?.kind === 'assigned' && store.get<TaskTracking>('taskTrackings', task.id) && readCollaborationSettings(store).deadlineApprovalEnabled) throw new HttpError(409, '该下达任务改期需要先提出延期申请')
-    if (nextStatus === 'done' && task.status !== 'done') {
-      const note = input.completionNote ?? context.completionNote ?? task.completionNote
-      if (!meaningfulText(note)) throw new HttpError(400, '完成整个任务需要填写完成说明')
-    }
-    if (nextStatus === 'blocked' && task.status !== 'blocked') {
-      for (const [field, label] of [['blockerReason', '阻塞原因'], ['blockerImpact', '阻塞影响'], ['supportNeeded', '需要支持']] as const) {
-        if (!meaningfulText(input[field] ?? context[field] ?? task[field])) throw new HttpError(400, `首次阻塞需要填写${label}`)
-      }
-    }
-  } else if ((input.status ?? before.status) === 'blocked' && before.status !== 'blocked' && (input.submitted ?? (before as WeeklyRecord).submitted)) {
-    if (!meaningfulText(input.blocker ?? (before as WeeklyRecord).blocker) || !meaningfulText(input.blockerImpact ?? context.blockerImpact) || !meaningfulText(input.supportNeeded ?? context.supportNeeded)) throw new HttpError(400, '首次本周工作阻塞需要填写原因、影响和需要支持')
   }
   const prospective = { ...before, ...input }
   const changes = progressChanges({ entityType: type, before, after: prospective } as AuditEvent)
@@ -132,7 +121,11 @@ function updateBlocker(store: Store, context: MutationContext, event: AuditEvent
   const tracking = store.get<TaskTracking>('taskTrackings', task.id)
   const current = store.list<BlockerEpisode>('blockerEpisodes').find(row => row.sourceType === event.entityType && row.sourceId === event.entityId && !row.resolvedAt)
   const blocked = isActiveTask(task) && after.status === 'blocked' && (event.entityType !== 'weeklyRecord' || isEffectiveWeeklyRecord(after as WeeklyRecord))
-  if (!blocked && current) store.update<BlockerEpisode>('blockerEpisodes', current.id, current.version, { resolvedAt: context.now.toISOString(), resolvedBy: context.actor.id, closureReason: after.status === 'done' ? '已完成' : '阻塞已解除或周安排已撤回' })
+  if (!blocked && current) {
+    const note = after.status === 'done' ? '已完成' : '阻塞已解除或周安排已撤回'
+    store.update<BlockerEpisode>('blockerEpisodes', current.id, current.version, { resolvedAt: context.now.toISOString(), resolvedBy: context.actor.id, closureReason: note })
+    store.insert<BlockerAction>('blockerActions', { episodeId: current.id, taskId: task.id, ownerId: task.ownerId, actorId: context.actor.id, action: 'resolve', note, reviewAt: null, occurredAt: context.now.toISOString() })
+  }
   const details = { reason: event.entityType === 'task' ? (after as Task).blockerReason ?? '' : (after as WeeklyRecord).blocker, impact: context.input.blockerImpact ?? after.blockerImpact ?? '', supportNeeded: context.input.supportNeeded ?? after.supportNeeded ?? '' }
   if (blocked && current && (current.reason !== details.reason || current.impact !== details.impact || current.supportNeeded !== details.supportNeeded)) store.update<BlockerEpisode>('blockerEpisodes', current.id, current.version, details)
   if (blocked && !current && (before.status !== 'blocked' || event.entityType === 'weeklyRecord' && !isEffectiveWeeklyRecord(before as WeeklyRecord))) {
@@ -140,6 +133,7 @@ function updateBlocker(store: Store, context: MutationContext, event: AuditEvent
       id: collaborationId('blocker', context.mutationId, event.entityType, event.entityId), sourceType: event.entityType as 'task' | 'weeklyRecord', sourceId: event.entityId,
       parentTaskId: task.id, ownerId: task.ownerId, generation: tracking?.generation ?? 0, openedAt: context.now.toISOString(), openedBy: context.actor.id,
       resolvedAt: null, resolvedBy: null, ...details, reviewAt: null, closureReason: '',
+      coordinatorId: null, responseDueAt: null, coordinationState: 'unassigned', responseNote: '', openedAtKnown: true,
     })
   }
 }
@@ -152,11 +146,11 @@ function processAudits(store: Store, context: MutationContext): ProgressEvent | 
   const workEvents = context.events.filter(event => ['task', 'weeklyRecord'].includes(event.entityType) && event.after)
   const first = workEvents[0], firstWork = first?.after as Task | WeeklyRecord | undefined
   const task = firstWork ? store.get<Task>('tasks', first!.entityType === 'task' ? firstWork.id : (firstWork as WeeklyRecord).taskId) : undefined
-  if (!task || !isActiveTask(task) || !collaborationEnabledFor(store, task.ownerId)) return null
+  if (!task || !isActiveTask(task)) return null
   for (const event of workEvents) {
     const work = event.after as Task | WeeklyRecord
     const eventTask = store.get<Task>('tasks', event.entityType === 'task' ? work.id : (work as WeeklyRecord).taskId)
-    if (eventTask && collaborationEnabledFor(store, eventTask.ownerId)) updateBlocker(store, context, event, eventTask)
+    if (eventTask) updateBlocker(store, context, event, eventTask)
   }
   const officialChanges = workEvents.flatMap(event => progressChanges(event))
   // The explicit progress API must persist real execution feedback even while its plan is awaiting review.
@@ -167,7 +161,7 @@ function processAudits(store: Store, context: MutationContext): ProgressEvent | 
   if (!changes.length && !newNote && !noChange) return null
   if (noChange && changes.some(change => !change.field.endsWith('.nextAction'))) throw new HttpError(400, '暂无变化不能同时修改执行状态或成果，请选择更新进展')
   if (noChange && (!meaningfulText(context.input.noChangeReason) || !meaningfulText(context.input.nextAction))) throw new HttpError(400, '暂无变化需要填写原因和下一步')
-  if (context.actor.id !== task.ownerId && !meaningfulText(context.input.proxyReason)) throw new HttpError(400, '管理者代录进展需要填写代理原因')
+  if (collaborationEnabledFor(store, task.ownerId) && context.actor.id !== task.ownerId && !meaningfulText(context.input.proxyReason)) throw new HttpError(400, '管理者代录进展需要填写代理原因')
   const formalProgress = officialChanges.length > 0 || newNote || noChange
   const meaningfulOwnerProgress = context.actor.id === task.ownerId && !noChange && (officialChanges.length > 0 || newNote)
   const weekly = workEvents.find(event => event.entityType === 'weeklyRecord')?.after as WeeklyRecord | undefined
@@ -177,6 +171,8 @@ function processAudits(store: Store, context: MutationContext): ProgressEvent | 
     noChangeReason: context.input.noChangeReason?.trim() ?? '', nextAction: context.input.nextAction?.trim() ?? '', proxyReason: context.input.proxyReason?.trim() ?? '',
     changes, meaningfulOwnerProgress, occurredAt: context.now.toISOString(), auditEventIds: context.events.map(event => event.id),
   })
+  // Facts belong to base work. Optional tracking and notification derivation remain gated.
+  if (!collaborationEnabledFor(store, task.ownerId)) return progress
   const tracking = store.get<TaskTracking>('taskTrackings', task.id)
   if (tracking && formalProgress) store.update<TaskTracking>('taskTrackings', tracking.id, tracking.version, { lastRecordedProgressAt: context.now.toISOString(), ...(meaningfulOwnerProgress ? { lastMeaningfulOwnerProgressAt: context.now.toISOString() } : {}) })
   if (formalProgress) taskBusinessEvent(store, task, context.actor, context.mutationId, 'progress_recorded', context.now, { title: task.title, progressEventId: progress.id, note, noteType: progress.noteType, nextAction: progress.nextAction }, { generation: tracking?.generation })

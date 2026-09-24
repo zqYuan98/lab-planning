@@ -20,6 +20,7 @@ import WorkspaceSearch from './WorkspaceSearch'
 import { appVersion } from '../error-context'
 
 const navigation = [
+  { id: 'authorized-work', label: '授权工作', group: '团队', icon: FolderKanban },
   { id: 'overview', label: '部门概览', memberLabel: '我的工作台', group: '规划', icon: ChartNoAxesCombined },
   { id: 'work-register', label: '我的工作清单', group: '规划', icon: ListTodo },
   { id: 'monthly', label: '月度目标', memberLabel: '我的月度目标', group: '规划', icon: CalendarDays },
@@ -31,6 +32,7 @@ const navigation = [
   { id: 'projects', label: '项目档案', group: '资产', icon: FolderKanban },
   { id: 'imports', label: '数据导入', group: '资产', icon: FileInput },
   { id: 'reports', label: '报告中心', group: '资产', icon: FileText, manager: true },
+  { id: 'period-reviews', label: '历史周期复盘', memberLabel: '我的周期复盘', group: '资产', icon: ChartNoAxesCombined },
   { id: 'team', label: '成员管理', group: '团队', icon: Users, manager: true },
   { id: 'notification-settings', label: '通知设置', group: '团队', icon: Settings2, manager: true },
 ] satisfies { id: PageId; label: string; memberLabel?: string; group: string; icon: typeof Goal; manager?: boolean }[]
@@ -55,10 +57,10 @@ function menuKeys(event: KeyboardEvent<HTMLElement>) {
   items[next].focus()
 }
 
-function WorkspaceNavigation({ manager, collapsed, page, navigate, unreadCount }: {
-  manager: boolean; collapsed: boolean; page: PageId; navigate: Navigate; unreadCount: number
+function WorkspaceNavigation({ observer, manager, collapsed, page, navigate, unreadCount }: {
+  observer?:boolean; manager: boolean; collapsed: boolean; page: PageId; navigate: Navigate; unreadCount: number
 }) {
-  const visible = navigation.filter(item => !item.manager || manager)
+  const visible = navigation.filter(item => observer ? item.id==='authorized-work' : (!item.manager || manager))
   const renderItem = (item: typeof navigation[number]) => {
     const label = !manager && item.memberLabel ? item.memberLabel : item.label
     return (
@@ -94,7 +96,7 @@ function AccountMenu({ data, onLogout }: { data: Bootstrap; onLogout: () => void
   const [open, setOpen] = useState(false)
   const button = useRef<HTMLButtonElement>(null)
   const popup = useRef<HTMLDivElement>(null)
-  const role = data.user.role === 'manager' ? '部门管理员' : data.user.position || '团队成员'
+  const role = data.user.role === 'observer' ? '授权观察者' : data.user.role === 'manager' ? '部门管理员' : data.user.position || '团队成员'
   function close() { setOpen(false); button.current?.focus() }
   useEffect(() => {
     if (!open) return
@@ -132,6 +134,7 @@ export default function WorkspaceShell({ data, page, navigate, onLogout, onFeedb
   data: Bootstrap; page: PageId; navigate: Navigate; onLogout: () => void; onFeedback?: () => void; leaveConfirmationOpen: boolean; children: ReactNode; unreadCount?: number
 }) {
   const manager = data.user.role === 'manager'
+  const observer = data.user.role === 'observer'
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem(collapseKey) === 'true' } catch { return false }
   })
@@ -184,9 +187,9 @@ export default function WorkspaceShell({ data, page, navigate, onLogout, onFeedb
         <a href="#workspace-content" className="workspace-skip-link">跳至主要内容</a>
         <Layout.Sider className="workspace-sider" width={252} collapsedWidth={76} collapsed={collapsed} trigger={null}>
           <div className="workspace-brand-row" aria-label="天枢实验室 · 部门工作空间"><WorkspaceBrand /></div>
-          <WorkspaceNavigation manager={manager} collapsed={collapsed} page={page} navigate={navigateFromShell} unreadCount={unreadCount} />
+          <WorkspaceNavigation observer={data.user.role==='observer'} manager={manager} collapsed={collapsed} page={page} navigate={navigateFromShell} unreadCount={unreadCount} />
           <div className="workspace-sider-bottom">
-            {onFeedback && <Button type="text" long className="workspace-collapse-button" aria-label="提报问题与建议" onClick={onFeedback}
+            {!observer && onFeedback && <Button type="text" long className="workspace-collapse-button" aria-label="提报问题与建议" onClick={onFeedback}
               icon={<MessageSquarePlus size={17} />}>{!collapsed && '提报问题与建议'}</Button>}
             <Button type="text" long className="workspace-collapse-button" aria-label={collapsed ? '展开侧栏' : '收起侧栏'}
               aria-expanded={!collapsed} onClick={() => setCollapsed(value => !value)}
@@ -207,13 +210,13 @@ export default function WorkspaceShell({ data, page, navigate, onLogout, onFeedb
             </div>
             <div className="workspace-header-search"><WorkspaceSearch data={data} navigate={navigateFromShell} /></div>
             <div className="workspace-header-actions">
-              {onFeedback && <Button type="text" aria-label="提报问题与建议" onClick={onFeedback} icon={<MessageSquarePlus size={18} />} />}
-              <Button type="primary" className="workspace-primary-action" icon={manager ? <Check size={16} /> : <CalendarDays size={16} />}
+              {!observer && onFeedback && <Button type="text" aria-label="提报问题与建议" onClick={onFeedback} icon={<MessageSquarePlus size={18} />} />}
+              {!observer && <Button type="primary" className="workspace-primary-action" icon={manager ? <Check size={16} /> : <CalendarDays size={16} />}
                 onClick={() => navigateFromShell(manager ? 'monthly' : 'weekly', manager
                   ? { action: 'review', month: currentMonth(), status: 'submitted' }
                   : { action: 'create', weekStart: monday() })}>
                 {manager ? '审核月度目标' : '安排本周工作'}
-              </Button>
+              </Button>}
               <span className="workspace-header-divider" />
               <AccountMenu data={data} onLogout={onLogout} />
             </div>
@@ -235,7 +238,7 @@ export default function WorkspaceShell({ data, page, navigate, onLogout, onFeedb
         onCancel={() => setMobileOpen(false)}>
         <div className="shell-light workspace-drawer-inner">
           <div className="workspace-brand-row"><WorkspaceBrand /></div>
-          <WorkspaceNavigation manager={manager} collapsed={false} page={page} navigate={navigateFromShell} unreadCount={unreadCount} />
+          <WorkspaceNavigation observer={data.user.role==='observer'} manager={manager} collapsed={false} page={page} navigate={navigateFromShell} unreadCount={unreadCount} />
           <div className="workspace-drawer-footer">天枢实验室 · 部门工作空间</div>
         </div>
       </Drawer>

@@ -57,6 +57,8 @@ test('server owns source identity and validates proxy creation, responsible acco
 test('legacy source inference uses only creation audit, excludes imports and never writes entities or exported origins', t => {
   const f = fixture(t), created = f.task(), createdRow = f.record(created)
   const { workOrigin: _a, ...task } = created, { workOrigin: _b, ...record } = createdRow
+  // Model a genuinely pre-commitment legacy dataset before changing its old audit snapshots.
+  for (const event of f.store.list<{ id: string; version: number }>('taskCommitmentEvents')) f.store.delete('taskCommitmentEvents', event.id, event.version)
   f.store.update<Task>('tasks', task.id, task.version, { workOrigin: undefined }); f.store.update<WeeklyRecord>('weeklyRecords', record.id, record.version, { workOrigin: undefined })
   for (const event of f.store.list<AuditEvent>('events')) {
     if (!['task', 'weeklyRecord'].includes(event.entityType)) continue

@@ -2,10 +2,15 @@ import { useRef, useState, type FormEvent } from 'react'
 import { LoaderCircle } from 'lucide-react'
 import type { Task } from '../../shared/types'
 import { workRegisterNeedsCompletionReview } from '../../shared/work-register'
-import { api, json } from '../api'
+import { api, ApiError, json } from '../api'
 import { Field, Modal } from '../ui'
 import { useFormDraft } from '../use-form-draft'
 import { allowDraftLeave, draftText } from '../draft-recovery'
+import type { DraftValues } from '../draft-recovery'
+import { editableDraftValues } from '../draft-v3'
+import DraftComparison from './DraftComparison'
+import { editingUnavailable, readEditableObject } from '../form-editing'
+import { assignmentAttempt, type SubmissionAttempt } from '../notification-navigation'
 
 interface EditorProps {
   userId: string
@@ -23,6 +28,10 @@ export default function WorkRegisterEditor({ userId, task, onClose, onSaved }: E
   const [error, setError] = useState('')
   const sending = useRef(false)
   const saved = useRef(false)
+  const [version,setVersion] = useState(task.version)
+  const [writeUnavailable,setWriteUnavailable]=useState(false)
+  const [comparison,setComparison] = useState<{base:DraftValues|null;server:DraftValues;local:DraftValues;version:number}|null>(null)
+  const attempt=useRef<SubmissionAttempt|null>(null)
   const draft = useFormDraft(`work-item:${userId}:${task.id}:v${task.version}`, {
     __status: status, __source: source, __priority: priority, __waiting: waiting ? 'yes' : '',
   }, values => {
@@ -37,30 +46,37 @@ export default function WorkRegisterEditor({ userId, task, onClose, onSaved }: E
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (sending.current || saved.current) return
+    if (sending.current || saved.current || writeUnavailable || comparison) return
     const form = new FormData(event.currentTarget)
     const body: Record<string, unknown> = {
-      version: task.version,
+      version,
       status,
       waitingForFeedback: status === 'done' ? false : waiting,
       ...(source ? { workSource: source } : {}),
       ...(priority ? { priority } : {}),
     }
-    for (const field of ['title', 'description', 'assignedBy', 'assignedOn', 'dueDate', 'requestedOutcome', 'estimatedEffort', 'currentProgress', 'nextAction', 'decisionNeeded', 'completionNote', 'evidenceUrl', 'blockerReason', 'blockerImpact', 'supportNeeded']) {
+    for (const field of ['title', 'description', 'assignedBy', 'assignedOn', 'dueDate', 'requestedOutcome', 'estimatedEffort', 'currentProgress', 'nextAction', 'decisionNeeded', 'completionNote', 'evidenceUrl', 'blockerReason', 'blockerImpact', 'supportNeeded', 'reason']) {
       if (form.has(field)) body[field] = String(form.get(field) || '').trim()
     }
     if (status === 'done' && !body.completionNote) { setError('请填写完成说明，记录这件事最终交付了什么。'); return }
     if (status === 'blocked' && !body.blockerReason) { setError('请填写受阻原因。'); return }
+    if (status === 'blocked' && (!body.blockerImpact || !body.supportNeeded)) { setError('请填写阻塞影响和需要的支持；暂不需要支持时请明确说明。'); return }
     sending.current = true
     setBusy(true)
     setError('')
     try {
-      const result = await api<Task>(`/tasks/${encodeURIComponent(task.id)}`, json(body, 'PATCH'))
+      attempt.current=assignmentAttempt(attempt.current,body)
+      const result = await api<Task>(`/tasks/${encodeURIComponent(task.id)}`, json({...body,requestId:attempt.current.requestId}, 'PATCH'))
       saved.current = true
       draft.clearDraft()
       onSaved(result)
     } catch (e) {
+      if(editingUnavailable(e)){setWriteUnavailable(true);setComparison(null);draft.dismissRecovery()}
       setError(saved.current ? '修改已经保存，请关闭窗口后刷新清单。' : e instanceof Error ? e.message : '保存失败，已保留填写内容。')
+      if(e instanceof ApiError && e.status===409 && e.code==='VERSION_CONFLICT') {
+        try {const current=await readEditableObject(`/tasks/${encodeURIComponent(task.id)}/editable`);const local=draft.snapshot();setComparison({base:draft.baseValues(),server:editableDraftValues(current.values,local),local,version:current.version})}
+        catch(readError){setComparison(null);if(editingUnavailable(readError)){setWriteUnavailable(true);draft.dismissRecovery()}setError(readError instanceof Error?readError.message:'无法读取当前任务，输入已保留。')}
+      }
     } finally {
       sending.current = false
       setBusy(false)
@@ -70,9 +86,10 @@ export default function WorkRegisterEditor({ userId, task, onClose, onSaved }: E
   return <Modal wide title="编辑工作事项" onClose={close}>
     <form ref={draft.formRef} className="wr-editor" onSubmit={submit} onInput={draft.rememberDraft} onChange={draft.rememberDraft}>
       {draft.notice && <p className="form-hint" role="status">{draft.notice}</p>}
+      {(comparison || draft.recovery) && <DraftComparison base={comparison?.base ?? draft.recovery?.baseValues ?? null} server={comparison?.server ?? draft.baseValues()} local={comparison?.local ?? draft.recovery!.values} onCancel={()=>{setComparison(null);draft.dismissRecovery()}} onMerge={values=>{if(comparison)setVersion(comparison.version);draft.applyValues(values,comparison?.server ?? draft.baseValues(),comparison?.version);setComparison(null);attempt.current=null;setError('已合并，请核对后重新保存。')}} />}
       <p className="wr-modal-intro">维护整件工作的交付与进展。每周的具体承诺在周计划中安排。</p>
       {completionReview && <div className="wr-refresh-note"><p>旧导入将此任务标为已完成，但没有整体完成说明。若仍需推进，请改为进行中；若已全部完成，请保留已完成并补充最终交付说明。</p><button type="button" className="button secondary" disabled={busy} onClick={() => setStatus('doing')}>仍需推进</button></div>}
-      <fieldset className="form-fields" disabled={busy || saved.current}>
+      <fieldset className="form-fields" disabled={busy || saved.current || writeUnavailable || !!comparison}>
         <Field label="事项名称"><input name="title" defaultValue={task.title} required maxLength={300} /></Field>
         <div className="wr-form-grid">
           <Field label="事项来源"><select value={source} onChange={event => setSource(event.target.value as typeof source)}>
@@ -84,6 +101,7 @@ export default function WorkRegisterEditor({ userId, task, onClose, onSaved }: E
           <Field label="截止日期" hint="尚未明确时留空，清单显示待确认。"><input type="date" name="dueDate" defaultValue={task.dueDate} /></Field>
         </div>
         <Field label="预期交付"><textarea name="requestedOutcome" defaultValue={task.requestedOutcome || ''} rows={2} maxLength={12000} placeholder="例如：一份可供评审的三年规划初稿，含方向、预算与实施步骤" /></Field>
+        <Field label="承诺变更原因" hint="修改事项名称、背景说明、预期交付或截止日期时填写。只更新执行进展时可留空。"><textarea name="reason" rows={2} maxLength={12000} placeholder="说明为何调整，以便历史复盘核对原承诺和变更依据" /></Field>
         <details className="wr-details"><summary>补充背景与原始要求</summary><Field label="背景说明"><textarea name="description" defaultValue={task.description} rows={3} maxLength={task.importSource ? 20000 : 12000} /></Field></details>
         <div className="wr-form-grid">
           <Field label="总体状态"><select value={status} onChange={event => setStatus(event.target.value as Task['status'])}>
@@ -100,12 +118,13 @@ export default function WorkRegisterEditor({ userId, task, onClose, onSaved }: E
           <Field label="预计剩余投入" hint="按实际判断填写，用于协调工作顺序。"><input name="estimatedEffort" defaultValue={task.estimatedEffort || ''} maxLength={300} placeholder="例如：约 2 个工作日，或还需 3 次讨论" /></Field>
           <Field label="需领导决策 / 协调"><textarea name="decisionNeeded" defaultValue={task.decisionNeeded || ''} rows={2} maxLength={12000} placeholder="例如：确认 A 与 B 的先后顺序，或确定预算范围" /></Field>
         </div>
-        <Field label="需要的支持"><textarea name="supportNeeded" defaultValue={task.supportNeeded || ''} rows={2} maxLength={12000} placeholder="需要谁提供什么支持；已解决的请求可清空" /></Field>
+        <Field label="需要的支持"><textarea name="supportNeeded" required={status === 'blocked'} defaultValue={task.supportNeeded || ''} rows={2} maxLength={12000} placeholder="需要谁提供什么支持；暂不需要支持时请明确说明" /></Field>
         {status === 'done' && <section className="wr-editor-state"><h3>记录完成结果</h3><Field label="完成说明"><textarea required name="completionNote" defaultValue={task.completionNote || ''} rows={3} maxLength={12000} /></Field><Field label="成果链接（选填）"><input type="url" name="evidenceUrl" defaultValue={task.evidenceUrl || ''} maxLength={2000} placeholder="https://" /></Field></section>}
-        {status === 'blocked' && <section className="wr-editor-state"><h3>说明受阻情况</h3><Field label="受阻原因"><textarea required name="blockerReason" defaultValue={task.blockerReason || ''} rows={2} maxLength={12000} /></Field><Field label="影响范围"><textarea name="blockerImpact" defaultValue={task.blockerImpact || ''} rows={2} maxLength={12000} /></Field><p className="form-hint">已启用督办的任务，首次受阻还需填写影响范围和上方的支持请求。</p></section>}
+        {status === 'blocked' && <section className="wr-editor-state"><h3>说明受阻情况</h3><Field label="受阻原因"><textarea required name="blockerReason" defaultValue={task.blockerReason || ''} rows={2} maxLength={12000} /></Field><Field label="影响范围"><textarea required name="blockerImpact" defaultValue={task.blockerImpact || ''} rows={2} maxLength={12000} /></Field><p className="form-hint">报告受阻时，请填写原因、影响范围和需要的支持；这些要求不受协作开关影响。</p></section>}
       </fieldset>
       {error && <p className="error" role="alert">{error}</p>}
-      <footer className="form-footer"><button type="button" className="button secondary" disabled={busy} onClick={() => { if (allowDraftLeave(draft.formRef.current)) close() }}>取消</button><button type="submit" className="button primary" disabled={busy || saved.current}>{busy && <LoaderCircle size={16} className="spin" />}{busy ? '正在保存…' : '保存事项'}</button></footer>
+      {writeUnavailable&&<button type="button" className="button secondary" onClick={()=>void navigator.clipboard.writeText(JSON.stringify(draft.snapshot(),null,2))}>复制保留的本地输入</button>}
+      <footer className="form-footer"><button type="button" className="button secondary" disabled={busy} onClick={() => { if (allowDraftLeave(draft.formRef.current)) close() }}>取消</button><button type="submit" className="button primary" disabled={busy || saved.current || writeUnavailable || !!comparison}>{busy && <LoaderCircle size={16} className="spin" />}{busy ? '正在保存…' : '保存事项'}</button></footer>
     </form>
   </Modal>
 }

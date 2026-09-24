@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { Store } from '../server/store.ts'
 import { Domain } from '../server/domain.ts'
+import { getOperationEpoch } from '../server/operation-context.ts'
 import type { Publication, WeeklyRecord } from '../shared/types.ts'
 
 function fixture() {
@@ -63,7 +64,7 @@ test('weekly publication gate, result distinction, stable task carry and relink 
     assert.equal(carried.actualOutcome, '')
     assert.equal(carried.submitted, false)
     assert.throws(() => d.createWeeklyRecord(member, { taskId: task.id, weekStart: '2026-09-15', commitment: '重复' }), { status: 409 })
-    const next = d.carryPlan(manager, plan.id, { month: '2026-10', dueDate: '2026-10-30', reason: '后续验证' })
+    const next = d.carryPlan(manager, plan.id, { requestId: 'domain-carry-request', sourceVersion: store.get<{ version: number }>('plans', plan.id)!.version, operationEpoch: getOperationEpoch(store), month: '2026-10', dueDate: '2026-10-30', reason: '后续验证' })
     assert.equal(next.sourcePlanId, plan.id)
     let approved = d.submitPlan(manager, next.id, { version: next.version })
     approved = d.reviewPlan(manager, next.id, { version: approved.version, decision: 'approve', comment: '' })

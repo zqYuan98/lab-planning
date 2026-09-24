@@ -1,3 +1,4 @@
+import { openTask } from '../navigation';
 import { useMemo, useState } from "react";
 import {
   Users,
@@ -284,12 +285,9 @@ export default function DepartmentOverview({
     }
   }
   function openRecord(row: WorkRow) {
-    navigate("weekly", {
-      id: row.record?.id || row.taskId,
-      weekStart: row.record?.weekStart || weekMonday(config.date),
-      query: row.title,
-    });
+    openTask({taskId:row.taskId,section:row.record?'weekly':'overview',weeklyRecordId:row.record?.id});
   }
+
   const periodLabel =
     config.period === "all"
       ? "全部周期"

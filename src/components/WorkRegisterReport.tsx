@@ -29,7 +29,7 @@ export default function WorkRegisterReport({ snapshot, onClose }: { snapshot: Sn
         <div className="wr-report-title"><span>{String(index + 1).padStart(2, '0')}</span><h3>{row.title}</h3><b>{row.status}</b></div>
         <p className="wr-report-item-type">{row.itemType}</p>
         <dl className="wr-report-facts"><div><dt>来源 / 交办人</dt><dd>{row.source} · {row.assignedBy}</dd></div><div><dt>交办日期</dt><dd>{row.assignedOn}</dd></div><div><dt>截止日期</dt><dd>{row.dueDate}</dd></div><div><dt>优先级</dt><dd>{row.priority}</dd></div><div><dt>预计剩余投入</dt><dd>{row.estimatedEffort}</dd></div><div><dt>排期 / 反馈</dt><dd>{row.schedule} · {row.waitingForFeedback}</dd></div></dl>
-        <dl className="wr-report-detail"><div><dt>预期交付</dt><dd>{row.requestedOutcome}</dd></div><div><dt>当前进展</dt><dd>{row.progress}</dd></div><div><dt>下一步</dt><dd>{row.nextAction}</dd></div><div className="wr-report-decision"><dt>需领导决策 / 协调</dt><dd>{row.decisionNeeded}</dd></div></dl>
+        <dl className="wr-report-detail"><div><dt>预期交付</dt><dd>{row.requestedOutcome}</dd></div><div><dt>总体说明</dt><dd>{row.overallProgress}</dd></div><div><dt>最新执行</dt><dd>{row.latestExecution}</dd></div><div><dt>下一步</dt><dd>{row.nextAction}</dd></div>{row.progress!==row.overallProgress&&<div><dt>完成、阻塞与历史补充</dt><dd>{row.progress}</dd></div>}<div className="wr-report-decision"><dt>需领导决策 / 协调</dt><dd>{row.decisionNeeded}</dd></div></dl>
       </article>)}</div> : <p className="wr-report-empty">当前筛选范围内暂无事项。</p>}
       <footer className="wr-report-footnote">说明：预计剩余投入由本人填写；任务总体状态与周计划执行状态分别记录。</footer>
     </section>

@@ -50,7 +50,7 @@ test('recipient authorization, opening and acknowledgment do not change task exe
   const acknowledged = openNotification(f.store, f.member, notification.id, true)
   assert.ok(acknowledged.acknowledgedAt); assert.equal(acknowledged.canAcknowledge, false)
   assert.equal(f.store.get<Task>('tasks', task.id)?.status, 'todo'); assert.equal(f.store.list('weeklySubmissions').length, 0)
-  const changed = f.domain.updateTask(f.manager, task.id, { version: task.version, description: '新增验收要求' })
+  const changed = f.domain.updateTask(f.manager, task.id, { reason: '测试场景确认承诺调整', version: task.version, description: '新增验收要求' })
   const next = f.rows()[1]
   assert.equal(getNotification(f.store, f.member, next.id).canAcknowledge, true)
   assert.ok(getNotification(f.store, f.member, notification.id).supersededAt)
@@ -231,8 +231,8 @@ test('notification HTTP routes guard recipients, manager settings, CSRF, and unc
 })
 test('five-minute changes coalesce queued deliveries while keeping the latest obligation and audit inbox', t => {
   const f = fixture(t), task = f.task({ description: '第一版' })
-  const changed = f.domain.updateTask(f.manager, task.id, { version: task.version, description: '第二版', dueDate: '2026-09-27' })
-  f.domain.updateTask(f.manager, task.id, { version: changed.version, description: '第三版', dueDate: task.dueDate })
+  const changed = f.domain.updateTask(f.manager, task.id, { reason: '测试场景确认承诺调整', version: task.version, description: '第二版', dueDate: '2026-09-27' })
+  f.domain.updateTask(f.manager, task.id, { reason: '测试场景确认承诺调整', version: changed.version, description: '第三版', dueDate: task.dueDate })
   assert.equal(f.rows().length, 3)
   assert.equal(f.deliveries()[1].status, 'skipped'); assert.equal(f.deliveries()[2].status, 'pending')
   assert.ok(Date.parse(f.deliveries()[2].nextAttemptAt) >= Date.now() + 299000)

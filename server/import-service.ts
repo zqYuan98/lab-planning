@@ -1,3 +1,4 @@
+import { assertBusinessActor } from './object-access.ts'
 import { createHash, randomUUID } from 'node:crypto'
 import type { AuditEvent, Entity, MonthlyPlan, Project, Task, User, WeeklyRecord } from '../shared/types.ts'
 import type { ImportBatch, ImportBatchSummary, ImportMode, ImportRow } from '../shared/import-types.ts'
@@ -38,6 +39,7 @@ function projectImportRow(store: Store, actor: User, row: ImportRow): ImportRow 
 }
 
 export function visibleImportHistory(store: Store, actor: User): HistoricalRecord[] {
+  actor = assertBusinessActor(store, actor)
   return store.list<HistoricalRecord>('historicalRecords')
     .filter(record => actor.role === 'manager' || record.row.ownerId === actor.id || (!record.row.ownerId && record.importedBy === actor.id))
     .map(record => ({ ...record, row: projectImportRow(store, actor, record.row) }))
@@ -84,6 +86,7 @@ export class ImportService {
     return job ? { ...batch, analysis: { status: job.status, completedChunks: job.completedChunks, totalChunks: job.totalChunks, ...(job.error ? { error: job.error } : {}) } } : batch
   }
   get(actor: User, id: string): ImportBatch {
+    actor = assertBusinessActor(this.store, actor)
     const batch = this.batch(actor, id)
     const counts = (value: ImportBatch) => ({ ...value, requiresCompletionReview: this.requiresReview(value), excludedCount: value.rows.filter(row => !row.selected && !row.result).length, pendingCount: value.rows.filter(row => row.selected && !row.result).length })
     if (actor.role === 'manager') return counts(batch)
@@ -92,16 +95,19 @@ export class ImportService {
     return counts({ ...batch, rows, ...(batch.status === 'parsed' && selected.length > 0 && selected.every(row => row.result) ? { status: 'committed' as const } : {}) })
   }
   list(actor: User): ImportBatchSummary[] {
+    actor = assertBusinessActor(this.store, actor)
     return this.store.list<ImportBatch>('importBatches').filter(b => actor.role === 'manager' || b.ownerId === actor.id)
       .reverse().map(batch => { const { rows, ...rest } = this.get(actor, batch.id); return { ...rest, rowCount: rows.length } })
   }
   source(actor: User, id: string) {
+    actor = assertBusinessActor(this.store, actor)
     const batch = this.batch(actor, id)
     const source = this.store.get<ImportSource>('importSources', batch.sourceId)
     if (!source) throw new HttpError(404, '原始资料不存在')
     return source
   }
   sourcePreview(actor: User, id: string) {
+    actor = assertBusinessActor(this.store, actor)
     const source = this.source(actor, id)
     return source.parsed
   }
@@ -131,6 +137,7 @@ export class ImportService {
     this.store.delete('historicalRecords', record.id, record.version)
   }
   deleteBatch(actor: User, id: string, input: Input): { ok: true; deletedHistoryCount: number } {
+    actor = assertBusinessActor(this.store, actor)
     return this.store.transaction(() => {
       const before = this.batch(actor, id)
       if (before.version !== input.version) throw new HttpError(409, '批次已更新，请刷新后重试')
@@ -161,6 +168,7 @@ export class ImportService {
     })
   }
   deleteHistory(actor: User, id: string, input: Input): { ok: true } {
+    actor = assertBusinessActor(this.store, actor)
     return this.store.transaction(() => {
       const before = this.store.get<HistoricalRecord>('historicalRecords', id)
       if (!before || (actor.role !== 'manager' && before.importedBy !== actor.id && before.row.ownerId !== actor.id)) throw new HttpError(404, '历史记录不存在或无权删除')
@@ -172,6 +180,7 @@ export class ImportService {
     })
   }
   async upload(actor: User, input: Input): Promise<ImportBatch> {
+    actor = assertBusinessActor(this.store, actor)
     const mode = input.mode ?? 'history' // Preserve older API clients' archival default; the current page requests existing.
     if (!['history', 'draft', 'existing'].includes(String(mode))) throw new HttpError(400, '导入方式无效')
     const fileName = text(input.fileName, '文件名', true, 250).replace(/[\\/\r\n]/g, '_')
@@ -191,6 +200,7 @@ export class ImportService {
     if (previous) return this.get(actor, previous.id)
     const parsed = await parseImportFile(fileName, mimeType, bytes)
     return this.store.transaction(() => {
+      actor = assertBusinessActor(this.store, actor)
       const raced = this.store.list<ImportBatch>('importBatches').find(b => b.sourceId === sourceId)
       if (raced) return this.get(actor, raced.id)
       this.store.insert<ImportSource>('importSources', { id: sourceId, ownerId: actor.id, fileName, mimeType: parsed.mimeType || mimeType, base64: bytes.toString('base64'), hash: fingerprint, parsed })
@@ -322,6 +332,7 @@ export class ImportService {
   }
   private checked(actor: User, rows: ImportRow[], mode: ImportMode = 'draft') { return rows.map(row => ({ ...row, issues: mode === 'existing' ? validateExistingRow(this.store, actor, row, rows) : this.issues(actor, row, rows) })) }
   startAnalysis(actor: User, id: string, input: Input, credentialGuard?: () => void): ImportBatch {
+    actor = assertBusinessActor(this.store, actor)
     const batch = this.mutable(actor, id, input.version)
     if (this.analyzing.has(id)) throw new HttpError(409, '此批次正在解析，请查看进度')
     if (this.store.list<ImportJob>('importJobs').filter(j => j.status === 'running' && j.ownerId === actor.id).length >= 2) throw new HttpError(429, '已有两份资料正在解析，请稍后再开始新任务')
@@ -342,6 +353,7 @@ export class ImportService {
     return this.get(actor, id)
   }
   async analyze(actor: User, id: string, input: Input, progress?: (completed: number, total: number) => void, credentialGuard?: () => void): Promise<ImportBatch> {
+    actor = assertBusinessActor(this.store, actor)
     const before = this.mutable(actor, id, input.version)
     if (this.analyzing.has(id)) throw new HttpError(409, '此批次正在解析，请稍后查看')
     const source = this.source(actor, id)
@@ -428,6 +440,7 @@ export class ImportService {
     } finally { this.analyzing.delete(id) }
   }
   edit(actor: User, id: string, input: Input): ImportBatch {
+    actor = assertBusinessActor(this.store, actor)
     if (this.analyzing.has(id) && this.store.get<ImportJob>('importJobs', id)?.status === 'running') throw new HttpError(409, '解析进行中，请完成后再编辑')
     return this.store.transaction(() => {
       const before = this.mutable(actor, id, input.version)
@@ -475,6 +488,7 @@ export class ImportService {
     })
   }
   structured(actor: User, input: Input): ImportBatch {
+    actor = assertBusinessActor(this.store, actor)
     const sourceKey = text(input.sourceKey, '来源请求编号', true, 200)
     if (!Array.isArray(input.rows) || !input.rows.length || input.rows.length > 1000) throw new HttpError(400, '请提供1至1000条结构化记录')
     const rawRows = input.rows
@@ -505,9 +519,11 @@ export class ImportService {
     })
   }
   history(actor: User): HistoricalRecord[] {
+    actor = assertBusinessActor(this.store, actor)
     return visibleImportHistory(this.store, actor)
   }
   requestConfirmation(actor: User, id: string, input: Input): ImportBatch {
+    actor = assertBusinessActor(this.store, actor)
     if (this.analyzing.has(id)) throw new HttpError(409, '解析进行中，请完成后再确认')
     return this.store.transaction(() => {
       const batch = this.mutable(actor, id, input.version)
@@ -520,6 +536,7 @@ export class ImportService {
     })
   }
   editHistory(actor: User, id: string, input: Input): HistoricalRecord {
+    actor = assertBusinessActor(this.store, actor)
     return this.store.transaction(() => {
       const before = this.history(actor).find(r => r.id === id)
       if (!before) throw new HttpError(404, '历史记录不存在或无权查看')
@@ -533,6 +550,7 @@ export class ImportService {
     })
   }
   commit(actor: User, id: string, input: Input): ImportBatch {
+    actor = assertBusinessActor(this.store, actor)
     return withSilentImport(this.store, () => this.commitImported(actor, id, input))
   }
   private commitImported(actor: User, id: string, input: Input): ImportBatch {

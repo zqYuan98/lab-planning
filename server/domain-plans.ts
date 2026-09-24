@@ -1,8 +1,16 @@
-import type { AuditEvent, MonthlyPlan, Publication, Task, User } from '../shared/types.ts'
+import { assertBusinessActor } from './object-access.ts'
+import { createHash } from 'node:crypto'
+import type { AuditEvent, Entity, MonthlyPlan, Publication, Task, User } from '../shared/types.ts'
+import { canUseAccount } from '../shared/auth-policy.ts'
 import { projectPlan, visiblePlanHistory } from './plan-visibility.ts'
 import { notifyPublishedPlans } from './notification-events.ts'
 import { HttpError } from './store.ts'
 import { DomainBase, bool, choice, date, manager, month, own, participates, text, type Input } from './domain-common.ts'
+import { assertOperationEpoch } from './operation-context.ts'
+
+interface MonthlyCarryReceipt extends Entity {
+  actorId: string; requestId: string; sourcePlanId: string; sourceVersion: number; payloadHash: string; targetPlanId: string
+}
 
 export class MonthlyService extends DomainBase {
   private collaborators(value: unknown, ownerId: string, existingParticipants: string[] = []): string[] {
@@ -29,42 +37,47 @@ export class MonthlyService extends DomainBase {
     if (!['draft', 'returned'].includes(plan.status)) throw new HttpError(403, '提交后的临时目标需由管理者退回后修改')
   }
   create(actor: User, input: Input): MonthlyPlan {
+    actor = assertBusinessActor(this.store, actor)
     const isTemporary = input.isTemporary === undefined ? false : bool(input.isTemporary, '临时目标标记')
     if (!isTemporary) manager(actor)
-    return this.store.transaction(() => {
-      const period = month(input.month)
-      const ownerId = this.owner(actor, input.ownerId)
-      const projectId = input.projectId ? text(input.projectId, '项目') : null
-      if (projectId) this.activeProject(projectId)
-      const sourcePlanId = input.sourcePlanId ? text(input.sourcePlanId, '来源计划') : null
-      if (sourcePlanId) {
-        manager(actor)
-        const source = this.need<MonthlyPlan>('plans', sourcePlanId)
-        own(actor, source.ownerId)
-        if (source.status === 'merged') throw new HttpError(400, '请从合并后的月计划发起跨月承接')
-        if (period <= source.month) throw new HttpError(400, '承接月份必须晚于来源月份')
-        if (source.acceptanceStatus === 'accepted') throw new HttpError(400, '已验收成果不能作为未完成事项承接')
-      }
-      const dueDate = date(input.dueDate, '截止日期')
-      if (!dueDate.startsWith(period)) throw new HttpError(400, '月计划截止日期必须在所属月份内')
-      const plan = this.store.insert<MonthlyPlan>('plans', {
-        month: period, title: text(input.title, '计划标题', true, 300), projectId,
-        category: text(input.category, '工作类别', !projectId, 100), ownerId,
-        collaboratorIds: this.collaborators(input.collaboratorIds, ownerId),
-        expectedOutcome: text(input.expectedOutcome, '预期成果'), acceptanceCriteria: text(input.acceptanceCriteria, '验收标准'), dueDate,
-        priority: choice(input.priority ?? 'medium', ['high', 'medium', 'low'], '优先级'),
-        isTemporary, temporaryReason: isTemporary ? text(input.temporaryReason, '临时目标原因') : '',
-        status: 'draft', reviewComment: '', publishedVersion: null, sourcePlanId,
-        actualOutcome: '', acceptanceStatus: 'pending', acceptanceNote: '',
-      })
-      this.audit(actor, 'plan', plan.id, 'create', null, plan)
-      return plan
+    if (input.sourcePlanId !== undefined && input.sourcePlanId !== null && input.sourcePlanId !== '') {
+      manager(actor)
+      throw new HttpError(400, '来源计划只能通过跨月承接设置')
+    }
+    return this.store.transaction(() => this.createDraft(actor, input, null))
+  }
+  /** Internal whitelist shared by normal creation and the validated carry command. */
+  private createDraft(actor: User, input: Input, sourcePlanId: string | null): MonthlyPlan {
+    const isTemporary = input.isTemporary === undefined ? false : bool(input.isTemporary, '临时目标标记')
+    const period = month(input.month)
+    const ownerId = this.owner(actor, input.ownerId)
+    const projectId = input.projectId ? text(input.projectId, '项目') : null
+    if (projectId) this.activeProject(projectId)
+    const dueDate = date(input.dueDate, '截止日期')
+    if (!dueDate.startsWith(period)) throw new HttpError(400, '月计划截止日期必须在所属月份内')
+    const metadata: Pick<MonthlyPlan, 'workSource' | 'assignedBy' | 'assignedOn'> = {}
+    if (input.workSource !== undefined) metadata.workSource = choice(input.workSource, ['leader', 'self', 'coordination'], '工作来源')
+    if (input.assignedBy !== undefined) metadata.assignedBy = text(input.assignedBy, '交办人', false, 100)
+    if (input.assignedOn !== undefined) metadata.assignedOn = input.assignedOn === '' ? '' : date(input.assignedOn, '交办日期')
+    const plan = this.store.insert<MonthlyPlan>('plans', {
+      month: period, title: text(input.title, '计划标题', true, 300), projectId,
+      category: text(input.category, '工作类别', !projectId, 100), ownerId,
+      collaboratorIds: this.collaborators(input.collaboratorIds, ownerId),
+      expectedOutcome: text(input.expectedOutcome, '预期成果'), acceptanceCriteria: text(input.acceptanceCriteria, '验收标准'), dueDate,
+      priority: choice(input.priority ?? 'medium', ['high', 'medium', 'low'], '优先级'),
+      isTemporary, temporaryReason: isTemporary ? text(input.temporaryReason, '临时目标原因') : '',
+      status: 'draft', reviewComment: '', publishedVersion: null, sourcePlanId,
+      actualOutcome: '', acceptanceStatus: 'pending', acceptanceNote: '', ...metadata,
     })
+    this.audit(actor, 'plan', plan.id, 'create', null, plan)
+    return plan
   }
   update(actor: User, id: string, input: Input): MonthlyPlan {
+    actor = assertBusinessActor(this.store, actor)
     return this.store.transaction(() => {
       const before = this.need<MonthlyPlan>('plans', id)
       this.editable(actor, before)
+      if (input.sourcePlanId !== undefined && input.sourcePlanId !== null && input.sourcePlanId !== '') throw new HttpError(400, '来源计划只能通过跨月承接设置，不能直接修改')
       if (before.status === 'merged') throw new HttpError(409, '已合并的来源提报保留为历史，请编辑合并后的计划')
       this.current<MonthlyPlan>('plans', id, input)
       if (input.month !== undefined && input.month !== before.month) throw new HttpError(400, '所属月份不能直接修改，请使用跨月承接')
@@ -109,6 +122,7 @@ export class MonthlyService extends DomainBase {
     })
   }
   submit(actor: User, id: string, input: Input): MonthlyPlan {
+    actor = assertBusinessActor(this.store, actor)
     return this.store.transaction(() => {
       const before = this.need<MonthlyPlan>('plans', id)
       this.editable(actor, before)
@@ -122,6 +136,7 @@ export class MonthlyService extends DomainBase {
     })
   }
   review(actor: User, id: string, input: Input): MonthlyPlan {
+    actor = assertBusinessActor(this.store, actor)
     manager(actor)
     return this.store.transaction(() => {
       const before = this.current<MonthlyPlan>('plans', id, input)
@@ -134,6 +149,7 @@ export class MonthlyService extends DomainBase {
     })
   }
   publish(actor: User, periodInput: string, input: Input): Publication {
+    actor = assertBusinessActor(this.store, actor)
     manager(actor)
     const period = month(periodInput)
     if (!Array.isArray(input.planIds) || !input.planIds.length || input.planIds.length > 1000 || input.planIds.some(id => typeof id !== 'string')) throw new HttpError(400, '请选择待发布月计划')
@@ -155,6 +171,7 @@ export class MonthlyService extends DomainBase {
     })
   }
   merge(actor: User, input: Input): MonthlyPlan {
+    actor = assertBusinessActor(this.store, actor)
     manager(actor)
     if (!Array.isArray(input.planIds) || input.planIds.some(id => typeof id !== 'string')) throw new HttpError(400, '请选择需要合并的提报')
     const ids = [...new Set(input.planIds as string[])]
@@ -195,6 +212,7 @@ export class MonthlyService extends DomainBase {
     })
   }
   result(actor: User, id: string, input: Input): MonthlyPlan {
+    actor = assertBusinessActor(this.store, actor)
     return this.store.transaction(() => {
       const before = this.need<MonthlyPlan>('plans', id)
       own(actor, before.ownerId)
@@ -203,25 +221,58 @@ export class MonthlyService extends DomainBase {
       const status = choice(input.acceptanceStatus, ['submitted', 'accepted', 'not_completed'], '验收状态')
       if (actor.role !== 'manager' && (status !== 'submitted' || before.acceptanceStatus === 'accepted')) throw new HttpError(403, '月度成果需由管理者确认，已验收成果需由管理者修改')
       const actualOutcome = text(input.actualOutcome, '实际成果', status !== 'not_completed')
-      const acceptanceNote = text(input.acceptanceNote, status === 'not_completed' ? '未完成原因' : '验收说明', false)
+      let acceptanceNote: string
+      try { acceptanceNote = text(input.acceptanceNote, status === 'not_completed' ? '未完成原因' : '验收说明', status === 'not_completed') }
+      catch (error) {
+        if (error instanceof HttpError && error.status === 400) throw new HttpError(400, error.message, undefined, { acceptanceNote: error.message })
+        throw error
+      }
       const plan = this.store.update<MonthlyPlan>('plans', id, before.version, { actualOutcome, acceptanceStatus: status, acceptanceNote })
       this.audit(actor, 'plan', id, 'result', before, plan, acceptanceNote)
       return projectPlan(actor, plan, this.store)
     })
   }
   history(actor: User, id: string): AuditEvent[] {
+    actor = assertBusinessActor(this.store, actor)
     this.visible(actor, this.need<MonthlyPlan>('plans', id))
     return visiblePlanHistory(actor, id, this.store.list<AuditEvent>('events'), this.store)
   }
   carry(actor: User, id: string, input: Input): MonthlyPlan {
+    actor = assertBusinessActor(this.store, actor)
     manager(actor)
     return this.store.transaction(() => {
-      const source = this.need<MonthlyPlan>('plans', id)
-      own(actor, source.ownerId)
+      const currentActor = this.store.get<User>('users', actor.id)
+      if (!currentActor || !canUseAccount(currentActor)) throw new HttpError(403, '此操作需要有效管理者权限')
+      manager(currentActor)
+      const requestId = text(input.requestId, '提交标识', true, 100)
+      if (!/^[a-zA-Z0-9_-]{16,100}$/.test(requestId)) throw new HttpError(400, '提交标识须为 16 至 100 位字母、数字、短横线或下划线')
+      if (!Number.isSafeInteger(input.sourceVersion) || Number(input.sourceVersion) < 1) throw new HttpError(400, '请提供有效的来源版本', undefined, { sourceVersion: '请重新打开承接表单以取得来源版本' })
+      const payload = { sourcePlanId: text(id, '来源计划'), sourceVersion: Number(input.sourceVersion), month: month(input.month), dueDate: date(input.dueDate, '截止日期'), reason: text(input.reason, '跨月承接原因') }
+      const payloadHash = createHash('sha256').update(JSON.stringify(payload)).digest('hex')
+      const key = createHash('sha256').update(JSON.stringify(['monthly-carry', currentActor.id, requestId])).digest('hex')
+      assertOperationEpoch(this.store, input.operationEpoch)
+      const receipt = this.store.get<MonthlyCarryReceipt>('monthlyCarryRequests', key)
+      if (receipt) {
+        if (receipt.actorId !== currentActor.id || receipt.payloadHash !== payloadHash) throw new HttpError(409, '此提交标识已用于不同承接内容，请核对原结果后重新发起', 'IDEMPOTENCY_MISMATCH')
+        const target = this.store.get<MonthlyPlan>('plans', receipt.targetPlanId)
+        if (!target) throw new HttpError(409, '原承接目标已不存在，请核对历史记录后重新处理', 'CARRY_TARGET_MISSING')
+        this.visible(currentActor, target)
+        return projectPlan(currentActor, target, this.store)
+      }
+      const source = this.need<MonthlyPlan>('plans', payload.sourcePlanId)
+      if (source.version !== payload.sourceVersion) throw new HttpError(409, '来源目标已更新，请重新核对后发起承接', 'SOURCE_VERSION_CONFLICT')
+      own(currentActor, source.ownerId)
       if (source.status === 'merged') throw new HttpError(400, '请从合并后的月计划发起跨月承接')
-      const reason = text(input.reason, '跨月承接原因')
-      const plan = this.create(actor, { ...source, month: input.month, dueDate: input.dueDate, sourcePlanId: id })
-      this.audit(actor, 'plan', plan.id, 'carry', source, plan, reason)
+      if (payload.month <= source.month) throw new HttpError(400, '承接月份必须晚于来源月份')
+      if (source.acceptanceStatus === 'accepted') throw new HttpError(400, '已验收成果不能作为未完成事项承接')
+      const plan = this.createDraft(currentActor, {
+        month: payload.month, dueDate: payload.dueDate, title: source.title, projectId: source.projectId, category: source.category,
+        ownerId: source.ownerId, collaboratorIds: source.collaboratorIds, expectedOutcome: source.expectedOutcome,
+        acceptanceCriteria: source.acceptanceCriteria, priority: source.priority, isTemporary: source.isTemporary,
+        temporaryReason: source.temporaryReason, workSource: source.workSource, assignedBy: source.assignedBy, assignedOn: source.assignedOn,
+      }, source.id)
+      this.audit(currentActor, 'plan', plan.id, 'carry', source, plan, payload.reason)
+      this.store.insert<MonthlyCarryReceipt>('monthlyCarryRequests', { id: key, actorId: currentActor.id, requestId, sourcePlanId: source.id, sourceVersion: source.version, payloadHash, targetPlanId: plan.id })
       return plan
     })
   }

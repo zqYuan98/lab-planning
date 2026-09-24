@@ -1,0 +1,23 @@
+.carry-wizard { display: grid; gap: 18px; }
+.carry-wizard .context-box, .carry-wizard [role="status"], .carry-diff { overflow-wrap: anywhere; }
+.carry-diff > div { margin-top: 10px; }
+.carry-diff dt { font-weight: 600; }
+.carry-diff dd { margin: 4px 0 0; }
+.carry-diff del { opacity: .7; }
+.carry-steps { display: flex; flex-wrap: wrap; gap: 10px 18px; list-style: none; padding: 0; margin: 0 0 8px; }
+.carry-steps li { display: flex; align-items: center; gap: 6px; color: var(--text-secondary, #667085); font-size: 13px; }
+.carry-steps li span { display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid currentColor; border-radius: 50%; }
+.carry-steps li[aria-current="step"] { color: var(--primary, #2458a6); font-weight: 700; }
+.carry-steps li[aria-current="step"] span { background: var(--primary, #2458a6); border-color: transparent; color: white; }
+.carry-recovery { padding: 14px; border: 1px solid var(--border, #dce1e8); border-radius: 8px; }
+.carry-recovery summary { cursor: pointer; font-weight: 600; }
+.carry-recovery-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--border, #e5e7eb); }
+.carry-recovery-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.carry-recovery-row small, .carry-task > small { display: block; margin-top: 6px; color: var(--text-secondary, #667085); overflow-wrap: anywhere; }
+.carry-task { border: 1px solid var(--border, #dce1e8); border-radius: 8px; padding: 14px; margin: 12px 0; overflow-wrap: anywhere; }
+.carry-task p { margin: 10px 0 0; }
+.carry-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.carry-cancel, .carry-footer { border-top: 1px solid var(--border, #e5e7eb); padding-top: 16px; }
+.carry-wizard .form-fields { border: 0; margin: 0; padding: 0; min-width: 0; }
+.carry-wizard fieldset:disabled { opacity: .7; }
+@media (max-width: 560px) { .carry-steps { gap: 9px; } .carry-recovery-row { align-items: flex-start; flex-direction: column; } .carry-actions .button { flex: 1; } }

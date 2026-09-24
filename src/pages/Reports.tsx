@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import {
   CalendarClock,
   CheckCheck,
@@ -41,6 +41,9 @@ import { allowDraftLeave } from '../draft-recovery'
 const ReportAgentCenter = lazy(() => import('../components/ReportAgentCenter'))
 const ReportAgentEditor = lazy(() => import('../components/ReportAgentEditor'))
 import type { NavigationIntent } from '../navigation'
+import type { ReportMetadata, WorkspacePage } from '../../shared/workspace-query'
+import { useWorkspaceQuery } from '../workspace-query'
+import { captureMutationContext } from '../mutation-response'
 
 type Props = {
   data: Bootstrap
@@ -77,14 +80,13 @@ export default function Reports({
     [scheduleOpen, setScheduleOpen] = useState(false)
   const [finalizeOpen, setFinalizeOpen] = useState(false)
   const [agentOpen, setAgentOpen] = useState(false)
-  const history = useMemo(
-    () =>
-      [...data.reports].sort(
-        (a, b) =>
-          b.createdAt.localeCompare(a.createdAt) || b.revision - a.revision,
-      ),
-    [data.reports],
-  )
+  const scope = `${data.user.id}:${data.operationEpoch}:${data.accessScopeVersion}`
+  const [cursors, setCursors] = useState<string[]>([])
+  const historyQuery = useWorkspaceQuery<WorkspacePage<ReportMetadata>>(`/workspace/reports?limit=50${cursors.length ? `&cursor=${encodeURIComponent(cursors.at(-1)!)}` : ''}`, scope)
+  const history = historyQuery.value?.items ?? []
+  const detailSequence = useRef(0)
+  useEffect(() => { detailSequence.current++; setSelected(null); setSelectedId(''); setCursors([]); return () => { detailSequence.current++ } }, [scope])
+  useEffect(() => { if (historyQuery.accessRevoked) { detailSequence.current++; setSelected(null); setSelectedId(''); setTitle(''); setNarrative('') } }, [historyQuery.accessRevoked])
   const unsaved = Boolean(
     selected && !selected.agent && (title !== selected.title || narrative !== selected.narrative),
   )
@@ -97,6 +99,7 @@ export default function Reports({
   }, [unsaved, onDirtyChange])
 
   function choose(report: Report) {
+    detailSequence.current++
     setSelectedId(report.id)
     setSelected(report)
     setTitle(report.title)
@@ -104,21 +107,28 @@ export default function Reports({
     setHighlightIds([])
     setError('')
   }
+  async function openReport(id: string) {
+    const sequence = ++detailSequence.current, context = captureMutationContext()
+    setSelectedId(id); setSelected(null); setError('')
+    try {
+      const report = await api<Report>(`/workspace/reports/${encodeURIComponent(id)}`)
+      if (sequence === detailSequence.current && context === captureMutationContext()) choose(report)
+    } catch (failure) {
+      if (sequence === detailSequence.current && context === captureMutationContext()) setError(failure instanceof Error ? failure.message : '报告读取失败，请重试')
+    }
+  }
   useEffect(() => {
     if (selectedId) return
-    if (intent?.id) { const target = history.find(report => report.id === intent.id); if (target) choose(target); else setError('该报告已删除或当前不可访问'); return }
+    if (intent?.id) { void openReport(intent.id); return }
     if (intent?.action === 'write-weekly') {
-      const draft = history.find(
-        (report) =>
-          report.type === 'weekly' &&
-          report.period === entryWeek &&
-          report.status === 'draft',
-      )
-      if (draft) choose(draft)
-      return
+      const controller = new AbortController(), context = captureMutationContext()
+      void api<WorkspacePage<ReportMetadata>>(`/workspace/reports?type=weekly&period=${entryWeek}&status=draft&limit=1`, { signal: controller.signal }).then(page => {
+        if (!controller.signal.aborted && context === captureMutationContext() && page.items[0]) void openReport(page.items[0].id)
+      }).catch(failure => { if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : '报告读取失败') })
+      return () => controller.abort()
     }
-    if (history[0]) choose(history[0])
-  }, [history, selectedId, intent?.action, intent?.id, entryWeek])
+    if (history[0]) void openReport(history[0].id)
+  }, [historyQuery.value, selectedId, intent?.action, intent?.id, entryWeek])
   useEffect(() => {
     if (!unsaved) return
     const handler = (event: BeforeUnloadEvent) => {
@@ -285,8 +295,10 @@ export default function Reports({
         <aside className="report-history" aria-label="报告历史版本">
           <div className="report-history-title">
             <h2>汇报档案</h2>
-            <span>{history.length}</span>
+            <span>共 {historyQuery.value?.total ?? '…'} 份 · 本页 {history.length} 份</span>
           </div>
+          {historyQuery.error&&<div role="alert" className="error"><p>{historyQuery.error}</p><button className="button secondary" onClick={()=>{setCursors([]);void historyQuery.reload().catch(()=>{})}}>刷新档案</button></div>}
+          {historyQuery.loading&&<p role="status">正在读取报告目录…</p>}
           {history.length ? (
             history.map((r) => (
               <button
@@ -295,7 +307,7 @@ export default function Reports({
                 aria-pressed={selectedId === r.id}
                 disabled={busy}
                 onClick={() => {
-                  if (canLeave()) choose(r)
+                  if (canLeave()) void openReport(r.id)
                 }}
               >
                 <span className="report-history-type">
@@ -314,6 +326,7 @@ export default function Reports({
           ) : (
             <p className="report-quiet">生成第一份报告后，版本会保存在这里。</p>
           )}
+          <div className="page-actions"><button className="button secondary" disabled={!cursors.length||historyQuery.loading} onClick={()=>setCursors(value=>value.slice(0,-1))}>上一页</button><span>第 {cursors.length+1} 页</span><button className="button secondary" disabled={!historyQuery.value?.nextCursor||historyQuery.loading} onClick={()=>setCursors(value=>[...value,historyQuery.value!.nextCursor!])}>下一页</button></div>
         </aside>
         <section className="report-document">
           {selected?.agent ? (

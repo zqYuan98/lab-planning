@@ -38,7 +38,7 @@ test('deletion preserves task, other weeks, receipts and saved reports, then per
   const service = new WeeklySubmissionService(f.store, () => now)
   service.getRule(); now = new Date('2026-09-18T07:00:00.000Z')
   const duty = service.view(f.member, '2026-09-14').duties.find(row => row.kind === 'results')!
-  const receipt = service.submit(f.member, { dutyId: duty.id, version: duty.version, manifest: duty.manifest, requestId: 'before-deletion-receipt' })
+  const receipt = service.submit(f.member, { dutyId: duty.id, version: duty.version, manifest: duty.manifest, progressEventIds: duty.progressEventIds, requestId: 'before-deletion-receipt' })
   const before = f.store.get<WeeklyRecord>('weeklyRecords', f.record.id)!
   const report = generateReport(f.store, 'weekly', f.record.weekStart, f.manager.id)
   const otherBeforeDeletion = f.store.get<WeeklyRecord>('weeklyRecords', other.id)

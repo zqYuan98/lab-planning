@@ -7,6 +7,9 @@ import { HttpError, Store } from './store.ts'
 import { businessEventCollections, collectionNames, emptyCollections, parsePacket, projectRow, rowReferences, type BusinessCollections, type BusinessDataPacket, type TransferCollection, type TransferType } from './data-transfer-schema.ts'
 import { collaborationCollectionNames, emptyCollaborationCollections } from './collaboration-transfer.ts'
 import { reportAgentTransferCollections, emptyReportAgentCollections } from './report-agent-transfer.ts'
+import { deliveryCollectionNames, emptyDeliveryCollections } from './delivery-transfer.ts'
+import { periodReviewCollectionNames, emptyPeriodReviewCollections } from './period-review-transfer.ts'
+import { assertBusinessActor } from './object-access.ts'
 
 export type { BusinessDataPacket, BusinessCollections, TransferType } from './data-transfer-schema.ts'
 export { previewRestore, restoreBusinessData } from './data-restore.ts'
@@ -22,6 +25,7 @@ function overlapsMonth(weekStart: string, month: string): boolean {
 
 /** Dependency records accompany selected rows so a JSON export remains usable for migration. */
 export function exportBusinessData(store: Store, actor: User, options: ExportOptions = {}): BusinessDataPacket {
+  actor = assertBusinessActor(store, actor)
   const type = options.type || 'all'
   if (!exportTypes.includes(type)) throw new HttpError(400, '不支持的数据导出类型')
   if (options.month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(options.month)) throw new HttpError(400, '导出月份须为 YYYY-MM')
@@ -33,6 +37,8 @@ export function exportBusinessData(store: Store, actor: User, options: ExportOpt
     const sources: BusinessCollections = {
       ...emptyCollaborationCollections(),
       ...emptyReportAgentCollections(),
+      ...emptyDeliveryCollections(),
+      ...emptyPeriodReviewCollections(),
       users: visible.users, projects: visible.projects, annualGoals: visible.annualGoals, plans: visible.plans, tasks: visible.tasks, weeklyRecords: visible.weeklyRecords,
       history: visibleImportHistory(store, actor),
       publications: visible.publications, reports: visible.reports,
@@ -47,15 +53,20 @@ export function exportBusinessData(store: Store, actor: User, options: ExportOpt
       weeklyPlanReviews: store.list<BusinessCollections['weeklyPlanReviews'][number]>('weeklyPlanReviews').filter(row => isManager || row.ownerId === actor.id),
     }
     if (isManager) for (const name of reportAgentTransferCollections) (sources[name] as Entity[]) = store.list<Entity>(name)
+    // Department frozen facts have their own member projection API. Raw migration is manager-only.
+    if (isManager) for (const name of periodReviewCollectionNames) (sources[name] as Entity[]) = store.list<Entity>(name)
     for (const name of collaborationCollectionNames) (sources[name] as Entity[]) = store.list<Entity & { ownerId: string; taskId?: string; parentTaskId?: string }>(name)
       .filter(row => (isManager || row.ownerId === actor.id) && visible.tasks.some(task => task.id === (row.taskId ?? row.parentTaskId)))
+    const deliveryTaskId = (row: Record<string, unknown>) => row.taskId ?? store.get<{ id: string; taskId: string }>('deliverySeries', String(row.seriesId))?.taskId
+    for (const name of deliveryCollectionNames) (sources[name] as Entity[]) = store.list<Entity>(name).filter(row => visible.tasks.some(task => task.id === deliveryTaskId(row as unknown as Record<string, unknown>)))
     const plans = new Map(visible.plans.map(row => [row.id, row]))
     const matches = (name: TransferCollection, value: Entity) => {
       const row = value as unknown as Record<string, unknown>
       if (name === 'users' || name === 'events') return complete
       if ((reportAgentTransferCollections as readonly string[]).includes(name)) return complete
-      if ((collaborationCollectionNames as readonly string[]).includes(name)) {
-        const task = visible.tasks.find(task => task.id === (row.taskId ?? row.parentTaskId))
+      if ((periodReviewCollectionNames as readonly string[]).includes(name)) return complete
+      if ((collaborationCollectionNames as readonly string[]).includes(name) || (deliveryCollectionNames as readonly string[]).includes(name)) {
+        const task = visible.tasks.find(task => task.id === (row.taskId ?? row.parentTaskId ?? deliveryTaskId(row)))
         return !!task && (!options.ownerId || task.ownerId === options.ownerId) && (!options.projectId || plans.get(String(task.monthlyPlanId))?.projectId === options.projectId)
           && (!options.month || task.dueDate.startsWith(options.month) || plans.get(String(task.monthlyPlanId))?.month === options.month)
       }
@@ -97,6 +108,8 @@ export function exportBusinessData(store: Store, actor: User, options: ExportOpt
       for (const ref of rowReferences(name, row)) add(ref.collection, ref.id)
       if (name === 'weeklySubmissions') for (const review of sources.weeklyPlanReviews) if (review.submissionId === row.id) add('weeklyPlanReviews', review.id)
       if (name === 'tasks') for (const collection of collaborationCollectionNames) for (const entry of sources[collection] as (Entity & { taskId?: string; parentTaskId?: string })[]) if ((entry.taskId ?? entry.parentTaskId) === row.id) add(collection, entry.id)
+      if (name === 'tasks') for (const collection of deliveryCollectionNames) for (const entry of sources[collection] as Entity[]) if (deliveryTaskId(entry as unknown as Record<string, unknown>) === row.id) add(collection, entry.id)
+      if (name === 'tasks') for (const collection of ['taskCommitmentEvents', 'historicalEvidence'] as const) for (const entry of sources[collection]) if (entry.taskId === row.id) add(collection, entry.id)
       if (name === 'plans' && (row as MonthlyPlan).status === 'published') {
         const plan = row as MonthlyPlan
         for (const publication of sources.publications) if (publication.month === plan.month && publication.revision === plan.publishedVersion) add('publications', publication.id)
@@ -107,7 +120,8 @@ export function exportBusinessData(store: Store, actor: User, options: ExportOpt
     }
     const collections = emptyCollections()
     for (const name of collectionNames) (collections[name] as unknown[]) = (sources[name] as Entity[]).filter(row => selected[name].has(row.id)).map(row => projectRow(name, row))
-    return parsePacket({ application: 'lab-planning', formatVersion: reportAgentTransferCollections.some(name => collections[name].length) || collections.reports.some(report => report.agent) ? 4 : collaborationCollectionNames.some(name => collections[name].length) ? 3 : 2, exportedAt: new Date().toISOString(), collections })
+    const hasDelivery = deliveryCollectionNames.some(name => collections[name].length) || collections.blockerEpisodes.some(row => row.coordinationState !== undefined) || collections.blockerActions.some(row => ['assign', 'respond', 'resolve'].includes(row.action))
+    return parsePacket({ application: 'lab-planning', formatVersion: periodReviewCollectionNames.some(name => collections[name].length) ? 6 : hasDelivery ? 5 : reportAgentTransferCollections.some(name => collections[name].length) || collections.reports.some(report => report.agent) ? 4 : collaborationCollectionNames.some(name => collections[name].length) ? 3 : 2, exportedAt: new Date().toISOString(), collections })
   })
 }
 

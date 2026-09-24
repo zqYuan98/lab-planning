@@ -11,6 +11,9 @@ import { planReference, visiblePlan, visiblePublications } from './plan-visibili
 import { aiConfigured } from './reports.ts'
 import { isActiveWeeklyRecord } from '../shared/weekly-record-state.ts'
 import { isActiveTask } from '../shared/task-state.ts'
+import { getOperationEpoch } from './operation-context.ts'
+import { liveObjectActor, observerBootstrap, readScopeVersion } from './object-access.ts'
+import { workProgressProjector } from './work-progress.ts'
 
 /** Facade shared by HTTP routes and domain integration tests. */
 export class Domain extends DomainBase {
@@ -56,6 +59,8 @@ export class Domain extends DomainBase {
   carryWeeklyRecord = (...args: Parameters<WorkService['carryWeeklyRecord']>) => this.work.carryWeeklyRecord(...args)
 
   bootstrap(actor: User, includeLegacyOrigins = true, includeDeleted = false): Bootstrap {
+    actor = liveObjectActor(this.store, actor)
+    if (actor.role === 'observer') return { ...observerBootstrap(this.store, actor), operationEpoch: getOperationEpoch(this.store) }
     const isManager = actor.role === 'manager'
     const plans = this.store.list<MonthlyPlan>('plans').flatMap(plan => {
       const visible = visiblePlan(this.store, actor, plan)
@@ -67,13 +72,18 @@ export class Domain extends DomainBase {
     let weeklyRecords = this.store.list<WeeklyRecord>('weeklyRecords').filter(record => (includeDeleted || isActiveWeeklyRecord(record) && !cancelledTaskIds.has(record.taskId)) && (isManager || record.ownerId === actor.id))
     // Backfill only this member's own task snapshot when a historical record outlives its task.
     const visibleTaskIds = new Set(tasks.map(task => task.id))
+    const taskHistory = new Map<string, Task>()
+    const events = this.store.list<AuditEvent>('events')
+    for (const event of events) {
+      if (event.entityType !== 'task') continue
+      for (const value of [event.before, event.after]) {
+        const task = value as Task | null
+        if (task && task.id === event.entityId && (isManager || task.ownerId === actor.id) && (!taskHistory.has(task.id) || taskHistory.get(task.id)!.version < task.version)) taskHistory.set(task.id, task)
+      }
+    }
     for (const record of weeklyRecords) {
       if (visibleTaskIds.has(record.taskId)) continue
-      const historical = this.store.list<AuditEvent>('events').filter(event => event.entityType === 'task' && event.entityId === record.taskId)
-        .flatMap(event => [event.before, event.after]).filter((value): value is Task => {
-          const task = value as Task | null
-          return !!task && task.id === record.taskId && (isManager || task.ownerId === actor.id)
-        }).sort((a, b) => b.version - a.version)[0]
+      const historical = taskHistory.get(record.taskId)
       if (historical) {
         if (!includeDeleted && !isActiveTask(historical)) { cancelledTaskIds.add(historical.id); continue }
         tasks.push(historical); visibleTaskIds.add(historical.id)
@@ -88,7 +98,8 @@ export class Domain extends DomainBase {
     }
     const publications = visiblePublications(actor, this.store.list<Publication>('publications'), this.store)
     const users = this.store.list<User>('users').filter(user => isManager || registrationApproved(user)).map(user => ({ ...safeUser(user), ...(isManager && user.registrationStatus ? { registrationReviewComment: user.registrationReviewComment ?? '' } : {}) }))
-    const projectOrigin = workOriginProjector(includeLegacyOrigins ? this.store.list<AuditEvent>('events') : [])
-    return { user: safeUser(actor), users, projects: this.store.list<Project>('projects'), annualGoals: this.store.list<AnnualGoal>('annualGoals'), plans, tasks: tasks.map(row => projectOrigin(row, 'task')), weeklyRecords: weeklyRecords.map(row => projectOrigin(row, 'weeklyRecord')), publications, reports: isManager ? this.store.list<Report>('reports') : [], aiConfigured: aiConfigured(this.store) }
+    const projectOrigin = workOriginProjector(includeLegacyOrigins ? events : [])
+    const progress = workProgressProjector(this.store, actor)
+    return { user: safeUser(actor), operationEpoch: getOperationEpoch(this.store), accessScopeVersion: readScopeVersion(this.store, actor), taskProgress: Object.fromEntries(tasks.map(task => [task.id, progress(task)])), users, projects: this.store.list<Project>('projects'), annualGoals: this.store.list<AnnualGoal>('annualGoals'), plans, tasks: tasks.map(row => projectOrigin(row, 'task')), weeklyRecords: weeklyRecords.map(row => projectOrigin(row, 'weeklyRecord')), publications, reports: isManager ? this.store.list<Report>('reports') : [], aiConfigured: aiConfigured(this.store) }
   }
 }

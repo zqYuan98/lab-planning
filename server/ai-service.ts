@@ -1,6 +1,7 @@
 import type { AuditEvent, Entity, User } from '../shared/types.ts'
 import { manager, type Input } from './domain-common.ts'
 import { HttpError, Store } from './store.ts'
+import { assertBusinessActor } from './object-access.ts'
 
 const SETTINGS_ID = 'ai-connection'
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -69,6 +70,8 @@ export function readAiSettings(store: Store): AiSettings {
 }
 
 export function updateAiSettings(store: Store, actor: User, input: Input): AiSettings {
+  manager(actor)
+  actor = assertBusinessActor(store, actor)
   manager(actor)
   if (input.clearApiKey !== undefined && typeof input.clearApiKey !== 'boolean') throw new HttpError(400, '清除密钥选项必须是布尔值')
   return store.transaction(() => {
@@ -164,6 +167,8 @@ export async function callAiJson(store: Store, messages: AiMessage[], options: {
 }
 
 export async function testAiConnection(store: Store, actor: User): Promise<{ ok: true; model: string }> {
+  manager(actor)
+  actor = assertBusinessActor(store, actor)
   manager(actor)
   const response = await callAiJson(store, [
     { role: 'system', content: '这是连接测试。只返回 JSON 对象 {"ok":true}。' },

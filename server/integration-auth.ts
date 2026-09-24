@@ -6,13 +6,15 @@ import { canUseAccount } from '../shared/auth-policy.ts'
 import { safeUser, type StoredUser } from './auth.ts'
 import { manager, text, number, type Input } from './domain-common.ts'
 import { HttpError, Store } from './store.ts'
+import { assertBusinessActor } from './object-access.ts'
 
 const SCOPES = ['imports:read', 'imports:write', 'imports:commit', 'data:read']
 interface IntegrationToken extends Entity { userId: string; credentialVersion: number; name: string; expiresAt: string; revokedAt: string | null; scopes: string[] }
 declare global { namespace Express { interface Request { integrationToken?: IntegrationToken } } }
 function view(token: IntegrationToken): IntegrationTokenView { return { id: token.id, name: token.name, createdAt: token.createdAt, expiresAt: token.expiresAt, revokedAt: token.revokedAt, scopes: token.scopes } }
-export function listIntegrationTokens(store: Store, actor: User) { manager(actor); return store.list<IntegrationToken>('integrationTokens').filter(t => t.userId === actor.id).map(view) }
+export function listIntegrationTokens(store: Store, actor: User) { actor = assertBusinessActor(store, actor); manager(actor); return store.list<IntegrationToken>('integrationTokens').filter(t => t.userId === actor.id).map(view) }
 export function createIntegrationToken(store: Store, actor: User, input: Input) {
+  actor = assertBusinessActor(store, actor)
   manager(actor)
   const name = text(input.name, '令牌名称', true, 100)
   const scopes = input.scopes ?? ['imports:read', 'imports:write', 'data:read']
@@ -28,6 +30,7 @@ export function createIntegrationToken(store: Store, actor: User, input: Input) 
   })
 }
 export function revokeIntegrationToken(store: Store, actor: User, id: string) {
+  actor = assertBusinessActor(store, actor)
   manager(actor)
   const token = store.get<IntegrationToken>('integrationTokens', id)
   if (!token || token.userId !== actor.id) throw new HttpError(404, '令牌不存在')
@@ -37,7 +40,7 @@ export function revokeIntegrationToken(store: Store, actor: User, id: string) {
 export function assertIntegrationTokenActive(store: Store, id: string, scope: string) {
   const token = store.get<IntegrationToken>('integrationTokens', id)
   const user = token ? store.get<StoredUser>('users', token.userId) : undefined
-  if (!token || token.revokedAt || Date.parse(token.expiresAt) <= Date.now() || !token.scopes.includes(scope) || !user || !canUseAccount(user) || token.credentialVersion !== user.credentialVersion) throw new HttpError(403, '集成令牌权限已变化，已停止后续解析')
+  if (!token || token.revokedAt || Date.parse(token.expiresAt) <= Date.now() || !token.scopes.includes(scope) || !user || !canUseAccount(user) || user.role !== 'manager' || token.credentialVersion !== user.credentialVersion) throw new HttpError(403, '集成令牌权限已变化，已停止后续解析')
 }
 export function requireIntegrationAuth(store: Store): RequestHandler {
   const usage = new Map<string, { count: number; expires: number }>()
@@ -45,7 +48,7 @@ export function requireIntegrationAuth(store: Store): RequestHandler {
     const secret = req.get('authorization')?.match(/^Bearer (lp_[a-f0-9]{64})$/)?.[1]
     const token = secret ? store.get<IntegrationToken>('integrationTokens', createHash('sha256').update(secret).digest('hex')) : undefined
     const user = token ? store.get<StoredUser>('users', token.userId) : undefined
-    if (!token || token.revokedAt || Date.parse(token.expiresAt) <= Date.now() || !user || !canUseAccount(user) || token.credentialVersion !== user.credentialVersion) return next(new HttpError(401, '集成令牌无效、已到期或已撤销'))
+    if (!token || token.revokedAt || Date.parse(token.expiresAt) <= Date.now() || !user || !canUseAccount(user) || user.role !== 'manager' || token.credentialVersion !== user.credentialVersion) return next(new HttpError(401, '集成令牌无效、已到期或已撤销'))
     const routePath = req.path.toLowerCase().replace(/\/+$/, '')
     const scope = routePath.startsWith('/data') || routePath === '/context' ? 'data:read' : ['GET', 'HEAD'].includes(req.method) ? 'imports:read' : req.method === 'DELETE' || routePath.endsWith('/commit') || /^\/imports\/history\//.test(routePath) ? 'imports:commit' : 'imports:write'
     if (!token.scopes.includes(scope)) return next(new HttpError(403, `令牌缺少${scope}权限`))

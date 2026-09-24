@@ -10,6 +10,7 @@ import './workspace-shell.css'
 import './workspace-tech.css'
 import './auth-tech.css'
 import './workspace-saas.css'
+import './components/CarryWorkflowWizard.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

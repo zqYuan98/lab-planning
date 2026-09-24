@@ -44,6 +44,7 @@ export class FeedbackService {
   private actor(actor: User) {
     const current = this.store.get<User>('users', actor.id)
     if (!current || !canUseAccount(current)) throw new HttpError(401, '请先登录')
+    if (current.role === 'observer') throw new HttpError(403, '观察者不能读取或处理个人反馈')
     return current
   }
   private row(actor: User, id: string): Feedback {

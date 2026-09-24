@@ -6,10 +6,14 @@ import { isActiveTask } from '../shared/task-state.ts'
 import { addWeekDays } from './weekly-submission-clock.ts'
 import { manager } from './domain-common.ts'
 import { HttpError, Store } from './store.ts'
+import { rotateOperationEpoch } from './operation-context.ts'
 import { reportSubmissionIssues, weeklyTransferIssues } from './weekly-submission-transfer.ts'
 import type { WeeklyReportSubmission, WeeklyRule } from '../shared/weekly-submissions.ts'
 import type { CollaborationSettings, TaskTracking } from '../shared/collaboration.ts'
 import { collaborationTransferIssues } from './collaboration-transfer.ts'
+import { deliveryTransferIssues } from './delivery-transfer.ts'
+import { periodReviewHashIssues, periodReviewTransferIssues, remapReviewSourceHashes } from './period-review-transfer.ts'
+import { periodReviewSourceCollections, type PeriodReviewSnapshot } from '../shared/period-reviews.ts'
 import { reportAgentHashIssues, reportAgentTransferIssues } from './report-agent-transfer.ts'
 import { businessEventCollections, canonical, collectionNames, emptyCollections, parsePacket, projectRow, remapUsers, rowReferences, storedCollection, type BusinessCollections, type BusinessDataPacket, type TransferCollection } from './data-transfer-schema.ts'
 
@@ -98,6 +102,7 @@ function inspectRestore(store: Store, packet: BusinessDataPacket, requestedMappi
   const issue = (message: string) => { if (!issueSet.has(message)) { issueSet.add(message); issues.push(message) } }
   // Verify source fingerprints before account mapping changes the frozen snapshot.
   for (const report of packet.collections.reports) reportAgentHashIssues(report, issue)
+  periodReviewHashIssues(packet.collections, issue)
   if (!requestedMapping || typeof requestedMapping !== 'object' || Array.isArray(requestedMapping) || Object.values(requestedMapping).some(value => typeof value !== 'string' || !value || value.length > 200)) throw new HttpError(400, '账号映射格式无效')
   const sourceUsers = new Map(packet.collections.users.map(user => [user.id, user]))
   const currentUsers = store.list<User>('users')
@@ -129,6 +134,7 @@ function inspectRestore(store: Store, packet: BusinessDataPacket, requestedMappi
     mapping[sourceId] = target; mappingTarget.set(target, sourceId)
   }
   const rows = emptyCollections()
+  const mappedReviewSources = Object.fromEntries(periodReviewSourceCollections.map(name => [name, new Map((packet.collections[name] as Entity[]).map(row => [row.id, remapUsers(name, row, mapping) as Entity]))]))
   const current: Record<string, Entity[]> = {}
   const counts = {} as RestorePreview['counts']
   const available = {} as Record<TransferCollection, Map<string, Entity>>
@@ -149,6 +155,7 @@ function inspectRestore(store: Store, packet: BusinessDataPacket, requestedMappi
     const existing = new Map(current[name].map(row => [row.id, row]))
     const transformed = incoming.map(row => {
       const mapped = remapUsers(name, row, mapping) as Entity
+      if (name === 'periodReviewSnapshots') remapReviewSourceHashes(mapped as PeriodReviewSnapshot, mappedReviewSources)
       if (name === 'weeklyRules' && !(mapped as WeeklyRule).planReviewEffectiveWeek && targetReviewWeek) {
         notices.push('旧迁移包未包含计划审批生效周，将继承目标服务已持久保存的审批边界；来源提报窗口、版本与时间保持不变。')
         return { ...mapped, planReviewEffectiveWeek: targetReviewWeek } as WeeklyRule
@@ -241,10 +248,13 @@ function inspectRestore(store: Store, packet: BusinessDataPacket, requestedMappi
   unique<Report>('reports', row => `${row.type}/${row.period}/${row.revision}`)
   weeklyTransferIssues(rows, available, issue)
   collaborationTransferIssues(rows, available, issue)
+  deliveryTransferIssues(rows, available, issue)
+  periodReviewTransferIssues(rows, available, issue)
   reportAgentTransferIssues(rows, available, issue)
   if (rows.reportTemplates.length) notices.push('周报模板、冻结事实和定稿 Word 原件会一同恢复；自动生成任务与定时设置不会重放，请核对后重新配置。')
   if (pendingLegacyRecords) notices.push(`将 ${pendingLegacyRecords} 条适用审批周期但缺少审批元数据的成员周安排标记为待审核；历史提交、报告及审计快照保持原样。`)
   if (rows.taskTrackings.length) notices.push('恢复的有效督办将暂停，需管理者核对后显式恢复；协作规则保持关闭，历史事件不产生新通知。')
+  if (rows.deliverySeries.length || rows.decisionRequests.length) notices.push('成果版本、验收决定及协调决策事实会恢复；对象授权、授权报告和命令回执不会迁入，也不会重放历史通知。')
   return {
     rows, unusedRule,
     preview: { canRestore: issues.length === 0, fingerprint: fingerprint({ packet, mapping, current }), counts, issues, notices, missingUsers, mapping },
@@ -277,6 +287,7 @@ export function restoreBusinessData(store: Store, actor: User, input: unknown, m
     }
     const restoredAt = new Date().toISOString()
     if (restored) {
+      rotateOperationEpoch(store)
       const settings = store.get<CollaborationSettings>('collaborationSettings', 'collaboration')
       if (settings && [settings.enabled, settings.autoRulesEnabled, settings.dailyManagerEnabled, settings.weeklyManagerEnabled, settings.memberActionsEnabled, settings.deadlineApprovalEnabled].some(Boolean)) store.update<CollaborationSettings>('collaborationSettings', settings.id, settings.version, { enabled: false, autoRulesEnabled: false, deadlineApprovalEnabled: false, dailyManagerEnabled: false, weeklyManagerEnabled: false, memberActionsEnabled: false })
     }

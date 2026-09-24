@@ -1,10 +1,13 @@
 import { rememberClientError } from './error-context'
+import { captureMutationContext, MutationContextChangedError, publishMutationResponse } from './mutation-response'
 
 export class ApiError extends Error {
   constructor(
     message: string,
     public status: number,
     public requestId?: string,
+    public code?: string,
+    public fieldErrors?: Record<string, string>,
   ) {
     super(message)
     this.name = 'ApiError'
@@ -12,18 +15,20 @@ export class ApiError extends Error {
 }
 /** A mutation has succeeded. Only its read/refresh completion may be retried. */
 export class SavedResultError extends Error {
-  constructor(public retry: () => Promise<void>) {
+  constructor(public retry: () => Promise<void>, public savedVersion?: number) {
     super('内容已经保存，但页面刷新失败。请重新加载已保存结果，无需重复提交。')
     this.name = 'SavedResultError'
   }
 }
-export async function finishSaved(refresh: () => Promise<void>) {
-  try { await refresh() } catch { throw new SavedResultError(refresh) }
+export async function finishSaved(refresh: () => Promise<void>, savedVersion?: number) {
+  try { await refresh() } catch { throw new SavedResultError(refresh, savedVersion) }
 }
 export async function api<T = unknown>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
+  const mutationContext = captureMutationContext()
+  const method = (options.method || 'GET').toUpperCase()
   let response: Response
   try { response = await fetch(
     path.startsWith('/api/')
@@ -73,8 +78,14 @@ export async function api<T = unknown>(
     const requestId = response.headers.get('X-Request-Id') || (typeof value?.requestId === 'string' ? value.requestId : undefined)
     const message = response.status === 401 && !path.includes('/auth/') ? '登录已过期，请重新登录。请保留当前页面，已暂存的草稿可在登录后恢复。' : value?.error || `请求失败（${response.status}）`
     if (response.status >= 500) rememberClientError(message, requestId)
-    throw new ApiError(message, response.status, requestId)
+    throw new ApiError(message, response.status, requestId,
+      typeof value?.code === 'string' ? value.code : undefined,
+      value?.fieldErrors && typeof value.fieldErrors === 'object' && !Array.isArray(value.fieldErrors)
+        && Object.values(value.fieldErrors).every(item => typeof item === 'string') ? value.fieldErrors : undefined)
   }
+  const normalizedPath = path.startsWith('/api/') ? path.slice(4) : `/${path.replace(/^\//, '')}`
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && !normalizedPath.startsWith('/auth/')
+      && !publishMutationResponse(mutationContext, path, value)) throw new MutationContextChangedError()
   return value as T
 }
 export const json = (body: unknown, method = 'POST'): RequestInit => ({

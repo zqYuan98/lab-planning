@@ -175,6 +175,49 @@ test('execution rechecks references added after preview and keeps historic assig
   assert.equal(store.list('projects').length, 1)
 })
 
+test('delivery and decision identities, revoked grants, frozen scoped reports and command actors retain accounts', t => {
+  const { store, domain, manager, member } = fixture(t)
+  const id = member.id, managerId = manager.id
+  const cases: Array<[string, Record<string, unknown>]> = [
+    ['deliverySeries', { reviewerId: id }],
+    ['taskDeliveries', { ownerId: id, submittedBy: managerId, reviewerIdSnapshot: managerId, deadlineBasisRefs: [] }],
+    ['taskDeliveries', { ownerId: managerId, submittedBy: id, reviewerIdSnapshot: null, deadlineBasisRefs: [] }],
+    ['taskDeliveries', { ownerId: managerId, submittedBy: managerId, reviewerIdSnapshot: id, deadlineBasisRefs: [] }],
+    ['deliveryDecisions', { decidedBy: id }],
+    ['decisionRequests', { decisionOwnerId: id, requestedBy: managerId, decidedBy: null }],
+    ['decisionRequests', { decisionOwnerId: managerId, requestedBy: id, decidedBy: null }],
+    ['decisionRequests', { decisionOwnerId: managerId, requestedBy: managerId, decidedBy: id }],
+    ['objectGrants', { subjectId: id, grantedBy: managerId, revokedAt: '2026-09-22T01:00:00.000Z' }],
+    ['objectGrants', { subjectId: managerId, grantedBy: id }],
+    ['scopedReports', { subjectId: id, finalizedBy: managerId }],
+    ['scopedReports', { subjectId: managerId, finalizedBy: id }],
+    ...['objectAccessCommands', 'collaborationCommandReceipts', 'workRegisterCaptures', 'weeklyAssignmentRequests', 'monthlyCarryRequests'].map(collection => [collection, { actorId: id }] as [string, Record<string, unknown>]),
+  ]
+  for (const [collection, fields] of cases) {
+    const row = store.insert<Entity & Record<string, unknown>>(collection, fields)
+    const blocker = domain.userDeletionPreview(manager, id).blockers.find(item => item.key === collection)
+    assert.equal(blocker?.count, 1, `${collection}: ${JSON.stringify(fields)}`)
+    assert.ok(blocker?.label)
+    assert.throws(() => domain.deleteUser(manager, id, request(member)), { status: 409 })
+    assert.deepEqual(store.get(collection, row.id), row)
+    store.delete(collection, row.id, row.version)
+  }
+  assert.equal(domain.userDeletionPreview(manager, id).canDelete, true)
+})
+
+test('delivery and decision audit snapshots retain prior responsibility after reassignment', t => {
+  const { store, domain, manager, member } = fixture(t)
+  for (const [entityType, snapshot] of [
+    ['deliverySeries', { reviewerId: member.id }], ['taskDelivery', { ownerId: member.id, deadlineBasisRefs: [] }],
+    ['deliveryDecision', { decidedBy: member.id }], ['decisionRequest', { decisionOwnerId: member.id }],
+  ] as const) {
+    const event = store.insert<AuditEvent>('events', { entityType, entityId: 'historical', actorId: manager.id, action: 'reassign', reason: '', before: snapshot, after: null })
+    assert.equal(domain.userDeletionPreview(manager, member.id).blockers.find(row => row.key === 'events')?.count, 1, entityType)
+    assert.throws(() => domain.deleteUser(manager, member.id, request(member)), { status: 409 })
+    store.delete('events', event.id, event.version)
+  }
+})
+
 test('audit failure rolls back account and credential deletion atomically', t => {
   const { store, domain, manager, member } = fixture(t)
   createSession(store, store.get<StoredUser>('users', member.id)!)

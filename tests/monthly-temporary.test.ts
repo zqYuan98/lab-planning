@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Domain } from '../server/domain.ts'
+import { getOperationEpoch } from '../server/operation-context.ts'
 import { Store } from '../server/store.ts'
 import { createApp } from '../server/app.ts'
 import { createSession, type StoredUser } from '../server/auth.ts'
@@ -81,8 +82,9 @@ test('monthly carry preserves temporary provenance and prior results while later
   source = f.domain.planResult(f.manager, source.id, { version: source.version, acceptanceStatus: 'not_completed', actualOutcome: '完成部分验证', acceptanceNote: '样本仍需补充' })
   const before = structuredClone(source)
   assert.throws(() => f.domain.carryPlan(f.member, source.id, { month: '2026-10', dueDate: '2026-10-31', reason: '继续研究' }), { status: 403 })
-  assert.throws(() => f.domain.carryPlan(f.manager, source.id, { month: '2026-10', dueDate: '2026-11-01', reason: '继续研究' }), { status: 400 })
-  let next = f.domain.carryPlan(f.manager, source.id, { month: '2026-10', dueDate: '2026-10-31', reason: '继续第二阶段研究' })
+  const carryCommand = { requestId: 'temporary-carry-request', sourceVersion: source.version, operationEpoch: getOperationEpoch(f.store) }
+  assert.throws(() => f.domain.carryPlan(f.manager, source.id, { ...carryCommand, month: '2026-10', dueDate: '2026-11-01', reason: '继续研究' }), { status: 400 })
+  let next = f.domain.carryPlan(f.manager, source.id, { ...carryCommand, month: '2026-10', dueDate: '2026-10-31', reason: '继续第二阶段研究' })
   assert.equal(next.sourcePlanId, source.id)
   assert.equal(next.isTemporary, true)
   assert.equal(next.temporaryReason, source.temporaryReason)
@@ -116,7 +118,7 @@ test('merged temporary proposals keep private source reasons out of peer project
   assert.notEqual(peerSource.temporaryReason, first.temporaryReason)
   assert.equal(f.store.get<MonthlyPlan>('plans', first.id)!.temporaryReason, first.temporaryReason)
   assert.throws(() => f.domain.updatePlan(f.member, combined.id, { version: combined.version, title: '篡改整体承诺' }), { status: 403 })
-  const carry = f.domain.carryPlan(f.manager, combined.id, { month: '2026-10', dueDate: '2026-10-31', reason: '延续团队目标' })
+  const carry = f.domain.carryPlan(f.manager, combined.id, { requestId: 'temporary-merged-carry', sourceVersion: combined.version, operationEpoch: getOperationEpoch(f.store), month: '2026-10', dueDate: '2026-10-31', reason: '延续团队目标' })
   assert.throws(() => f.domain.updatePlan(f.member, carry.id, { version: carry.version, title: '篡改承接团队目标' }), { status: 403 })
 })
 

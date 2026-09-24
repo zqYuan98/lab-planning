@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { BlockerAction, BlockerEpisode, DeadlineChangeRequest, FollowupRequest, FollowupResponse, ProgressEvent, TaskTracking } from '../shared/collaboration.ts'
-import type { Entity, Task } from '../shared/types.ts'
+import type { Entity, Task, WeeklyRecord } from '../shared/types.ts'
 import type { BusinessCollections, DataReference, TransferCollection } from './data-transfer-schema.ts'
 
 export const collaborationCollectionNames = ['taskTrackings', 'progressEvents', 'followupRequests', 'followupResponses', 'blockerEpisodes', 'blockerActions', 'deadlineChangeRequests'] as const
@@ -24,8 +24,8 @@ export const collaborationSchemas = {
     status: z.enum(['open', 'responded', 'cancelled', 'superseded']), respondedAt: time.nullable(), closedAt: time.nullable(), closedBy: id.nullable(), closeReason: line, lastChangedBy: id, changeReason: line }).strict(),
   followupResponses: z.object({ ...entity, ...taskOwner, followupRequestId: id, requestVersion: integer, weeklyRecordId: id.nullable(), actorId: id, progressEventId: id, respondedAt: time, dueAt: time, late: z.boolean(), mutationId: id }).strict(),
   blockerEpisodes: z.object({ ...entity, sourceType: z.enum(['task', 'weeklyRecord']), sourceId: id, parentTaskId: id, ownerId: id, generation: z.number().int().nonnegative(), openedAt: time, openedBy: id,
-    resolvedAt: time.nullable(), resolvedBy: id.nullable(), reason: line, impact: line, supportNeeded: line, reviewAt: time.nullable(), closureReason: line, managementClosedAt: time.nullable().optional(), managementNote: line.optional() }).strict(),
-  blockerActions: z.object({ ...entity, ...taskOwner, episodeId: id, actorId: id, action: z.enum(['record', 'defer', 'close']), note: line.min(1), reviewAt: time.nullable(), occurredAt: time }).strict(),
+    resolvedAt: time.nullable(), resolvedBy: id.nullable(), reason: line, impact: line, supportNeeded: line, reviewAt: time.nullable(), closureReason: line, managementClosedAt: time.nullable().optional(), managementNote: line.optional(), coordinatorId: id.nullable().optional(), responseDueAt: time.nullable().optional(), coordinationState: z.enum(['unassigned', 'awaiting_response', 'in_progress', 'responded', 'management_closed']).optional(), responseNote: line.optional(), openedAtKnown: z.boolean().optional() }).strict(),
+  blockerActions: z.object({ ...entity, ...taskOwner, episodeId: id, actorId: id, action: z.enum(['record', 'defer', 'close', 'assign', 'respond', 'resolve']), note: line.min(1), reviewAt: time.nullable(), occurredAt: time, coordinatorId: id.nullable().optional(), responseDueAt: time.nullable().optional() }).strict(),
   deadlineChangeRequests: z.object({ ...entity, ...taskOwner, requestedBy: id, generation: integer, dueDateVersion: integer, originalDueDate: z.union([day, z.literal('')]), requestedDueDate: day,
     reason: line.min(1), status: z.enum(['open', 'approved', 'returned', 'cancelled', 'superseded']), decidedBy: id.nullable(), decidedAt: time.nullable(), decisionNote: line }).strict(),
 }
@@ -33,7 +33,7 @@ export const collaborationCollectionsShape = Object.fromEntries(collaborationCol
 export const emptyCollaborationCollectionsShape = Object.fromEntries(collaborationCollectionNames.map(name => [name, z.array(z.never()).max(0).optional()]))
 export function emptyCollaborationCollections(): CollaborationCollections { return { taskTrackings: [], progressEvents: [], followupRequests: [], followupResponses: [], blockerEpisodes: [], blockerActions: [], deadlineChangeRequests: [] } }
 
-const userFields = ['ownerId', 'enrolledBy', 'actorId', 'requestedBy', 'closedBy', 'lastChangedBy', 'openedBy', 'resolvedBy', 'decidedBy']
+const userFields = ['ownerId', 'enrolledBy', 'actorId', 'requestedBy', 'closedBy', 'lastChangedBy', 'openedBy', 'resolvedBy', 'decidedBy', 'coordinatorId']
 export function collaborationReferences(name: string, row: Record<string, unknown>): DataReference[] {
   if (!(collaborationCollectionNames as readonly string[]).includes(name)) return []
   const refs: DataReference[] = []
@@ -58,6 +58,12 @@ export function collaborationTransferIssues(rows: BusinessCollections, available
   }
   for (const episode of available.blockerEpisodes.values() as Iterable<BlockerEpisode>) {
     if (tasks.get(episode.parentTaskId)?.cancellation && !episode.resolvedAt) issue(`blockerEpisodes/${episode.id}：已作废任务的阻塞必须关闭`)
+    const sourceTaskId = episode.sourceType === 'task' ? episode.sourceId : (available.weeklyRecords.get(episode.sourceId) as WeeklyRecord | undefined)?.taskId
+    if (sourceTaskId && sourceTaskId !== episode.parentTaskId) issue(`blockerEpisodes/${episode.id}：阻塞来源必须属于当前任务`)
+  }
+  for (const action of rows.blockerActions) {
+    const episode = available.blockerEpisodes.get(action.episodeId) as BlockerEpisode | undefined
+    if (episode && (action.taskId !== episode.parentTaskId || action.ownerId !== episode.ownerId)) issue(`blockerActions/${action.id}：处理记录与阻塞的任务或负责人不一致`)
   }
   for (const tracking of rows.taskTrackings) {
     if (tracking.id !== tracking.taskId) issue(`taskTrackings/${tracking.id}：跟踪主键必须为任务标识`)
@@ -67,7 +73,7 @@ export function collaborationTransferIssues(rows: BusinessCollections, available
   for (const event of rows.progressEvents) {
     if (event.meaningfulOwnerProgress && (event.actorId !== event.ownerId || event.noteType === 'no_change')) issue(`progressEvents/${event.id}：本人有效进展标记不一致`)
     if (event.noteType === 'no_change' && (!event.noChangeReason.trim() || !event.nextAction.trim())) issue(`progressEvents/${event.id}：暂无变化缺少原因或下一步`)
-    if (event.actorId !== event.ownerId && !event.proxyReason.trim()) issue(`progressEvents/${event.id}：代录缺少原因`)
+    if (['progress', 'followup'].includes(event.source) && event.actorId !== event.ownerId && !event.proxyReason.trim()) issue(`progressEvents/${event.id}：代录缺少原因`)
   }
   for (const response of rows.followupResponses) {
     const request = available.followupRequests.get(response.followupRequestId) as FollowupRequest | undefined

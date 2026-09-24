@@ -1,3 +1,4 @@
+import { openTask } from '../navigation'
 import { Activity, AlertCircle, CalendarDays, ChevronRight, Target } from 'lucide-react'
 import { ContextHelp, PriorityBadge, TaskLegend, WorkTypeBadge } from '../components/TaskSignals'
 import { taskPriority } from '../task-presentation'
@@ -344,10 +345,7 @@ export default function Overview({
                   key={record.id}
                   className={`ov-work-item task-priority-${priority || 'none'} task-kind-${isTemporary ? 'temporary' : record.monthlyPlanId ? 'monthly' : 'routine'}`}
                   onClick={() =>
-                    navigate('weekly', {
-                      id: record.id,
-                      weekStart: view.weekStart,
-                    })
+                    openTask({taskId:record.taskId,section:'weekly',weeklyRecordId:record.id})
                   }
                 >
                   <span className="ov-item-copy">

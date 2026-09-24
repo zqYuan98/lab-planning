@@ -1,4 +1,5 @@
 import type { User, WeeklyRecord, WorkOrigin } from '../shared/types.ts'
+import { assertBusinessActor } from './object-access.ts'
 import type { WeeklyDuty, WeeklyPlanReview, WeeklyRule, WeeklySubmission } from '../shared/weekly-submissions.ts'
 import { isActiveWeeklyRecord, isEffectiveWeeklyRecord, isWeeklyPlanReviewCycle, weeklyPlanFingerprint, weeklyPlanManifest } from '../shared/weekly-record-state.ts'
 import { DomainBase, manager, text, type Input } from './domain-common.ts'
@@ -62,6 +63,7 @@ export class WeeklyPlanReviewService extends DomainBase {
   constructor(store: Store, private clock: () => Date = () => new Date()) { super(store) }
 
   review(actor: User, input: Input): WeeklyPlanReview {
+    actor = assertBusinessActor(this.store, actor)
     manager(actor)
     return collaborationWorkMutation(this.store, actor, input, 'weeklyRecord', () => {
       const dutyId = text(input.dutyId, '提报项'), submissionId = text(input.submissionId, '提交版本')

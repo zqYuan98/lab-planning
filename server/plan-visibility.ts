@@ -51,6 +51,7 @@ export function planReference(plan: MonthlyPlan): MonthlyPlan {
 
 /** A past membership grants only the snapshots actually visible during that membership. */
 export function visiblePlan(store: Store, actor: User, current: MonthlyPlan): MonthlyPlan | undefined {
+  if (actor.role === 'observer') return undefined
   if (actor.role === 'manager' || participates(current, actor.id)) return projectPlan(actor, current, store)
   const snapshots = store.list<AuditEvent>('events')
     .filter(event => event.entityType === 'plan' && event.entityId === current.id)
@@ -63,6 +64,7 @@ export function visiblePlan(store: Store, actor: User, current: MonthlyPlan): Mo
 }
 
 export function visiblePlanHistory(actor: User, id: string, events: AuditEvent[], store?: Store): AuditEvent[] {
+  if (actor.role === 'observer') return []
   const selected = events.filter(event => event.entityType === 'plan' && event.entityId === id)
   if (actor.role === 'manager') return selected
   return selected.flatMap(event => {
@@ -77,6 +79,7 @@ export function visiblePlanHistory(actor: User, id: string, events: AuditEvent[]
 }
 
 export function visiblePublications(actor: User, publications: Publication[], store?: Store): Publication[] {
+  if (actor.role === 'observer') return []
   if (actor.role === 'manager') return publications
   return publications.map(item => ({ ...item, reason: '', plans: item.plans.filter(plan => participates(plan, actor.id)).map(plan => projectPlan(actor, plan, store)) }))
     .filter(item => item.plans.length)

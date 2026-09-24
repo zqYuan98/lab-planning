@@ -1,4 +1,4 @@
-export type Role = 'manager' | 'member'
+export type Role = 'manager' | 'member' | 'observer'
 export interface Entity { id: string; version: number; createdAt: string; updatedAt: string }
 export interface ImportProvenance { batchId: string; sourceId: string; rowId: string; sourceStatus: string; mode?: 'draft' | 'existing'; notificationMode?: 'silent' }
 export interface WorkOrigin { kind: 'self' | 'assigned' | 'proxy'; actorId: string; reason: string }
@@ -47,4 +47,4 @@ export interface Publication extends Entity { month: string; revision: number; a
 export interface ReportSnapshot { plans: MonthlyPlan[]; contextPlans?: MonthlyPlan[]; weeklyRecords: WeeklyRecord[]; tasks: Task[]; projects: Project[]; users: User[]; annualGoals: AnnualGoal[]; nextPlans: MonthlyPlan[]; nextWeeklyRecords: WeeklyRecord[]; publications: Publication[]; changes: AuditEvent[]; weeklySubmissions?: import('./weekly-submissions').WeeklyReportSubmission[] }
 export interface Report extends Entity { type: 'weekly' | 'monthly'; period: string; title: string; status: 'draft' | 'finalized'; revision: number; narrative: string; snapshot: ReportSnapshot; authorId: string; finalizedAt: string | null; agent?: import('./report-agent.ts').ReportAgentPayload }
 export interface ReportSchedule extends Entity { enabled: boolean; weeklyDay: number; weeklyTime: string; monthlyDay: number; monthlyTime: string; timezone: 'Asia/Shanghai' }
-export interface Bootstrap { user: User; users: User[]; projects: Project[]; plans: MonthlyPlan[]; tasks: Task[]; weeklyRecords: WeeklyRecord[]; annualGoals: AnnualGoal[]; publications: Publication[]; reports: Report[]; aiConfigured: boolean }
+export interface Bootstrap { user: User; operationEpoch?: string; scopeVersion?: string; accessScopeVersion?: string; authorizedWork?: import('./object-access').AuthorizedWorkItem[]; taskProgress?: Record<string, import('./work-progress').WorkProgress>; users: User[]; projects: Project[]; plans: MonthlyPlan[]; tasks: Task[]; weeklyRecords: WeeklyRecord[]; annualGoals: AnnualGoal[]; publications: Publication[]; reports: Report[]; aiConfigured: boolean }

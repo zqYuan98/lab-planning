@@ -1,4 +1,5 @@
 import type { Entity, Task, WeeklyRecord, WeeklyStatus } from './types'
+import type { CoordinationState } from './support'
 
 /** Missing settings are represented by version 0 and never persisted by a read. */
 export interface CollaborationSettings extends Entity {
@@ -98,6 +99,8 @@ export interface BlockerEpisode extends Entity {
   ownerId: string
   generation: number
   openedAt: string
+  /** Explicit enrollment of legacy blocked work does not establish its occurrence time. */
+  openedAtKnown?: boolean
   openedBy: string
   resolvedAt: string | null
   resolvedBy: string | null
@@ -108,10 +111,15 @@ export interface BlockerEpisode extends Entity {
   closureReason: string
   managementClosedAt?: string | null
   managementNote?: string
+  coordinatorId?: string | null
+  responseDueAt?: string | null
+  coordinationState?: CoordinationState
+  responseNote?: string
 }
 export interface BlockerAction extends Entity {
   episodeId: string; taskId: string; ownerId: string; actorId: string
-  action: 'record' | 'defer' | 'close'; note: string; reviewAt: string | null; occurredAt: string
+  action: 'record' | 'respond' | 'defer' | 'close' | 'assign' | 'resolve'; note: string; reviewAt: string | null; occurredAt: string
+  coordinatorId?: string | null; responseDueAt?: string | null
 }
 
 export interface DeadlineChangeRequest extends Entity {

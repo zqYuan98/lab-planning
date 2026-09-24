@@ -23,16 +23,17 @@ function fixture(enabled = true) {
   return { store, service, work, manager, member, other, task, setNow: (date: Date) => { now = date }, now: () => now }
 }
 
-test('collaboration reads are inert and default-off preserves legacy manual completion', () => {
+test('collaboration reads are inert and default-off still requires evidence for manual completion', () => {
   const f = fixture(false)
   try {
     assert.equal(readCollaborationSettings(f.store).enabled, false)
     assert.equal(f.store.list('collaborationSettings').length, 0)
-    // New live assignments now carry explicit source metadata. Model a genuinely
-    // legacy record here so this test keeps covering the old-data compatibility path.
+    // Source metadata cannot select a different completion rule.
     const legacy = f.store.update<Task>('tasks', f.task.id, f.task.version, { workSource: undefined, assignedBy: undefined, assignedOn: undefined })
-    f.work.updateTask(f.member, legacy.id, { version: legacy.version, status: 'done' })
-    assert.equal(f.store.list('progressEvents').length, 0)
+    assert.throws(() => f.work.updateTask(f.member, legacy.id, { version: legacy.version, status: 'done' }), { status: 400 })
+    f.work.updateTask(f.member, legacy.id, { version: legacy.version, status: 'done', completionNote: '验收完成' })
+    assert.equal(f.store.list('progressEvents').length, 1, 'base progress facts remain available while optional collaboration is disabled')
+    assert.equal(f.store.list('collaborationNotificationIntents').length, 0)
     assert.equal(f.store.list('taskTrackings').length, 0)
   } finally { f.store.close() }
 })
@@ -53,7 +54,7 @@ test('legacy writes share completion validation and meaningful-owner progress ru
   const f = fixture()
   try {
     assert.throws(() => f.work.updateTask(f.member, f.task.id, { version: f.task.version, status: 'done' }), { status: 400 })
-    let task = f.work.updateTask(f.member, f.task.id, { version: f.task.version, description: '新的工作要求' })
+    let task = f.work.updateTask(f.member, f.task.id, { reason: '测试场景确认承诺调整', version: f.task.version, description: '新的工作要求' })
     assert.equal(f.store.list('progressEvents').length, 0)
     assert.throws(() => f.work.updateTask(f.manager, task.id, { version: task.version, status: 'doing' }), { status: 400 })
     task = f.work.updateTask(f.manager, task.id, { version: task.version, status: 'doing', proxyReason: '根据会后记录代录' })
@@ -172,7 +173,7 @@ test('deadline approval guards old PATCH, preserves old deadline until approval 
   try {
     f.service.updateSettings(f.manager, { requestId: 'enable-deadline-001', version: readCollaborationSettings(f.store).version, deadlineApprovalEnabled: true })
     const tracking = f.store.get<TaskTracking>('taskTrackings', f.task.id)!
-    assert.throws(() => f.work.updateTask(f.member, f.task.id, { version: f.task.version, dueDate: '2099-01-25' }), { status: 409 })
+    assert.throws(() => f.work.updateTask(f.member, f.task.id, { reason: '测试场景确认承诺调整', version: f.task.version, dueDate: '2099-01-25' }), { status: 409 })
     const request = f.service.requestDeadline(f.member, f.task.id, { requestId: 'request-deadline-001', version: f.task.version, dueDateVersion: tracking.dueDateVersion, requestedDueDate: '2099-01-25', reason: '新增兼容验证' })
     assert.equal(f.store.get<Task>('tasks', f.task.id)?.dueDate, '2099-01-20')
     const result = f.service.decideDeadline(f.manager, request.id, { requestId: 'decide-deadline-001', version: request.version, dueDateVersion: tracking.dueDateVersion, decision: 'approved', note: '同意延期验证' })
@@ -220,7 +221,7 @@ test('business migration carries progress and followups, pauses restored trackin
     const current = f.store.get<Task>('tasks', f.task.id)!
     f.service.createFollowup(f.manager, f.task.id, { requestId: 'migrate-followup-001', version: current.version, requirement: '请补充结果' })
     const packet = exportBusinessData(f.store, f.manager)
-    assert.equal(packet.formatVersion, 3)
+    assert.equal(packet.formatVersion, 6)
     assert.equal(packet.collections.progressEvents.length, 1)
     assert.equal(Object.hasOwn(packet.collections, 'businessNotificationEvents'), false)
     const preview = previewRestore(target.store, target.manager, packet)

@@ -53,7 +53,7 @@ function temporaryWork(t: TestContext) {
 test('temporary work survives business export and account-mapped restore, including correction snapshots and incomplete historical sources', t => {
   const source = temporaryWork(t), target = account(t)
   const packet = exportBusinessData(source.store, source.manager)
-  assert.equal(packet.formatVersion, 2, 'optional metadata does not change the packet format')
+  assert.equal(packet.formatVersion, 6, 'new live commitment events require the historical-facts format')
   assert.equal(packet.collections.history.find(row => row.id === source.corrected.id)!.row.temporaryReason, source.reason)
   const preview = previewRestore(target.store, target.manager, packet)
   assert.equal(preview.canRestore, true, preview.issues.join('\n'))

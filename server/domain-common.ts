@@ -42,13 +42,14 @@ export function monday(value: unknown): string {
   return day.toISOString().slice(0, 10)
 }
 export function version(input: Input): number {
-  if (!Number.isInteger(input.version) || Number(input.version) < 1) throw new HttpError(409, '缺少有效数据版本，请刷新后重试')
+  if (!Number.isInteger(input.version) || Number(input.version) < 1) throw new HttpError(409, '缺少有效数据版本，请刷新后重试', 'VERSION_CONFLICT')
   return Number(input.version)
 }
 export function manager(actor: User) {
   if (actor.role !== 'manager') throw new HttpError(403, '此操作需要管理者权限')
 }
 export function own(actor: User, ownerId: string) {
+  if (actor.role === 'observer') throw new HttpError(403, '观察者不能修改业务记录', 'READ_ONLY_OBSERVER')
   if (actor.role !== 'manager' && actor.id !== ownerId) throw new HttpError(403, '不能修改其他成员的记录')
 }
 
@@ -61,12 +62,12 @@ export class DomainBase {
   }
   protected current<T extends Entity>(collection: string, id: string, input: Input): T {
     const before = this.need<T>(collection, id)
-    if (before.version !== version(input)) throw new HttpError(409, '数据已更新，请刷新后重试')
+    if (before.version !== version(input)) throw new HttpError(409, '数据已更新，请刷新后重试', 'VERSION_CONFLICT')
     return before
   }
   protected activeUser(value: unknown): User {
     const user = this.need<User>('users', text(value, '负责人'))
-    if (!canUseAccount(user)) throw new HttpError(400, '不能分配给已停用或未通过注册审核的成员')
+    if (!canUseAccount(user) || user.role === 'observer') throw new HttpError(400, '不能分配给观察者、已停用或未通过注册审核的成员')
     return user
   }
   protected activeProject(id: string): Project {
@@ -79,6 +80,7 @@ export class DomainBase {
   }
   protected audit(actor: User, entityType: string, entityId: string, action: string, before: unknown, after: unknown, reason = '') {
     const event = this.store.insert<AuditEvent>('events', { entityType, entityId, actorId: actor.id, action, reason, before, after })
+    recordTaskCommitment(this.store, actor, event)
     notifyBusinessEvent(this.store, actor, event)
     onCollaborationAudit(this.store, actor, event)
   }
@@ -90,3 +92,4 @@ export class DomainBase {
 }
 import { notifyBusinessEvent } from './notification-events.ts'
 import { onCollaborationAudit } from './collaboration-hooks.ts'
+import { recordTaskCommitment } from './task-commitments.ts'

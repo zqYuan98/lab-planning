@@ -26,7 +26,9 @@ function historicalLines(item: DigestItem) {
 }
 
 export function collaborationTargetAccessible(store: Store, actor: User, target: NotificationTarget): boolean {
-  if (!canUseAccount(actor)) return false
+  const current = store.get<User>('users', actor.id)
+  if (!current || !canUseAccount(current) || current.role === 'observer') return false
+  actor = current
   if (target.type === 'digest') return store.get<NotificationDigest>('notificationDigests', target.id)?.recipientId === actor.id
   if (target.type === 'followup' || target.type === 'deadlineRequest') {
     const row = store.get<FollowupRequest | DeadlineChangeRequest>(target.type === 'followup' ? 'followupRequests' : 'deadlineChangeRequests', target.id)

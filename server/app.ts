@@ -21,6 +21,13 @@ import { collaborationRouter } from './collaboration-routes.ts'
 import { notificationDiagnosticsRouter } from './notification-diagnostics.ts'
 import { nativeRouter } from './native-routes.ts'
 import { workRegisterRouter } from './work-register-routes.ts'
+import { observerRouteGuard, objectAccessRouter } from './object-access-routes.ts'
+import { deliveryRouter } from './delivery-routes.ts'
+import { carryWorkflowRouter } from './carry-workflow-routes.ts'
+import { periodReviewRouter } from './period-review-routes.ts'
+import { workspaceQueryRouter } from './workspace-query.ts'
+import { TaskViewService } from './task-view.ts'
+import { MyActionsService } from './my-actions.ts'
 import type { DingTalkNativeClient } from './dingtalk-native.ts'
 import { feedbackRouter } from './feedback-routes.ts'
 import { createReportAgentRouter } from './report-agent-routes.ts'
@@ -67,6 +74,12 @@ export function createApp(options: AppOptions = {}) {
     const feedbackUpload = req.method === 'POST' && /^\/feedback(?:\/[^/]+\/actions)?\/?$/i.test(req.path)
     const reportUpload = req.method === 'POST' && /^\/report-agent\/assets\/?$/i.test(req.path)
     const reportEdit = req.method === 'PATCH' && /^\/report-agent\/(?:reports|templates)\/[^/]+\/?$/i.test(req.path)
+    const frozenCommand = req.method === 'POST' && (/^\/period-reviews\/?$/i.test(req.path) || /^\/carry-workflows\/[^/]+\/apply\/?$/i.test(req.path))
+    if (frozenCommand) return requireAuth(store)(req, res, error => {
+      if (error) return next(error)
+      try { requireReportManager(store, req.user.id) } catch (failure) { return next(failure) }
+      return restoreJson(req, res, next)
+    })
     if (reportUpload || reportEdit) return requireAuth(store)(req, res, error => {
       if (error) return next(error)
       try { requireReportManager(store, req.user.id) } catch (failure) { return next(failure) }
@@ -135,6 +148,18 @@ export function createApp(options: AppOptions = {}) {
   app.use('/api/v1', requireIntegrationAuth(store), createImportRouter(store), createDataRouter(store, true), (_req, _res, next) => next(new HttpError(404, '集成接口不存在')))
   app.use('/api', dingtalkRouter(store, dingtalk))
   app.use('/api', requireAuth(store))
+  app.use('/api', observerRouteGuard(store))
+  app.use('/api', objectAccessRouter(store))
+  app.use('/api', deliveryRouter(store))
+  app.use('/api', carryWorkflowRouter(store))
+  app.use('/api', periodReviewRouter(store))
+  app.use('/api', workspaceQueryRouter(store))
+  const taskViews = new TaskViewService(store), myActions = new MyActionsService(store)
+  app.get('/api/tasks/:id/view', (req, res) => res.json(taskViews.view(req.user, String(req.params.id), { section: req.query.section, weeklyRecordId: req.query.weeklyRecordId })))
+  app.get('/api/tasks/:id/history', (req, res) => res.json(taskViews.history(req.user, String(req.params.id), { cursor: req.query.cursor, limit: req.query.limit })))
+  app.get('/api/tasks/:id/editable', (req, res) => res.json(taskViews.editableTask(req.user, String(req.params.id))))
+  app.get('/api/weekly-records/:id/editable', (req, res) => res.json(taskViews.editableWeekly(req.user, String(req.params.id))))
+  app.get('/api/my-actions', (req, res) => res.json(myActions.list(req.user, { kind: req.query.kind, cursor: req.query.cursor, limit: req.query.limit })))
   app.get('/api/auth/me', (req, res) => res.json(req.user))
   app.post('/api/auth/logout', (req, res) => { clearSession(store, req.headers.cookie, res); res.json({ ok: true }) })
   app.get('/api/bootstrap', (req, res) => res.json(domain.bootstrap(req.user)))
@@ -165,7 +190,9 @@ export function createApp(options: AppOptions = {}) {
   app.post('/api/months/:month/publish', (req, res) => res.json(domain.publishMonth(req.user, String(req.params.month), req.body)))
   app.post('/api/plans/:id/result', mutate(domain.planResult))
   app.get('/api/plans/:id/history', (req, res) => res.json(domain.planHistory(req.user, String(req.params.id))))
-  app.post('/api/plans/:id/carry', mutate(domain.carryPlan))
+  app.post('/api/plans/:id/carry', (req, res) => res.json(domain.carryPlan(req.user, String(req.params.id), {
+    ...req.body, operationEpoch: req.get('X-Operation-Epoch'),
+  })))
   app.post('/api/tasks', create(domain.createTask))
   app.patch('/api/tasks/:id', mutate(domain.updateTask))
   app.post('/api/tasks/:id/cancel', mutate(domain.cancelTask))
@@ -196,7 +223,10 @@ export function createApp(options: AppOptions = {}) {
       frames: error instanceof Error ? error.stack?.split('\n').slice(error.message.split('\n').length).filter(frame => /^\s+at\s/.test(frame)).slice(0, 6) : undefined }))
     if (status === 503) res.set('Retry-After', '1')
     const message = error?.type === 'entity.parse.failed' ? 'JSON 格式无效，请检查请求内容' : error?.type === 'entity.too.large' ? '请求内容超过大小限制' : status === 500 ? '服务暂时无法处理请求，请稍后重试' : error.message ?? '请求失败'
-    res.status(status).json({ error: message, requestId })
+    res.status(status).json({ error: message, requestId,
+      ...(error instanceof HttpError && error.code ? { code: error.code } : {}),
+      ...(error instanceof HttpError && error.fieldErrors ? { fieldErrors: error.fieldErrors } : {}),
+    })
   }
   app.use(errors)
   return app

@@ -1,3 +1,4 @@
+import { assertBusinessActor } from './object-access.ts'
 import type { AuditEvent, Entity, MonthlyPlan, Task, User, WeeklyRecord } from '../shared/types.ts'
 import type { WeeklyRule, WeeklyCycle, WeeklyDuty, WeeklySubmission, WeeklyMissing, WeeklyAdjustment, WeeklyDutyView, WeeklySubmissionView, WeeklyReportSubmission } from '../shared/weekly-submissions.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
@@ -48,6 +49,7 @@ export class WeeklySubmissionService extends DomainBase {
   }
 
   updateRule(actor: User, input: Input): WeeklyRule {
+    actor = assertBusinessActor(this.store, actor)
     manager(actor)
     this.reconcile()
     return this.snapshot(() => this.store.transaction(() => {
@@ -139,6 +141,7 @@ export class WeeklySubmissionService extends DomainBase {
   }
 
   view(actor: User, requestedWeek: unknown): WeeklySubmissionView {
+    actor = assertBusinessActor(this.store, actor)
     return this.snapshot(() => {
     this.reconcile()
     const week = cycleWeek(requestedWeek)
@@ -152,6 +155,7 @@ export class WeeklySubmissionService extends DomainBase {
 
   /** Notification preview must not initialize cycles, duties or missed-deadline facts. */
   preview(actor: User, requestedWeek: unknown): WeeklySubmissionView | undefined {
+    actor = assertBusinessActor(this.store, actor)
     return this.snapshot(() => {
       const rule = this.store.get<WeeklyRule>('weeklyRules', RULE)
       if (!rule) return
@@ -163,6 +167,7 @@ export class WeeklySubmissionService extends DomainBase {
   }
 
   submit(actor: User, input: Input): WeeklySubmission {
+    actor = assertBusinessActor(this.store, actor)
     this.reconcile()
     return this.snapshot(() => this.store.transaction(() => {
       const duty = this.need<WeeklyDuty>('weeklyDuties', text(input.dutyId, '提报项'))
@@ -214,12 +219,14 @@ export class WeeklySubmissionService extends DomainBase {
   }
 
   review(actor: User, input: Input): WeeklyPlanReview {
+    actor = assertBusinessActor(this.store, actor)
     manager(actor)
     this.reconcile()
     return new WeeklyPlanReviewService(this.store, this.clock).review(actor, input)
   }
 
   adjust(actor: User, input: Input): WeeklyAdjustment {
+    actor = assertBusinessActor(this.store, actor)
     manager(actor)
     this.reconcile()
     return this.snapshot(() => this.store.transaction(() => {
@@ -252,6 +259,7 @@ export class WeeklySubmissionService extends DomainBase {
   }
 
   confirmRoster(actor: User, input: Input): WeeklyCycle {
+    actor = assertBusinessActor(this.store, actor)
     manager(actor)
     this.reconcile()
     return this.snapshot(() => this.store.transaction(() => {

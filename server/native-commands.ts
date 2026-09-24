@@ -11,7 +11,7 @@ import { getNativeSettings, nativeCapabilityState, verifiedNativeIdentity } from
 import { nativeClip, nativeHash } from './native-service.ts'
 
 interface IntentSecret extends Entity { token: string; payloadHash: string }
-function liveActor(store: Store, actor: User) { const current = store.get<User>('users', actor.id); if (!current || !canUseAccount(current)) throw new HttpError(403, '当前账号不可操作'); return current }
+function liveActor(store: Store, actor: User) { const current = store.get<User>('users', actor.id); if (!current || !canUseAccount(current) || current.role === 'observer') throw new HttpError(403, '当前账号不可操作'); return current }
 function normalizedProgress(value: unknown): ProgressContent {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new HttpError(400, '请提供明确的进展内容')
   const input = value as Record<string, unknown>, allowed = ['weeklyRecordId', 'weeklyRecordVersion', 'taskStatus', 'weekly', 'noteType', 'note', 'noChangeReason', 'nextAction', 'completionNote', 'evidenceUrl', 'blockerReason', 'blockerImpact', 'supportNeeded']

@@ -14,6 +14,7 @@ import { visibleDigestItems } from './collaboration-content.ts'
 import { notificationId } from './notifications.ts'
 import { withCollaborationPublicationDeferred } from './collaboration-notifications.ts'
 import { shanghaiDate } from './collaboration-calendar.ts'
+import { TaskSupportService } from './task-support.ts'
 
 export function collaborationRouter(store: Store) {
   const router = Router(), service = new CollaborationService(store)
@@ -41,6 +42,14 @@ export function collaborationRouter(store: Store) {
   router.get('/collaboration/tasks/:id', (req, res) => res.json(service.taskView(req.user, String(req.params.id))))
   router.get('/collaboration/resolve/:type/:id', (req, res) => {
     const { type, id } = req.params
+    if (type === 'blocker') {
+      const view = new TaskSupportService(store).blockerView(req.user, String(id))
+      return res.json({ taskId: view.task.id, blockerId: String(id), minimalContext: view.minimalContext })
+    }
+    if (type === 'decisionRequest') {
+      const view = new TaskSupportService(store).decisionView(req.user, String(id))
+      return res.json({ taskId: view.taskId, decisionRequestId: String(id) })
+    }
     const taskId = type === 'task' ? String(id) : type === 'followup' ? store.get<FollowupRequest>('followupRequests', String(id))?.taskId
       : type === 'deadlineRequest' ? store.get<DeadlineChangeRequest>('deadlineChangeRequests', String(id))?.taskId : undefined
     if (!taskId) throw new HttpError(404, '工作事项不存在')
@@ -71,7 +80,7 @@ export function collaborationRouter(store: Store) {
   router.put('/tasks/:id/tracking', requireManager, (req, res) => res.json(service.updateTracking(req.user, String(req.params.id), req.body)))
   router.post('/tasks/:id/deadline-requests', (req, res) => res.status(201).json(service.requestDeadline(req.user, String(req.params.id), req.body)))
   router.post('/deadline-requests/:id/decide', requireManager, (req, res) => res.json(service.decideDeadline(req.user, String(req.params.id), req.body)))
-  router.post('/blockers/:id/handle', requireManager, (req, res) => res.json(service.handleBlocker(req.user, String(req.params.id), req.body)))
+  router.post('/blockers/:id/handle', (req, res) => res.json(service.handleBlocker(req.user, String(req.params.id), req.body)))
 
   const preview = (actor: User, body: Record<string, unknown>) => {
     if (!Array.isArray(body.taskIds) || !body.taskIds.length || body.taskIds.length > 100 || body.taskIds.some(id => typeof id !== 'string') || new Set(body.taskIds).size !== body.taskIds.length) throw new HttpError(400, '请选择 1 至 100 项不同任务')

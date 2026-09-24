@@ -1,6 +1,7 @@
 import type { Bootstrap, MonthlyPlan, Task, WeeklyRecord, WorkSource } from './types'
 import { isActiveWeeklyRecord, isEffectiveWeeklyRecord } from './weekly-record-state'
 import { isActiveTask } from './task-state'
+import type { WorkProgress } from './work-progress'
 
 export type WorkRegisterView = 'active' | 'leader' | 'unscheduled' | 'week' | 'waiting' | 'done' | 'source-review' | 'completion-review'
 
@@ -15,6 +16,8 @@ const statusLabels: Record<Task['status'], string> = { todo: '未开始', doing:
 const priorityOrder = { high: 0, medium: 1, low: 2 }
 
 interface WorkRegisterRowBase {
+  /** Verified historical snapshot whose live task is missing or no longer owned here. */
+  historicalReference?: boolean
   id: string
   title: string
   dueDate: string
@@ -31,6 +34,9 @@ interface WorkRegisterRowBase {
   progress: string
   progressSource: 'task' | 'weekly' | 'plan' | 'none'
   progressWeekStart?: string
+  overallProgress?: WorkProgress['overallProgress']
+  latestExecution?: WorkProgress['latestExecution']
+  historicalExecution?: WorkProgress['historicalExecution']
   isOverdue: boolean
   isUnscheduled: boolean
   needsCoordination: boolean
@@ -59,6 +65,8 @@ export interface WorkRegisterReportRow {
   readonly requestedOutcome: string
   readonly status: string
   readonly progress: string
+  readonly overallProgress: string
+  readonly latestExecution: string
   readonly nextAction: string
   readonly dueDate: string
   readonly priority: string
@@ -132,7 +140,7 @@ export const workRegisterPlanStatusLabels: Record<MonthlyPlan['status'], string>
 }
 
 export function buildWorkRegister(
-  data: Pick<Bootstrap, 'tasks' | 'weeklyRecords' | 'user'> & Partial<Pick<Bootstrap, 'plans' | 'users'>>,
+  data: Pick<Bootstrap, 'tasks' | 'weeklyRecords' | 'user'> & Partial<Pick<Bootstrap, 'plans' | 'users' | 'taskProgress'>>,
   options: { view?: WorkRegisterView; query?: string; today?: string } = {},
 ): WorkRegisterResult {
   const today = options.today ?? workRegisterToday()
@@ -165,6 +173,7 @@ export function buildWorkRegister(
     const needsCompletionReview = workRegisterNeedsCompletionReview(task)
     const active = task.status !== 'done' || needsCompletionReview
     const source = workRegisterTaskSource(task)
+    const facts = data.taskProgress?.[task.id]
     return {
       kind: 'task', id: task.id, title: task.title, dueDate: task.dueDate, priority: task.priority, createdAt: task.createdAt,
       source, sourceLabel: source ? `${workSourceLabels[source]}${!task.workSource ? '（按下发记录）' : ''}` : '来源待核对',
@@ -173,6 +182,9 @@ export function buildWorkRegister(
       task, currentWeekRecord, latestRecord: records[0], displayStatus: needsCompletionReview ? '整体完成待核对' : statusLabels[task.status], progress,
       progressSource: explicitProgress ? 'task' : progressRecord ? 'weekly' : 'none',
       progressWeekStart: !explicitProgress ? progressRecord?.weekStart : undefined,
+      overallProgress: facts?.overallProgress ?? (task.currentProgress?.trim() ? { text: task.currentProgress.trim(), changedAt: null, evidenceRef: null } : null),
+      latestExecution: facts?.latestExecution ?? null,
+      historicalExecution: facts?.historicalExecution ?? (progressRecord ? [{ text: progressRecord.actualOutcome, sourceType: 'weeklyRecord', sourceId: progressRecord.id, weekStart: progressRecord.weekStart, occurredAt: null, recordedAt: null, actorId: progressRecord.ownerId, proxy: false, evidenceQuality: 'unknown' }] : []),
       isOverdue: active && isCalendarDay(task.dueDate) && task.dueDate < today,
       isUnscheduled: !records.some(record => record.weekStart >= weekStart),
       needsCoordination: active && (task.status === 'blocked' || task.waitingForFeedback === true || !!task.decisionNeeded?.trim() || !!task.supportNeeded?.trim()),
@@ -226,6 +238,7 @@ export function createWorkRegisterSnapshot(
     id: row.id, title: row.title, itemType: '月度目标（待建立个人任务）', source: row.sourceLabel,
     assignedBy: row.assignedBy || '未注明', assignedOn: row.plan.assignedOn || '待确认',
     requestedOutcome: row.plan.expectedOutcome || '未填写', status: row.displayStatus, progress: row.progress || '未填写',
+    overallProgress: row.progress || '未填写', latestExecution: '待建立个人任务',
     nextAction: row.plan.status === 'published' ? '建立个人任务后安排周工作' : '建立个人任务；目标发布前仅可保存周草稿',
     dueDate: isCalendarDay(row.dueDate) ? row.dueDate : '待确认', priority: row.priority ? workPriorityLabels[row.priority] : '未注明',
     estimatedEffort: '待建立个人任务后填写', decisionNeeded: row.plan.status === 'published' ? '未填写' : `目标${row.displayStatus}，尚未发布`,
@@ -233,12 +246,14 @@ export function createWorkRegisterSnapshot(
   }) : Object.freeze({
     id: row.id,
     title: row.title,
-    itemType: '个人任务',
+    itemType: row.historicalReference ? '历史任务引用（只读）' : '个人任务',
     source: row.sourceLabel,
     assignedBy: row.assignedBy || '未注明',
     assignedOn: row.task.assignedOn || '待确认',
     requestedOutcome: row.task.requestedOutcome || '未填写',
     status: row.displayStatus,
+    overallProgress: row.overallProgress?.text || '未填写',
+    latestExecution: row.latestExecution ? `${row.latestExecution.text}${row.latestExecution.weekStart ? `（${row.latestExecution.weekStart} 周）` : ''}` : '暂无可确认时间的执行记录',
     progress: [
       row.needsCompletionReview ? '原导入状态为已完成，缺少整件任务完成说明；需本人确认是否仍需推进。' : '',
       row.progressSource === 'weekly' ? `${row.progress}（参考 ${row.progressWeekStart} 周记录）` : row.progress,
@@ -253,7 +268,7 @@ export function createWorkRegisterSnapshot(
       row.task.supportNeeded?.trim() ? `需要支持：${row.task.supportNeeded}` : '',
     ].filter(Boolean).join('\n') || '未填写',
     waitingForFeedback: row.task.status !== 'done' && row.task.waitingForFeedback ? '待反馈' : '否',
-    schedule: row.needsCompletionReview ? '先核对整件任务是否完成' : row.task.status === 'done' ? '任务已结束' : row.isUnscheduled ? '未排期' : row.currentWeekRecord
+    schedule: row.historicalReference ? '历史引用，请管理者核实' : row.needsCompletionReview ? '先核对整件任务是否完成' : row.task.status === 'done' ? '任务已结束' : row.isUnscheduled ? '未排期' : row.currentWeekRecord
       ? `本周 ${result.weekStart}${isEffectiveWeeklyRecord(row.currentWeekRecord) ? '' : row.currentWeekRecord.planApproval?.required && row.currentWeekRecord.submitted ? '（待审核）' : '（草稿）'}` : '已安排未来周',
   }))
   return Object.freeze({

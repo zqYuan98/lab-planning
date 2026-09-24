@@ -75,7 +75,7 @@ test('HTTP stale batch preview conflicts without partial followup creation and p
   await f.outsider('/collaboration/settings', { requestId: 'peer-settings-001', version: 1, enabled: false }, 'PUT', 403)
   await f.outsider('/followups/preview', { taskIds: [first.id], requirement: '越权催办' }, 'POST', 403)
   const preview = await f.admin<BatchPreview>('/followups/preview', { taskIds: [first.id, second.id], requirement: '说明实验结果' })
-  await f.admin(`/tasks/${second.id}`, { version: second.version, description: '验收要求已变化' }, 'PATCH')
+  await f.admin(`/tasks/${second.id}`, { version: second.version, description: '验收要求已变化', reason: '核对后补充验收范围' }, 'PATCH')
   await f.admin('/followups/batch', { ...preview, requestId: 'http-stale-batch-001' }, 'POST', 409)
   assert.equal(f.store.list('followupRequests').length, 0)
   assert.equal(f.store.list<NotificationDigest>('notificationDigests').filter(row => row.type === 'manual_followup').length, 0)
@@ -112,7 +112,7 @@ test('HTTP deadline approval enforces actor and version checks, and approval inv
   const oldReminder = f.store.get<Notification>('notifications', digest.notificationId!)!
   assert.ok(currentNotificationMessage(f.store, f.member, oldReminder, sendAt, true))
   const input = { requestId: 'http-deadline-001', version: task.version, dueDateVersion: tracking.dueDateVersion, requestedDueDate: shiftDay(today, 30), reason: '增加兼容性验证' }
-  await f.owner(`/tasks/${task.id}`, { version: task.version, dueDate: input.requestedDueDate }, 'PATCH', 409)
+  await f.owner(`/tasks/${task.id}`, { version: task.version, dueDate: input.requestedDueDate, reason: '测试直接改期仍需审批' }, 'PATCH', 409)
   await f.admin(`/tasks/${task.id}/deadline-requests`, input, 'POST', 403)
   const request = await f.owner<DeadlineChangeRequest>(`/tasks/${task.id}/deadline-requests`, input, 'POST', 201)
   assert.equal(f.store.get<Task>('tasks', task.id)?.dueDate, task.dueDate)
@@ -198,6 +198,7 @@ test('HTTP optional summary preference defaults on, is isolated to the session u
   assert.equal(preview.canDelete, true); assert.deepEqual(preview.blockers, [])
   await f.admin(`/users/${f.peer.id}`, { version: f.peer.version, confirmName: f.peer.name }, 'DELETE')
   assert.equal(f.store.get('collaborationPreferences', f.peer.id), undefined)
+  assert.equal(f.store.list<{ actorId: string }>('collaborationCommandReceipts').some(row => row.actorId === f.peer.id), false)
   assert.deepEqual(f.store.get('collaborationPreferences', f.member.id), saved)
   await f.outsider('/collaboration', undefined, 'GET', 401)
 })

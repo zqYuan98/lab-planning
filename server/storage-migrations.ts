@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite'
 
-export const STORAGE_VERSION = 2
+export const STORAGE_VERSION = 3
 /** Version 1 records the existing JSON entity format without rewriting any business record.
  * Future data transformations must be explicit ordered migrations with backup/restore tests.
  */
@@ -18,6 +18,17 @@ export function applyMigrations(db: DatabaseSync) {
         CREATE INDEX IF NOT EXISTS entity_created ON entities(collection,json_extract(data,'$.createdAt') DESC,id DESC);
         CREATE INDEX IF NOT EXISTS delivery_recipient ON entities(collection,json_extract(data,'$.recipientId'),json_extract(data,'$.createdAt') DESC,id DESC);`)
       db.prepare('INSERT INTO schema_migrations(version,name,applied_at) VALUES(?,?,?)').run(2, 'notification-queue-and-diagnostic-indexes', new Date().toISOString())
+    }
+    if (latest < 3) {
+      // EXPLAIN evidence: output/phase3-performance/query-plan-v2.json.
+      // These bounded query paths formerly scanned each entire collection.
+      db.exec(`CREATE INDEX task_active_owner_created ON entities(json_extract(data,'$.ownerId'),json_extract(data,'$.createdAt') DESC,id DESC) WHERE collection='tasks' AND json_extract(data,'$.cancellation') IS NULL;
+        CREATE INDEX weekly_active_task_owner_week ON entities(json_extract(data,'$.taskId'),json_extract(data,'$.ownerId'),json_extract(data,'$.weekStart'),json_extract(data,'$.createdAt') DESC,id DESC) WHERE collection='weeklyRecords' AND json_extract(data,'$.deletion') IS NULL;
+        CREATE INDEX weekly_progress_task_owner_week ON entities(json_extract(data,'$.taskId'),json_extract(data,'$.ownerId'),json_extract(data,'$.weekStart') DESC,json_extract(data,'$.updatedAt') DESC,version DESC,id) WHERE collection='weeklyRecords' AND json_extract(data,'$.deletion') IS NULL AND trim(COALESCE(json_extract(data,'$.actualOutcome'),''))<>'';
+        CREATE INDEX event_object_created ON entities(json_extract(data,'$.entityType'),json_extract(data,'$.entityId'),json_extract(data,'$.createdAt') DESC,id DESC) WHERE collection='events';
+        CREATE INDEX progress_task_created ON entities(json_extract(data,'$.taskId'),json_extract(data,'$.createdAt') DESC,id DESC) WHERE collection='progressEvents';
+        CREATE INDEX report_period_created ON entities(json_extract(data,'$.type'),json_extract(data,'$.period'),json_extract(data,'$.createdAt') DESC,id DESC) WHERE collection='reports';`)
+      db.prepare('INSERT INTO schema_migrations(version,name,applied_at) VALUES(?,?,?)').run(3, 'workspace-bounded-query-indexes', new Date().toISOString())
     }
     db.exec('COMMIT')
   } catch (error) { db.exec('ROLLBACK'); throw error }

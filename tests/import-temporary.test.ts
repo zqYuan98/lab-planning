@@ -45,7 +45,7 @@ test('manager weekly draft imports stay silent until explicit publication, inclu
     assert.equal(record.importSource?.mode, 'draft')
     const task = f.store.get<Task>('tasks', record.taskId)!
     assert.equal(task.importSource?.sourceId, batch.sourceId)
-    f.domain.updateTask(f.manager, task.id, { version: task.version, description: '正式发布前修正草稿说明' })
+    f.domain.updateTask(f.manager, task.id, { reason: '测试场景确认承诺调整', version: task.version, description: '正式发布前修正草稿说明' })
     records.push(record)
   }
   for (const collection of ['notifications', 'notificationDeliveries', 'notificationObligations', 'notificationWorkVersions']) assert.equal(f.store.list(collection).length, 0, collection)

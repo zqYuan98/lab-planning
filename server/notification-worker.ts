@@ -23,6 +23,9 @@ function update(store: Store, id: string, patch: Partial<NotificationDelivery>, 
   })
 }
 export function currentNotificationMessage(store: Store, actor: User, row: Notification, now: Date, readOnly = false): NotificationView | undefined {
+  const currentActor = store.get<User>('users', actor.id)
+  if (!currentActor || !canUseAccount(currentActor) || currentActor.role === 'observer') return undefined
+  actor = currentActor
   if (row.kind.startsWith('feedback_') || row.targets.some(target => target.type === 'feedback')) return undefined
   const view = notificationView(store, actor, row, now)
   if (!collaborationNotificationCurrent(store, actor, row, now)) return undefined

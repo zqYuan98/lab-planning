@@ -60,6 +60,8 @@ test('member search and overview do not reveal peer work under a shared goal', (
       commitment: '等待接口权限后完成联调',
       status: 'blocked',
       blocker: '等待权限开放',
+      blockerImpact: '接口联调延期',
+      supportNeeded: '请管理员开放接口权限',
       submitted: true,
     })
     const draftTask = domain.createTask(owner, {

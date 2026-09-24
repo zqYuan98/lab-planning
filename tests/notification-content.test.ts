@@ -35,7 +35,7 @@ test('weekly assignment uses this week commitment instead of long term task desc
 
 test('changes show true old/new dates and requirements, and raw facts never reach an unauthorized view', t => {
   const f = fixture(t), task = f.task()
-  f.work.updateTask(f.manager, task.id, { version: task.version, dueDate: '2026-09-28', description: '增加异常复现步骤' })
+  f.work.updateTask(f.manager, task.id, { reason: '测试场景确认承诺调整', version: task.version, dueDate: '2026-09-28', description: '增加异常复现步骤' })
   const row = f.rows().at(-1)!, view = getNotification(f.store, f.member, row.id)
   assert.match(view.body, /2026-09-25 → 2026-09-28/); assert.match(view.body, /提交测试结果及异常清单 → 增加异常复现步骤/)
   assert.equal(view.contentFacts, undefined)
@@ -62,7 +62,7 @@ test('manual reminder resolves source, never creates another confirmation and op
 test('stale confirmation token rejects changed requirements and does not change task execution', t => {
   const f = fixture(t), task = f.task(), original = f.rows()[0]
   const view = getNotification(f.store, f.member, original.id)
-  f.work.updateTask(f.manager, task.id, { version: task.version, description: '变更后的要求' })
+  f.work.updateTask(f.manager, task.id, { reason: '测试场景确认承诺调整', version: task.version, description: '变更后的要求' })
   assert.throws(() => openNotification(f.store, f.member, original.id, true, view.confirmationToken), { status: 409 })
   assert.equal(f.store.list('weeklySubmissions').length, 0)
 })
@@ -121,7 +121,7 @@ test('legacy messages show safely projected current details without replaying or
 
 test('member requirement edit without new manager notification still invalidates the confirmation token', t => {
   const f = fixture(t), task = f.task(), original = f.rows()[0], view = getNotification(f.store, f.member, original.id)
-  f.work.updateTask(f.member, task.id, { version: task.version, description: '本人补充新要求' })
+  f.work.updateTask(f.member, task.id, { reason: '测试场景确认承诺调整', version: task.version, description: '本人补充新要求' })
   assert.equal(f.rows().length, 1)
   assert.throws(() => openNotification(f.store, f.member, original.id, true, view.confirmationToken), { status: 409 })
   assert.equal(getNotification(f.store, f.member, original.id).contentUpdated, true)
@@ -129,7 +129,7 @@ test('member requirement edit without new manager notification still invalidates
 
 test('content projection removes links and preserves Unicode, with explicit minimal external policy', t => {
   const f = fixture(t), task = f.task()
-  f.work.updateTask(f.manager, task.id, { version: task.version, description: '要求 https://secret.test/evidence?token=private <script>ignore</script> @全员 🧪' })
+  f.work.updateTask(f.manager, task.id, { reason: '测试场景确认承诺调整', version: task.version, description: '要求 https://secret.test/evidence?token=private <script>ignore</script> @全员 🧪' })
   const view = getNotification(f.store, f.member, f.rows().at(-1)!.id)
   assert.doesNotMatch(view.body, /https:\/\/secret|token=private|<script>|@全员/)
   assert.match(view.body, /🧪/)

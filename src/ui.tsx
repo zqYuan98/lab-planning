@@ -7,12 +7,15 @@ import {
 } from 'react'
 import { X, Inbox, LoaderCircle } from 'lucide-react'
 import type { Bootstrap } from '../shared/types'
+import type { EditableObject } from '../shared/task-view'
 import type { NavigationIntent } from './navigation'
 import { accountDisplayName } from './account-options'
 import { allowDraftLeave, type DraftValues } from './draft-recovery'
 import { useFormDraft } from './use-form-draft'
 import { ApiError, SavedResultError } from './api'
 import { requestErrorFeedback, rememberClientError } from './error-context'
+import DraftComparison from './components/DraftComparison'
+import { editingUnavailable, editableComparisonValues, readEditableObject } from './form-editing'
 
 export interface PageProps {
   data: Bootstrap
@@ -174,8 +177,11 @@ export function Form({
   draftContext,
   onDraftRestore,
   workspaceErrorActions = true,
+  editablePath,
+  editVersion,
+  onConflictResolved,
 }: {
-  onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>
+  onSubmit: (event: FormEvent<HTMLFormElement>, version?: number) => Promise<void | number>
   children: ReactNode
   submitLabel?: string
   onCancel?: () => void
@@ -184,6 +190,9 @@ export function Form({
   draftContext?: DraftValues
   onDraftRestore?: (values: DraftValues) => void
   workspaceErrorActions?: boolean
+  editablePath?: string
+  editVersion?: number
+  onConflictResolved?: (current: EditableObject) => void
 }) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('')
@@ -191,7 +200,12 @@ export function Form({
   const [requestId, setRequestId] = useState<string>()
   const [sessionExpired, setSessionExpired] = useState(false)
   const [savedResult, setSavedResult] = useState<SavedResultError | null>(null)
-  const { formRef, rememberDraft, clearDraft, notice } = useFormDraft(draftKey, draftContext, onDraftRestore, busy)
+  const draft = useFormDraft(draftKey, draftContext, onDraftRestore, busy)
+  const { formRef, rememberDraft, clearDraft, notice } = draft
+  const [version,setVersion] = useState(editVersion)
+  const latestEditVersion=useRef(editVersion);latestEditVersion.current=editVersion
+  const [writeUnavailable,setWriteUnavailable]=useState(false)
+  const [comparison,setComparison] = useState<{base:DraftValues|null;server:DraftValues;local:DraftValues;version:number;editable:EditableObject}|null>(null)
   return (
     <form
       ref={formRef}
@@ -199,18 +213,25 @@ export function Form({
       onChange={rememberDraft}
       onSubmit={async (event) => {
         event.preventDefault()
-        if (sending.current || savedResult) return
+        if (sending.current || savedResult || writeUnavailable || comparison) return
         sending.current = true
         setBusy(true)
         setError('')
         setRequestId(undefined)
         setSessionExpired(false)
         try {
-          await onSubmit(event)
-          clearDraft()
+          const confirmedVersion=await onSubmit(event, version)
+          const nextVersion=confirmedVersion ?? latestEditVersion.current
+          clearDraft(nextVersion)
+          if(nextVersion!==undefined)setVersion(nextVersion)
         } catch (e) {
-          if (e instanceof SavedResultError) { clearDraft(); setSavedResult(e) }
+          if (e instanceof SavedResultError) { clearDraft(e.savedVersion); if(e.savedVersion!==undefined)setVersion(e.savedVersion); setSavedResult(e) }
           if (e instanceof ApiError) { setRequestId(e.requestId); setSessionExpired(e.status === 401) }
+          if (editingUnavailable(e)) { setWriteUnavailable(true); setComparison(null); draft.dismissRecovery() }
+          if(e instanceof ApiError && e.status===409 && e.code==='VERSION_CONFLICT' && editablePath) {
+            try { const current=await readEditableObject(editablePath);const local=draft.snapshot();setComparison({base:draft.baseValues(),server:editableComparisonValues(current,local),local,version:current.version,editable:current}) }
+            catch(readError) {setComparison(null);if(editingUnavailable(readError)){setWriteUnavailable(true);draft.dismissRecovery()}setError(readError instanceof Error?readError.message:'无法读取当前编辑内容，已保留本地输入。');return}
+          }
           setError(e instanceof Error ? e.message : '操作失败')
         } finally {
           sending.current = false
@@ -219,7 +240,8 @@ export function Form({
       }}
     >
       {notice && <p className="form-hint" role="status">{notice}</p>}
-      <fieldset disabled={busy || !!savedResult} className="form-fields">
+      {(comparison || draft.recovery) && <DraftComparison base={comparison?.base ?? draft.recovery?.baseValues ?? null} server={comparison?.server ?? draft.baseValues()} local={comparison?.local ?? draft.recovery!.values} onCancel={()=>{setComparison(null);draft.dismissRecovery()}} onMerge={values=>{if(comparison){setVersion(comparison.version);onConflictResolved?.(comparison.editable)}draft.applyValues(values,comparison?.server ?? draft.baseValues(),comparison?.version);setComparison(null);setError('已合并，请核对后重新提交。')}} />}
+      <fieldset disabled={busy || !!savedResult || writeUnavailable || !!comparison} className="form-fields">
         {children}
       </fieldset>
       {error && (
@@ -230,6 +252,7 @@ export function Form({
           {workspaceErrorActions && !savedResult && <button className="text-button" type="button" onClick={() => { rememberClientError(error, requestId); requestErrorFeedback() }}>反馈此问题</button>}
         </div>
       )}
+      {writeUnavailable&&<button type="button" className="button secondary" onClick={()=>void navigator.clipboard.writeText(JSON.stringify(draft.snapshot(),null,2))}>复制保留的本地输入</button>}
       <footer className="form-footer">
         {onCancel && (
           <button
@@ -244,10 +267,10 @@ export function Form({
         {savedResult ? <button type="button" className="button primary" disabled={busy} onClick={async () => {
           if (sending.current) return
           sending.current = true; setBusy(true)
-          try { await savedResult.retry(); setError(''); setSavedResult(null) }
+          try { await savedResult.retry(); const nextVersion=savedResult.savedVersion ?? latestEditVersion.current; clearDraft(nextVersion); if(nextVersion!==undefined)setVersion(nextVersion); setError(''); setSavedResult(null) }
           catch { setError('内容已保存，重新加载仍未成功。请保留此页面并稍后重试。') }
           finally { sending.current = false; setBusy(false) }
-        }}>重新加载已保存结果</button> : <button type="submit" className="button primary" disabled={busy}>
+        }}>重新加载已保存结果</button> : <button type="submit" className="button primary" disabled={busy || writeUnavailable || !!comparison}>
           {busy && <LoaderCircle className="spin" size={16} />}{' '}
           {busy ? '正在保存…' : submitLabel}
         </button>}

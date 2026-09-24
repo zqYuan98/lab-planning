@@ -1,6 +1,6 @@
 import type { Entity } from './types'
 
-export interface NotificationTarget { type: 'plan' | 'task' | 'weeklyRecord' | 'weeklySubmission' | 'summary' | 'followup' | 'digest' | 'deadlineRequest' | 'report' | 'feedback'; id: string; month?: string; weekStart?: string; cycleWeek?: string; kind?: 'results' | 'plan' }
+export interface NotificationTarget { type: 'plan' | 'task' | 'weeklyRecord' | 'weeklySubmission' | 'summary' | 'followup' | 'digest' | 'deadlineRequest' | 'report' | 'feedback' | 'blocker' | 'decisionRequest'; id: string; month?: string; weekStart?: string; cycleWeek?: string; kind?: 'results' | 'plan' }
 export interface NotificationContentItem {
   target: NotificationTarget; title: string; lines: string[]
   acknowledgement?: 'pending' | 'acknowledged' | 'superseded' | 'not_required'

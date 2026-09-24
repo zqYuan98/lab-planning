@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import {
   ArrowUpRight,
   CalendarDays,
@@ -9,7 +9,9 @@ import {
   X,
 } from 'lucide-react'
 import Input, { type RefInputType } from '@arco-design/web-react/es/Input'
-import type { Bootstrap } from '../../shared/types'
+import type { Bootstrap, MonthlyPlan, Project, Task, User, WeeklyRecord } from '../../shared/types'
+import type { WorkspacePage } from '../../shared/workspace-query'
+import { api } from '../api'
 import { canUseAccount } from '../../shared/auth-policy'
 import { isActiveTask } from '../../shared/task-state'
 import { isActiveWeeklyRecord } from '../../shared/weekly-record-state'
@@ -142,8 +144,37 @@ export default function WorkspaceSearch({ data, navigate }: { data: Bootstrap; n
     [active, setActive] = useState(0)
   const root = useRef<HTMLDivElement>(null), input = useRef<RefInputType>(null)
   const id = useId()
-  const index = useMemo(() => buildWorkspaceSearchIndex(data), [data])
-  const results = useMemo(() => filterWorkspaceSearch(index, query), [index, query])
+  const scope = `${data.user.id}:${data.user.role}:${data.operationEpoch}:${data.accessScopeVersion}`
+  const [remote, setRemote] = useState<{ key: string; results: SearchResult[]; total: number }>({ key: '', results: [], total: 0 })
+  const [error, setError] = useState(''), [loading, setLoading] = useState(false)
+  const searchKey = `${scope}:${query.trim()}`, results = remote.key === searchKey ? remote.results : []
+  useEffect(() => {
+    const text = query.trim(), controller = new AbortController()
+    let current = true
+    setError(''); setLoading(!!text && open)
+    if (!text || !open || data.user.role === 'observer') { setRemote({ key: searchKey, results: [], total: 0 }); setLoading(false); return }
+    const timer = setTimeout(() => {
+      const args = `q=${encodeURIComponent(text)}&limit=5`
+      void Promise.all([
+        api<WorkspacePage<MonthlyPlan>>(`/workspace/plans?${args}`, { signal: controller.signal }),
+        api<WorkspacePage<Task>>(`/workspace/tasks?scope=all&${args}`, { signal: controller.signal }),
+        api<WorkspacePage<Project>>(`/workspace/candidates?kind=project&${args}`, { signal: controller.signal }),
+        data.user.role === 'manager' ? api<WorkspacePage<User>>(`/workspace/candidates?kind=user&${args}`, { signal: controller.signal }) : Promise.resolve({ items: [], total: 0 }),
+        api<WorkspacePage<WeeklyRecord>>(`/workspace/weekly-records?${args}`, { signal: controller.signal }),
+      ]).then(([plans, tasks, projects, people, weekly]) => {
+        if (!current) return
+        const items: SearchResult[] = [
+          ...plans.items.map(plan => ({ key: `plan-${plan.id}`, category: '月度目标' as const, title: plan.title, description: `${plan.month} · ${plan.category || '月度目标'}`, keywords: '', page: 'monthly' as const, intent: { id: plan.id, month: plan.month } })),
+          ...tasks.items.map(task => ({ key: `task-${task.id}`, category: '个人任务' as const, title: task.title, description: `截止 ${task.dueDate || '待确认'}`, keywords: '', page: 'work-register' as const, intent: { id: task.id, targetType: 'task' as const } })),
+          ...weekly.items.map(record => ({ key: `weekly-${record.id}`, category: '个人任务' as const, title: record.commitment, description: `周承诺 · ${record.weekStart}`, keywords: '', page: 'work-register' as const, intent: { id: record.taskId, targetType: 'task' as const, section: 'weekly' as const, weeklyRecordId: record.id } })),
+          ...projects.items.map(project => ({ key: `project-${project.id}`, category: '项目' as const, title: project.name, description: project.code, keywords: '', page: 'projects' as const, intent: { id: project.id, query: project.name } })),
+          ...people.items.map(user => ({ key: `user-${user.id}`, category: '团队成员' as const, title: user.name, description: user.position || user.email, keywords: '', page: 'team' as const, intent: { id: user.id, query: user.name } })),
+        ]
+        setRemote({ key: searchKey, results: items, total: plans.total + tasks.total + projects.total + people.total + weekly.total })
+      }).catch(failure => { if (current) { setRemote({ key: searchKey, results: [], total: 0 }); setError(failure instanceof Error ? failure.message : '搜索失败，请重试') } }).finally(() => { if (current) setLoading(false) })
+    }, 200)
+    return () => { current = false; clearTimeout(timer); controller.abort() }
+  }, [searchKey, open, data.user.role])
   useEffect(() => {
     setActive(0)
   }, [query])
@@ -210,6 +241,7 @@ export default function WorkspaceSearch({ data, navigate }: { data: Bootstrap; n
           visible && results[active] ? `${id}-option-${active}` : undefined
         }
         placeholder="搜索计划、任务、项目…"
+        maxLength={120}
         value={query}
         onFocus={() => setOpen(true)}
         onChange={(value) => {
@@ -260,7 +292,7 @@ export default function WorkspaceSearch({ data, navigate }: { data: Bootstrap; n
         <div className="search-popover">
           <div className="search-popover-heading">
             <span>搜索可访问的工作记录</span>
-            <small>{results.length} 条匹配</small>
+            <small>{loading ? '正在搜索…' : `展示 ${results.length} / ${remote.key === searchKey ? remote.total : 0} 条匹配`}</small>
           </div>
           <div
             id={`${id}-results`}
@@ -315,8 +347,8 @@ export default function WorkspaceSearch({ data, navigate }: { data: Bootstrap; n
             ) : (
               <div className="search-empty">
                 <Search size={24} />
-                <strong>没有找到相关记录</strong>
-                <p>试试项目名称、计划关键词或负责人的姓名。</p>
+                <strong>{error || (loading ? '正在搜索可访问的记录…' : '没有找到相关记录')}</strong>
+                <p>每类最多展示 5 条，任务和周承诺分别检索。可补充关键词缩小范围。</p>
               </div>
             )}
           </div>

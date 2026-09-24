@@ -1,3 +1,5 @@
+import WeeklyProgressForm from '../components/WeeklyProgressForm'
+import { openTask } from '../navigation'
 import { useEffect, useRef, useState } from 'react'
 import {
   ArrowLeft,
@@ -80,7 +82,7 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
   const [reviewRequest, setReviewRequest] = useState<ReviewRequest | null>(() => intent?.kind ? {
     cycleWeek: intent.cycleWeek || initialWeek,
     contentWeek: intent.kind === 'plan' ? advanceWeek(intent.cycleWeek || initialWeek, 7) : intent.cycleWeek || initialWeek,
-    ownerId: data.user.id, kind: intent.kind, token: 1,
+    ownerId: manager && data.users.some(user=>user.id===intent.ownerId) ? intent.ownerId! : data.user.id, kind: intent.kind, token: 1,
   } : null)
   const reviewSequence = useRef(1)
   const submissionSection = useRef<HTMLDivElement>(null)
@@ -97,7 +99,7 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
   function selectWork(target: WorkTarget) {
     setWorkContext(target); setWeek(target.contentWeek); showOwner(target.ownerId); setFilter('all'); setSearch(''); setSourceFilter('all')
     const record = target.recordId ? data.weeklyRecords.find(row => isActiveWeeklyRecord(row) && row.id === target.recordId && row.ownerId === target.ownerId && row.weekStart === target.contentWeek) : undefined
-    if (record) { setSelected(record); setModal('edit') }
+    if (record) { openTask({taskId:record.taskId,section:'weekly',weeklyRecordId:record.id}) }
     else if (target.create) openCreate(false)
     else requestAnimationFrame(() => { recordSection.current?.scrollIntoView({block:'start'}); recordSection.current?.focus({preventScroll:true}) })
   }
@@ -117,12 +119,15 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
   )
   const [progressStatus, setProgressStatus] = useState<WeeklyRecord['status']>('planned')
   const [completeTask, setCompleteTask] = useState(false)
+  const [progressSubmitted, setProgressSubmitted] = useState(false)
   const progressStatusRef = useRef<HTMLSelectElement>(null)
+  const progressSubmittedRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
     if (modal !== 'edit' || !selected) return
     // Form restores a saved draft directly into its controls after mounting.
     const frame = requestAnimationFrame(() => {
       setProgressStatus((progressStatusRef.current?.value || selected.status) as WeeklyRecord['status'])
+      setProgressSubmitted(progressSubmittedRef.current?.checked ?? selected.submitted)
     })
     return () => cancelAnimationFrame(frame)
   }, [modal, selected?.id, selected?.version])
@@ -420,7 +425,7 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
                     {nameOf(data, record.ownerId)}
                   </span>
                 </div>
-                <h2>{record.commitment || task?.title || '已有周工作记录'}</h2>
+                <h2><button type="button" className="text-button" onClick={()=>openTask({taskId:record.taskId,section:'weekly',weeklyRecordId:record.id})}>{record.commitment || task?.title || '已有周工作记录'}</button></h2>
                 {task?.title && record.commitment && task.title.trim() !== record.commitment.trim() && (
                   <p className="cell-description">任务：{task.title}</p>
                 )}
@@ -496,8 +501,7 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
                       <>
                         <button
                           onClick={() => {
-                            setSelected(record)
-                            setModal('edit')
+                            openTask({taskId:record.taskId,section:'weekly',weeklyRecordId:record.id})
                           }}
                         >
                           更新进展
@@ -602,7 +606,7 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
       )}
       {modal === 'edit' && selected && (
         <Modal title="更新本周实际进展" onClose={close} wide>
-          {navigate && <button className="button secondary" onClick={() => navigate('collaboration', { id: selected.taskId, targetType: 'task' })}>任务进展、催办回应与延期申请</button>}
+          {navigate && <button className="button secondary" onClick={() => openTask({ taskId:selected.taskId, section:'overview' })}>任务进展、催办回应与延期申请</button>}
           {manager && <NotificationStatus type="weeklyRecord" id={selected.id} data={data} />}
           <div className="context-box">
             <strong>{selectedTask?.title}</strong>
@@ -622,121 +626,7 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
               </p>
             )}
           </div>
-          <Form
-            onCancel={close}
-            submitLabel="保存本周进展"
-            draftKey={`weekly-progress:${data.user.id}:${selected.id}:v${selected.version}`}
-            draftContext={{ __completeTask: completeTask ? 'yes' : '' }}
-            onDraftRestore={values => {
-              const status = draftText(values, 'status')
-              if (['planned', 'doing', 'blocked', 'done', 'not_done'].includes(status)) setProgressStatus(status as WeeklyRecord['status'])
-              setCompleteTask(draftText(values, '__completeTask') === 'yes')
-            }}
-            onSubmit={async (event) => {
-              const form = new FormData(event.currentTarget)
-              const completesTask = completeTask && form.get('status') === 'done' && selectedTask && selectedTask.status !== 'done'
-              const updated = await api<WeeklyRecord>(
-                `/weekly-records/${selected.id}`,
-                json(
-                  {
-                    ...Object.fromEntries(form),
-                    submitted: form.has('submitted'),
-                    version: selected.version,
-                    ...(completesTask ? { completeTask: true, taskVersion: selectedTask.version } : {}),
-                  },
-                  'PATCH',
-                ),
-              )
-              await saved(completesTask ? '本周进展与整个任务均已保存为完成，请返回核对整份提报' : '该周进展已保存，请返回核对整份提报', updated)
-            }}
-          >
-            <Field label="本周承诺">
-              <textarea
-                name="commitment"
-                defaultValue={selected.commitment}
-                required={!selected.importSource}
-                rows={2}
-              />
-            </Field>
-            <Field label="执行状态">
-              <select name="status" ref={progressStatusRef} defaultValue={selected.status} onChange={event => {
-                const nextStatus = event.target.value as WeeklyRecord['status']
-                setProgressStatus(nextStatus)
-                if (nextStatus !== 'done') setCompleteTask(false)
-              }}>
-                {Object.entries(statusLabels).map(([value, label]) => (
-                  <option value={value} key={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            {selectedTask?.status === 'done' ? <p className="form-hint">整个任务已自报完成。本次仍可更新对应周的实际进展。</p> : selectedTask && <>
-              <label className="checkbox-label">
-                <input type="checkbox" checked={progressStatus === 'done' && completeTask} disabled={progressStatus !== 'done'} onChange={event => setCompleteTask(event.target.checked)} />
-                同时完成整个任务
-              </label>
-              <p className="form-hint">本周完成仅表示当周阶段完成。若整件工作也已结束，请勾选此项；下方实际成果将同时作为任务完成说明。</p>
-            </>}
-            <Field
-              label="实际成果"
-              hint={
-                selected.importSource
-                  ? '已有成果保留原文；原表未注明时可留空。'
-                  : '选择完成时必填；按事实描述已经交付的结果。'
-              }
-            >
-              <textarea
-                name="actualOutcome"
-                rows={3}
-                defaultValue={selected.actualOutcome}
-                required={completeTask && progressStatus === 'done'}
-              />
-            </Field>
-            <Field label="证据链接">
-              <input
-                name="evidenceUrl"
-                type="url"
-                placeholder="https://…"
-                defaultValue={selected.evidenceUrl}
-              />
-            </Field>
-            <div className="form-grid">
-              <Field
-                label="阻塞 / 未完成原因"
-                hint={
-                  selected.importSource
-                    ? '原表未注明时可留空。'
-                    : '受阻或未完成时必填。'
-                }
-              >
-                <textarea
-                  name="blocker"
-                  rows={3}
-                  defaultValue={selected.blocker}
-                />
-              </Field>
-              <Field label="下一步">
-                <textarea
-                  name="nextAction"
-                  rows={3}
-                  defaultValue={selected.nextAction}
-                />
-              </Field>
-            </div>
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                name="submitted"
-                defaultChecked={selected.submitted}
-              />
-              {selected.importSource
-                ? '保留为生效记录，纳入对应周统计'
-                : selected.planApproval?.required && !selected.planApproval.suspended ? '正式保存该条计划（审核通过后纳入周统计）' : '将该条纳入周统计（不代表已提交整份提报）'}
-            </label>
-            <div className="form-grid"><Field label="阻塞影响范围" hint="启用进展督办后，首次受阻时需填写。"><textarea name="blockerImpact" rows={2} defaultValue={selected.blockerImpact || ''} /></Field><Field label="需要的支持"><textarea name="supportNeeded" rows={2} defaultValue={selected.supportNeeded || ''} /></Field></div>
-            {manager && selected.ownerId !== data.user.id && <Field label="管理者代录原因" hint="替成员修改进展时，记录核实依据和原因；同时完成整个任务时必填。"><textarea name="proxyReason" rows={2} required={completeTask && progressStatus === 'done'} /></Field>}
-          </Form>
+          <WeeklyProgressForm data={data} selected={selected} selectedTask={selectedTask} onClose={close} onSaved={saved} />
         </Modal>
       )}
       {modal === 'carry' && selected && (

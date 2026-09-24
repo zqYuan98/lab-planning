@@ -25,7 +25,7 @@ export function nativeClip(value: string, bytes: number) { let result = ''; for 
 export function nativeUrl(notificationId: string) { const origin = appOrigin(); if (!origin || origin.protocol !== 'https:') throw new HttpError(409, '原生渠道需要HTTPS入口'); const url = new URL('/entry', origin); url.searchParams.set('notificationId', notificationId); return url.href }
 export function nativeDesired(store: Store, recipientId: string, action: NativeActionRef): NativeDesiredState | undefined {
   const actor = store.get<User>('users', recipientId)
-  if (!actor || !canUseAccount(actor)) return
+  if (!actor || !canUseAccount(actor) || actor.role === 'observer') return
   let title = '', summary = '', done = false, dueTime: number | undefined, state: unknown
   const note = store.get<Notification>('notifications', action.notificationId)
   if (!note || note.recipientId !== actor.id) return

@@ -37,7 +37,11 @@ docker compose --env-file .env.intranet -f current/compose.intranet.yaml logs --
 
 1. 在原应用运行环境使用 `npm run backup -- <新的备份路径>` 生成并校验完整备份，保留原始数据。切换前停止原应用写入，再生成最终备份。
 2. 通过受控传输把备份复制到服务器，放在代码仓库之外。为迁移创建一个新的数据卷，将备份放为卷根目录的 `lab-planning.sqlite`；整个卷及文件须允许容器 `node` 用户（UID/GID `1000:1000`）读写。导入的是完整备份文件，无需拼接原库的 WAL。
-3. 将 `.env.intranet` 的 `DATA_VOLUME_NAME` 指向该新卷，然后启动。确认使用的是迁移后账号，核验项目、计划、报告和 Word 下载，再把访问地址交给部门成员。
+3. 将 `.env.intranet` 的 `DATA_VOLUME_NAME` 指向该新卷，在应用停止时使用新版镜像执行下列命令，再启动应用。它为恢复库生成新的操作代际，防止旧浏览器重试恢复点之后的承接请求；普通重启不执行。确认使用的是迁移后账号，核验项目、计划、报告和 Word 下载，再把访问地址交给部门成员。
+
+```sh
+docker compose --env-file .env.intranet -f current/compose.intranet.yaml run --rm --no-deps app npm run reset-operation-context -- /app/data/lab-planning.sqlite
+```
 
 首次空库与迁移库不要混用。迁移到新卷后保留旧卷；更改数据卷名称会切换到另一份数据库，不会自动搬迁数据。
 
@@ -63,7 +67,7 @@ docker compose --env-file .env.intranet -f current/compose.intranet.yaml ps
 
 如果使用预先导入的镜像，上一步改用 `up -d --no-build --force-recreate`，确保容器使用刚导入的版本。保留旧代码包以及旧版本镜像的明确标签，便于回退。
 
-更新会重建应用容器，指定的数据卷继续保留。重启后检查登录、计划、报告与导出。恢复时停应用，用已验证备份建立新卷，再修改 `DATA_VOLUME_NAME` 切换；保留故障前的卷，不覆盖唯一副本，不使用 `down -v`。备份还应复制到其他受控存储。
+更新会重建应用容器，指定的数据卷继续保留。重启后检查登录、计划、报告与导出。恢复、回滚数据或克隆时停应用，用已验证备份建立新卷，修改 `DATA_VOLUME_NAME` 切换，并在启动前执行上面的 `reset-operation-context` 命令；保留故障前的卷，不覆盖唯一副本，不使用 `down -v`。备份还应复制到其他受控存储。
 
 仓库的 `scripts/backup-intranet.sh` 可执行在线备份并复制到部署根 `backups/`，支持指定部署目录、并发锁和不覆盖既有文件。37服务器的安装副本位于 `ops/backup-intranet.sh`，已由 `yzq` 的 crontab 在每天03:10（Asia/Shanghai）运行，保留了原有定时任务。手动运行：
 

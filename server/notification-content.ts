@@ -19,6 +19,15 @@ const name = (store: Store, id: string) => notificationText(store.get<User>('use
 export const notificationLocalTime = (date: Date) => `${new Date(date.getTime() + 8 * 3600000).toISOString().slice(0, 16).replace('T', ' ')}（北京时间）`
 
 export function notificationSubject(store: Store, target: NotificationTarget, actor: User): NotificationSubject | undefined {
+  if (target.type === 'blocker' || target.type === 'decisionRequest') {
+    const blocker = target.type === 'blocker' ? store.get<import('../shared/collaboration.ts').BlockerEpisode>('blockerEpisodes', target.id) : null
+    const decision = target.type === 'decisionRequest' ? store.get<import('../shared/support.ts').DecisionRequest>('decisionRequests', target.id) : null
+    const task = store.get<Task>('tasks', blocker?.parentTaskId ?? decision?.taskId ?? '')
+    if (!task || actor.role === 'observer' || actor.role !== 'manager' && actor.id !== task.ownerId && actor.id !== blocker?.coordinatorId) return
+    return { target, title: notificationText(task.title), ownerId: task.ownerId, ownerName: name(store, task.ownerId), context: blocker ? '支持事项' : '决策事项',
+      requirement: notificationText(blocker ? [blocker.reason, blocker.impact, blocker.supportNeeded].filter(Boolean).join('；') : decision?.question),
+      dueDate: blocker?.responseDueAt ?? decision?.responseDueAt ?? '', status: blocker?.coordinationState ?? decision?.status }
+  }
   if (target.type === 'plan') {
     const raw = store.get<MonthlyPlan>('plans', target.id)
     if (!raw) return
