@@ -124,10 +124,11 @@ export class CollaborationService {
       return row
     })
   }
-  private saveProgress(actor: User, taskId: string, taskVersion: unknown, content: ProgressContent, mutationId: string, source: 'progress' | 'followup'): ProgressResult {
+  private saveProgress(actor: User, taskId: string, taskVersion: unknown, content: ProgressContent, mutationId: string, source: 'progress' | 'followup', at?: Date): ProgressResult {
     for (const field of ['note', 'noChangeReason', 'nextAction', 'completionNote', 'evidenceUrl', 'blockerReason', 'blockerImpact', 'supportNeeded', 'proxyReason'] as const) if (content[field] !== undefined) requiredText(content[field], '进展内容', false, field === 'evidenceUrl' ? 2000 : 12000)
     if (content.weekly !== undefined && (!content.weekly || typeof content.weekly !== 'object' || Array.isArray(content.weekly))) throw new HttpError(400, '本周进展格式无效')
-    const now = this.clock(), task = this.task(actor, taskId)
+    // A followup response passes its own instant so its progress event and response share one timestamp.
+    const now = at ?? this.clock(), task = this.task(actor, taskId)
     ensureVersion(task.version, taskVersion)
     const noteType = content.noteType ?? 'progress'
     if (!['progress', 'no_change'].includes(noteType)) throw new HttpError(400, '进展类型无效')
@@ -208,7 +209,7 @@ export class CollaborationService {
     ensureVersion(before.version, expected)
     if (before.status !== 'open' || tracking.generation !== before.generation || tracking.state === 'closed' || task.status === 'done') throw new HttpError(409, '催办已结束或工作安排已有变化，请刷新')
     if (before.weeklyRecordId && content.weeklyRecordId !== before.weeklyRecordId) throw new HttpError(409, '回应须携带原周安排及当前版本')
-    const result = this.saveProgress(actor, task.id, taskVersion, content, mutationId, 'followup')
+    const result = this.saveProgress(actor, task.id, taskVersion, content, mutationId, 'followup', now)
     const current = this.store.get<FollowupRequest>('followupRequests', id)!
     const request = this.store.update<FollowupRequest>('followupRequests', id, current.version, { status: 'responded', respondedAt: now.toISOString(), closedAt: null, closedBy: null, closeReason: '' })
     const response = this.store.insert<FollowupResponse>('followupResponses', { id: collaborationId('response', mutationId), followupRequestId: id, requestVersion: before.version, taskId: task.id,

@@ -285,3 +285,17 @@ test('idempotency key is scoped to actor and command, not freely reusable across
     assert.throws(() => f.service.recordProgress(f.member, other.id, { requestId: 'cross-target-progress', version: other.version, note: '已准备验证资料' }), { status: 409 })
   } finally { f.store.close() }
 })
+
+test('a followup response and its progress event share one instant even when the clock advances between calls', () => {
+  const f = fixture()
+  try {
+    const request = f.service.createFollowup(f.manager, f.task.id, { requestId: 'create-instant-followup', version: f.task.version, requirement: '请说明当前情况', dueAt: new Date(f.now().getTime() + 3600000).toISOString() }).request
+    // Every clock read lands on a new millisecond, as happens intermittently in production.
+    let tick = f.now().getTime()
+    const advancing = new CollaborationService(f.store, () => new Date(++tick))
+    const result = advancing.respondFollowup(f.member, request.id, { requestId: 'respond-instant-001', version: request.version, taskVersion: f.task.version, progress: { note: '完成三组兼容性验证' } })
+    const progress = f.store.get<ProgressEvent>('progressEvents', result.response!.progressEventId)!
+    assert.equal(progress.occurredAt, result.response!.respondedAt)
+    assert.equal(result.followup!.respondedAt, result.response!.respondedAt)
+  } finally { f.store.close() }
+})
