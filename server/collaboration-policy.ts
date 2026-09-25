@@ -3,6 +3,7 @@ import type { MonthlyPlan, Project, Task, User } from '../shared/types.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
 import { isActiveTask } from '../shared/task-state.ts'
 import { HttpError, type Store } from './store.ts'
+import { businessActor, managerActor } from './authorization.ts'
 import { readWorkCalendar, workingDay } from './work-calendar.ts'
 
 export const COLLABORATION_SETTINGS_ID = 'collaboration'
@@ -19,9 +20,8 @@ export function collaborationEnabledFor(store: Store, ownerId: string): boolean 
   return settings.enabled && settings.pilotUserIds.includes(ownerId)
 }
 export function liveCollaborationActor(store: Store, actor: User, managerOnly = false): User {
-  const current = store.get<User>('users', actor.id)
-  if (!current || !canUseAccount(current) || current.role === 'observer' || managerOnly && current.role !== 'manager') throw new HttpError(403, managerOnly ? '此操作需要有效管理者权限' : '账号当前无业务操作权限')
-  return current
+  const denial = { message: managerOnly ? '此操作需要有效管理者权限' : '账号当前无业务操作权限' }
+  return managerOnly ? managerActor(store, actor, denial) : businessActor(store, actor, { revoked: denial, observer: denial })
 }
 export function collaborationTask(store: Store, actor: User, id: string): Task {
   const current = liveCollaborationActor(store, actor), task = store.get<Task>('tasks', id)

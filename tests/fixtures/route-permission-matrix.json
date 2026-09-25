@@ -1,0 +1,1382 @@
+{
+ "DELETE /api/imports/:id": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 404,
+  "manager": 404
+ },
+ "DELETE /api/imports/history/:id": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 404,
+  "manager": 404
+ },
+ "DELETE /api/users/:id": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "DELETE /api/weekly-records/:id": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "GET /api/ai/settings": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 200
+ },
+ "GET /api/ai/status": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 200,
+  "manager": 200
+ },
+ "GET /api/authorized-work": {
+  "anonymous": 401,
+  "observer": 200,
+  "member": 200,
+  "manager": 200
+ },
+ "GET /api/authorized-work/:id": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/blockers/:id": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/carry-workflows": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 200
+ },
+ "GET /api/carry-workflows/:id": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 404
+ },
+ "GET /api/collaboration": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 200,
+  "manager": 200
+ },
+ "GET /api/collaboration/resolve/:type/:id": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/collaboration/rules-preview": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 200
+ },
+ "GET /api/collaboration/settings": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 200
+ },
+ "GET /api/collaboration/tasks/:id": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/context": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 200,
+  "manager": 200
+ },
+ "GET /api/data/export": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 200,
+  "manager": 200
+ },
+ "GET /api/decision-requests/:id": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/delivery-series/:id/history": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/digests/:id": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/dingtalk/binding": {
+  "anonymous": 401,
+  "observer": 200,
+  "member": 200,
+  "manager": 200
+ },
+ "GET /api/feedback": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 200,
+  "manager": 200
+ },
+ "GET /api/feedback/:id": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/feedback/:id/attachments/:attachmentId": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/feedback/meta": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 200,
+  "manager": 200
+ },
+ "GET /api/imports": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 200,
+  "manager": 200
+ },
+ "GET /api/imports/:id": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/imports/:id/source": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/imports/:id/source-preview": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/imports/history": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 200,
+  "manager": 200
+ },
+ "GET /api/integration-tokens": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 200
+ },
+ "GET /api/my-actions": {
+  "anonymous": 401,
+  "observer": 200,
+  "member": 200,
+  "manager": 200
+ },
+ "GET /api/native/operations": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 200
+ },
+ "GET /api/native/settings": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 200
+ },
+ "GET /api/notification-diagnostics": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 200
+ },
+ "GET /api/notification-settings": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 200
+ },
+ "GET /api/notification-status": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 400
+ },
+ "GET /api/notifications": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 200,
+  "manager": 200
+ },
+ "GET /api/notifications/:id": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/notifications/:id/preview": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 404
+ },
+ "GET /api/object-grants": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 200
+ },
+ "GET /api/period-reviews": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 200,
+  "manager": 200
+ },
+ "GET /api/period-reviews/:id": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/period-reviews/:id/display-references": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/period-reviews/:id/export": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/plans/:id/history": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/report-agent": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 200
+ },
+ "GET /api/report-agent/assets/:id/download": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 404
+ },
+ "GET /api/report-agent/jobs/:id": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 404
+ },
+ "GET /api/report-agent/monthly-schedule": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 200
+ },
+ "GET /api/report-agent/policy": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 200
+ },
+ "GET /api/report-agent/reports/:id": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 404
+ },
+ "GET /api/report-agent/reports/:id/docx": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 404
+ },
+ "GET /api/report-agent/schedule": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 200
+ },
+ "GET /api/report-schedule": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 200
+ },
+ "GET /api/reports": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 200
+ },
+ "GET /api/reports/:id/export": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 404
+ },
+ "GET /api/schema": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 200,
+  "manager": 200
+ },
+ "GET /api/scoped-reports": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 200
+ },
+ "GET /api/scoped-reports/:id": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/scoped-reports/:id/export": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/tasks/:id/deliveries": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/tasks/:id/editable": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/tasks/:id/history": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/tasks/:id/support": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/tasks/:id/tracking-preview": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 404
+ },
+ "GET /api/tasks/:id/view": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/usage-analytics/settings": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 200
+ },
+ "GET /api/usage-analytics/status": {
+  "anonymous": 401,
+  "observer": 200,
+  "member": 200,
+  "manager": 200
+ },
+ "GET /api/usage-analytics/summary": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 200
+ },
+ "GET /api/users/:id/deletion-preview": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 404
+ },
+ "GET /api/weekly-records/:id/editable": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/weekly-review-delegation": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 200
+ },
+ "GET /api/weekly-review-queue": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 200,
+  "manager": 200
+ },
+ "GET /api/weekly-submissions": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 200,
+  "manager": 200
+ },
+ "GET /api/work-risks": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 200,
+  "manager": 200
+ },
+ "GET /api/workspace": {
+  "anonymous": 401,
+  "observer": 200,
+  "member": 200,
+  "manager": 200
+ },
+ "GET /api/workspace/annual-goals": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 200,
+  "manager": 200
+ },
+ "GET /api/workspace/annual-goals/:id": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/workspace/candidates": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 400,
+  "manager": 400
+ },
+ "GET /api/workspace/directory/accounts": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 200,
+  "manager": 200
+ },
+ "GET /api/workspace/goal-owner/plans/:id/tasks": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/workspace/goal-owner/plans/:id/tasks/:taskId/weekly": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/workspace/history": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 400,
+  "manager": 400
+ },
+ "GET /api/workspace/import-candidates": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 400,
+  "manager": 400
+ },
+ "GET /api/workspace/monthly": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 400,
+  "manager": 400
+ },
+ "GET /api/workspace/monthly/candidates": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 400,
+  "manager": 400
+ },
+ "GET /api/workspace/monthly/plans/:id": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/workspace/monthly/publications": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 400,
+  "manager": 400
+ },
+ "GET /api/workspace/monthly/publications/:id": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/workspace/overview/department": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 200
+ },
+ "GET /api/workspace/overview/personal": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 200,
+  "manager": 200
+ },
+ "GET /api/workspace/plans": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 200,
+  "manager": 200
+ },
+ "GET /api/workspace/progress": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 400,
+  "manager": 400
+ },
+ "GET /api/workspace/projects": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 200,
+  "manager": 200
+ },
+ "GET /api/workspace/register": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 200,
+  "manager": 200
+ },
+ "GET /api/workspace/registration-requests": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 200
+ },
+ "GET /api/workspace/reports": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 200
+ },
+ "GET /api/workspace/reports/:id": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 404
+ },
+ "GET /api/workspace/tasks": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 200,
+  "manager": 200
+ },
+ "GET /api/workspace/team": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 200
+ },
+ "GET /api/workspace/weekly": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 400,
+  "manager": 400
+ },
+ "GET /api/workspace/weekly-records": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 200,
+  "manager": 200
+ },
+ "GET /api/workspace/weekly/candidates": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 400,
+  "manager": 400
+ },
+ "GET /api/workspace/weekly/records/:id": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/workspace/weekly/submission-references": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 400,
+  "manager": 400
+ },
+ "PATCH /api/annual-goals/:id": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "PATCH /api/carry-workflows/:id": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "PATCH /api/imports/:id": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 404,
+  "manager": 404
+ },
+ "PATCH /api/imports/history/:id": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 404,
+  "manager": 404
+ },
+ "PATCH /api/plans/:id": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 404,
+  "manager": 404
+ },
+ "PATCH /api/projects/:id": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "PATCH /api/report-agent/reports/:id": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "PATCH /api/report-agent/templates/:id": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "PATCH /api/reports/:id": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "PATCH /api/tasks/:id": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 404,
+  "manager": 404
+ },
+ "PATCH /api/users/:id": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "PATCH /api/weekly-records/:id": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 404,
+  "manager": 404
+ },
+ "POST /api/ai/test": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 503
+ },
+ "POST /api/annual-goals": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/blockers/:id/assign": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "POST /api/blockers/:id/handle": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 404,
+  "manager": 404
+ },
+ "POST /api/carry-workflows": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/carry-workflows/:id/apply": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/carry-workflows/:id/cancel": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/carry-workflows/:id/preview-apply": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/carry-workflows/preview": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/data/restore/commit": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/data/restore/preview": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/deadline-requests/:id/decide": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "POST /api/decision-requests": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/decision-requests/:id/cancel": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "POST /api/decision-requests/:id/decide": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "POST /api/decision-requests/:id/reassign": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "POST /api/decision-requests/:id/reopen": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "POST /api/deliveries/:id/decisions": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 404,
+  "manager": 404
+ },
+ "POST /api/delivery-series/:id/reassign": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "POST /api/dingtalk/bind": {
+  "anonymous": 401,
+  "observer": 400,
+  "member": 400,
+  "manager": 400
+ },
+ "POST /api/dingtalk/unbind": {
+  "anonymous": 401,
+  "observer": 200,
+  "member": 200,
+  "manager": 200
+ },
+ "POST /api/feedback": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 400,
+  "manager": 400
+ },
+ "POST /api/feedback/:id/actions": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 404,
+  "manager": 404
+ },
+ "POST /api/followups/:id/close": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "POST /api/followups/:id/respond": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 404,
+  "manager": 404
+ },
+ "POST /api/followups/batch": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/followups/preview": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/imports": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 400,
+  "manager": 400
+ },
+ "POST /api/imports/:id/analyze": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 404,
+  "manager": 404
+ },
+ "POST /api/imports/:id/commit": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 404,
+  "manager": 404
+ },
+ "POST /api/imports/:id/fork": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 404,
+  "manager": 404
+ },
+ "POST /api/imports/:id/request-confirmation": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 404,
+  "manager": 404
+ },
+ "POST /api/imports/structured": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 400,
+  "manager": 400
+ },
+ "POST /api/integration-tokens": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/integration-tokens/:id/revoke": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "POST /api/months/:month/publish": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/native/identities/:userId/verify": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 409
+ },
+ "POST /api/native/intents": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 409,
+  "manager": 409
+ },
+ "POST /api/native/intents/:id/confirm": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 400,
+  "manager": 400
+ },
+ "POST /api/native/links/:id/delete": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 409
+ },
+ "POST /api/native/links/:id/reconcile": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 409
+ },
+ "POST /api/native/links/:id/recreate": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 409
+ },
+ "POST /api/notification-deliveries/:id/retry": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "POST /api/notifications/:id/acknowledge": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 409,
+  "manager": 409
+ },
+ "POST /api/notifications/:id/open": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 404,
+  "manager": 404
+ },
+ "POST /api/notifications/:id/remind": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "POST /api/notifications/open-all": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 200,
+  "manager": 200
+ },
+ "POST /api/object-grants": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 400,
+  "manager": 400
+ },
+ "POST /api/object-grants/:id/revoke": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 400,
+  "manager": 400
+ },
+ "POST /api/period-reviews": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 409
+ },
+ "POST /api/period-reviews/:id/finalize": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 409
+ },
+ "POST /api/period-reviews/evidence": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 409
+ },
+ "POST /api/period-reviews/preview": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/plans": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/plans/:id/carry": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/plans/:id/result": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 404,
+  "manager": 404
+ },
+ "POST /api/plans/:id/review": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "POST /api/plans/:id/submit": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 404,
+  "manager": 404
+ },
+ "POST /api/plans/merge": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/projects": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/report-agent/assets": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/report-agent/jobs": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/report-agent/jobs/:id/cancel": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "POST /api/report-agent/jobs/:id/retry": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "POST /api/report-agent/reports/:id/finalize": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/report-agent/reports/:id/rewrite": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/report-agent/templates": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/report-agent/templates/:id/activate": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/report-agent/templates/:id/archive": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "POST /api/report-agent/templates/:id/learn": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/report-agent/templates/:id/preview": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "POST /api/reports": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/reports/:id/finalize": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "POST /api/reports/:id/polish": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "POST /api/scoped-reports": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 400,
+  "manager": 400
+ },
+ "POST /api/tasks": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 400,
+  "manager": 400
+ },
+ "POST /api/tasks/:id/blockers": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 404,
+  "manager": 404
+ },
+ "POST /api/tasks/:id/cancel": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "POST /api/tasks/:id/deadline-requests": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 404,
+  "manager": 404
+ },
+ "POST /api/tasks/:id/deliveries": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 404,
+  "manager": 404
+ },
+ "POST /api/tasks/:id/followups": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "POST /api/tasks/:id/progress": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 404,
+  "manager": 404
+ },
+ "POST /api/tasks/:id/relink": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "POST /api/usage-analytics/page": {
+  "anonymous": 401,
+  "observer": 400,
+  "member": 400,
+  "manager": 400
+ },
+ "POST /api/users": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/users/:id/registration-review": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/weekly-assignments": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 400,
+  "manager": 400
+ },
+ "POST /api/weekly-records": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 400,
+  "manager": 400
+ },
+ "POST /api/weekly-records/:id/carry": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 404,
+  "manager": 404
+ },
+ "POST /api/weekly-submissions/adjust": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/weekly-submissions/deadline-repair": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/weekly-submissions/deadline-repair/preview": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/weekly-submissions/review": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 400,
+  "manager": 400
+ },
+ "POST /api/weekly-submissions/roster": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/weekly-submissions/submit": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 400,
+  "manager": 400
+ },
+ "POST /api/work-register/capture": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 400,
+  "manager": 400
+ },
+ "POST /api/workspace/import-references": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 200,
+  "manager": 200
+ },
+ "PUT /api/ai/settings": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 200
+ },
+ "PUT /api/collaboration/preferences": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 400,
+  "manager": 400
+ },
+ "PUT /api/collaboration/settings": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "PUT /api/followups/:id": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "PUT /api/native/settings": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 409
+ },
+ "PUT /api/notification-settings": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 409
+ },
+ "PUT /api/report-agent/monthly-schedule": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "PUT /api/report-agent/schedule": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "PUT /api/report-schedule": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "PUT /api/tasks/:id/tracking": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "PUT /api/usage-analytics/settings": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 409
+ },
+ "PUT /api/weekly-review-delegation": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 409
+ },
+ "PUT /api/weekly-submissions/deadline-policy": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 409
+ },
+ "PUT /api/weekly-submissions/rule": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 409
+ }
+}

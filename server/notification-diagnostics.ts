@@ -5,7 +5,7 @@ import type { DeliveryCursor, DeliveryFilter, NotificationDiagnosticRow, Notific
 import type { Notification, NotificationDelivery, NotificationSettings } from '../shared/notifications.ts'
 import type { User } from '../shared/types.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
-import { requireManager } from './auth.ts'
+import { requireManager } from './authorization.ts'
 import type { DingTalkClient } from './dingtalk.ts'
 import { currentIdentity, notificationEnvironmentEnabled } from './notifications.ts'
 import { currentNotificationMessage } from './notification-worker.ts'

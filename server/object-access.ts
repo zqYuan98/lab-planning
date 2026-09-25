@@ -4,17 +4,14 @@ import type { AuthorizedProjectSummary, AuthorizedTaskView, AuthorizedWorkRespon
 import type { DeliveryDecision, DeliverySeries } from '../shared/deliveries.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
 import { safeUser } from './auth.ts'
+import { businessActor, currentActor } from './authorization.ts'
 import { HttpError, type Store } from './store.ts'
 
 export function liveObjectActor(store: Store, actor: User): User {
-  const current = store.get<User>('users', actor.id)
-  if (!current || !canUseAccount(current)) throw new HttpError(403, '账号当前不可用', 'ACCESS_REVOKED')
-  return safeUser(current)
+  return currentActor(store, actor)
 }
 export function assertBusinessActor(store: Store, actor: User): User {
-  const current = liveObjectActor(store, actor)
-  if (current.role === 'observer') throw new HttpError(403, '观察者仅能读取明确授权的内容', 'READ_ONLY_OBSERVER')
-  return current
+  return businessActor(store, actor)
 }
 export function activeGrant(store: Store, actor: User, objectType: ObjectType, objectId: string, capability: ObjectCapability = 'read', now = new Date()): ObjectGrant | undefined {
   const current = store.get<User>('users', actor.id)

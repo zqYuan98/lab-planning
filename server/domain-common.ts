@@ -3,6 +3,7 @@ import { Store, HttpError } from './store.ts'
 import { visiblePlan } from './plan-visibility.ts'
 export { participates } from './plan-visibility.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
+import { requireManagerRole, requireOwnerOrManager } from './authorization.ts'
 
 export type Input = Record<string, unknown>
 export function text(value: unknown, label: string, required = true, max = 12000): string {
@@ -46,11 +47,10 @@ export function version(input: Input): number {
   return Number(input.version)
 }
 export function manager(actor: User) {
-  if (actor.role !== 'manager') throw new HttpError(403, '此操作需要管理者权限')
+  requireManagerRole(actor)
 }
 export function own(actor: User, ownerId: string) {
-  if (actor.role === 'observer') throw new HttpError(403, '观察者不能修改业务记录', 'READ_ONLY_OBSERVER')
-  if (actor.role !== 'manager' && actor.id !== ownerId) throw new HttpError(403, '不能修改其他成员的记录')
+  requireOwnerOrManager(actor, ownerId)
 }
 
 export class DomainBase {
