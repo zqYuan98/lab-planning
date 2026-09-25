@@ -28,6 +28,8 @@ import { api, json, finishSaved } from '../api'
 import MergeProposals from './MergeProposals'
 import CarryWorkflowWizard from '../components/CarryWorkflowWizard'
 import MonthlyResultForm from '../components/MonthlyResultForm'
+import { monthlyPageQuery } from '../period-query'
+import { useDebouncedSearch } from '../use-debounced-search'
 import {
   Badge,
   Empty,
@@ -68,8 +70,9 @@ const tones: Record<string, string> = {
 type MonthlyProps = PageProps & { navigate?: Navigate }
 interface MonthlyControls { value: MonthlyWorkspace | null; setQuery: (query: string) => void; reload: () => Promise<void> }
 export default function Monthly(props: MonthlyProps) {
-  const initial = new URLSearchParams({ month: props.intent?.month || currentMonth() }); if (props.intent?.id) initial.set('id', props.intent.id)
-  const [query, setQuery] = useState(initial.toString()), [cursors, setCursors] = useState<string[]>([])
+  // Matches MonthlyBody's first query so entering the page issues a single read.
+  const initial = monthlyPageQuery({ month: props.intent?.month || currentMonth(), scope: 'current', status: props.intent?.action === 'review' ? 'submitted' : props.intent?.status || 'all', q: props.intent?.query || '', includeInactive: false, id: props.intent?.id })
+  const [query, setQuery] = useState(initial), [cursors, setCursors] = useState<string[]>([])
   const firstPath = `/workspace/monthly?${query}`, path = firstPath + (cursors.length ? `&cursor=${encodeURIComponent(cursors.at(-1)!)}` : '')
   const resource = useWorkspaceQuery<MonthlyWorkspace>(path, periodScope(props.data), undefined, { onCursorStale: () => { setCursors([]); return firstPath } })
   const [initialized, setInitialized] = useState(!props.intent?.id)
@@ -127,11 +130,11 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
   const lastDetailRead = useRef('')
   function showModal(type: string) { detailSequence.current++; setModal(type) }
   useEffect(() => () => { detailSequence.current++ }, [])
+  const querySearch = useDebouncedSearch(search)
   useEffect(() => {
     if (!period) return
-    const params = new URLSearchParams({ month, scope, status: scope === 'historical' ? 'all' : filter, q: search, includeInactive: String(includeInactive) }); if (intent?.id && !handledIntent.current) params.set('id', intent.id)
-    period.setQuery(params.toString())
-  }, [month, scope, filter, search, includeInactive])
+    period.setQuery(monthlyPageQuery({ month, scope, status: filter, q: querySearch, includeInactive, id: intent?.id && !handledIntent.current ? intent.id : undefined }))
+  }, [month, scope, filter, querySearch, includeInactive])
   useEffect(() => {
     const plan = period?.value?.detail
     if (!plan || handledIntent.current) return

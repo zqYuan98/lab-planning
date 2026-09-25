@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite'
 
-export const STORAGE_VERSION = 5
+export const STORAGE_VERSION = 6
 /** Version 1 records the existing JSON entity format without rewriting any business record.
  * Future data transformations must be explicit ordered migrations with backup/restore tests.
  */
@@ -40,6 +40,18 @@ export function applyMigrations(db: DatabaseSync) {
       // This index contains current links only and never changes business or frozen snapshot rows.
       db.exec(`CREATE INDEX task_active_goal_id ON entities(json_extract(data,'$.monthlyPlanId'),id) WHERE collection='tasks' AND json_extract(data,'$.cancellation') IS NULL`)
       db.prepare('INSERT INTO schema_migrations(version,name,applied_at) VALUES(?,?,?)').run(5, 'goal-owner-current-task-index', new Date().toISOString())
+    }
+    if (latest < 6) {
+      // Page reads filtered these collections by week, month or open follow-up while
+      // scanning and parsing every historical row. Derived indexes only.
+      db.exec(`CREATE INDEX IF NOT EXISTS weekly_active_week_owner ON entities(json_extract(data,'$.weekStart'),json_extract(data,'$.ownerId')) WHERE collection='weeklyRecords' AND json_extract(data,'$.deletion') IS NULL;
+        CREATE INDEX IF NOT EXISTS plan_month ON entities(json_extract(data,'$.month')) WHERE collection='plans';
+        CREATE INDEX IF NOT EXISTS plan_event_before_month ON entities(json_extract(data,'$.before.month')) WHERE collection='events' AND json_extract(data,'$.entityType')='plan';
+        CREATE INDEX IF NOT EXISTS plan_event_after_month ON entities(json_extract(data,'$.after.month')) WHERE collection='events' AND json_extract(data,'$.entityType')='plan';
+        CREATE INDEX IF NOT EXISTS followup_open_task_owner ON entities(json_extract(data,'$.taskId'),json_extract(data,'$.ownerId')) WHERE collection='followupRequests' AND json_extract(data,'$.status')='open';
+        CREATE INDEX IF NOT EXISTS blocker_parent_owner ON entities(json_extract(data,'$.parentTaskId'),json_extract(data,'$.ownerId')) WHERE collection='blockerEpisodes';
+        CREATE INDEX IF NOT EXISTS weekly_task ON entities(json_extract(data,'$.taskId')) WHERE collection='weeklyRecords';`)
+      db.prepare('INSERT INTO schema_migrations(version,name,applied_at) VALUES(?,?,?)').run(6, 'period-page-and-followup-indexes', new Date().toISOString())
     }
     db.exec('COMMIT')
   } catch (error) { db.exec('ROLLBACK'); throw error }

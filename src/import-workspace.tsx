@@ -5,6 +5,7 @@ import { workspaceQueryReader } from './workspace-query-state'
 import { queryAffected } from './query-invalidation'
 import { useWorkspaceQuery } from './workspace-query'
 import { MutationContextChangedError } from './mutation-response'
+import { useDebouncedSearch } from './use-debounced-search'
 
 export const emptyImportReferences = (): ImportReferences => ({ users: [], projects: [], plans: [], tasks: [] })
 export function combineImportReferences(...sources: ImportReferences[]): ImportReferences {
@@ -40,8 +41,9 @@ export function useImportReferences(ids: ImportReferenceIds, scope: string) {
 const labels: Record<ImportCandidateKind, string> = { users: '成员', projects: '项目', plans: '月度目标', tasks: '个人任务' }
 export function ImportCandidateLookup({ kind, scope, ownerId = '', onItems }: { kind: ImportCandidateKind; scope: string; ownerId?: string; onItems: (kind: ImportCandidateKind, value: ImportReferences) => void }) {
   const [q, setQuery] = useState(''), [cursor, setCursor] = useState('')
+  const querySearch = useDebouncedSearch(q)
   const callback = useRef(onItems); callback.current = onItems
-  const firstPath = `/workspace/import-candidates?kind=${kind}&q=${encodeURIComponent(q)}&ownerId=${encodeURIComponent(ownerId)}&limit=50`
+  const firstPath = `/workspace/import-candidates?kind=${kind}&q=${encodeURIComponent(querySearch)}&ownerId=${encodeURIComponent(ownerId)}&limit=50`
   const resource = useWorkspaceQuery<ImportCandidatePage>(`${firstPath}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, scope, undefined, { onCursorStale: () => { setCursor(''); return firstPath } })
   useEffect(() => { callback.current(kind, resource.value ? { ...emptyImportReferences(), [kind]: resource.value.items, ...(kind === 'tasks' ? { users: resource.value.references.users } : {}) } : emptyImportReferences()) }, [resource.value, kind])
   useEffect(() => { setCursor('') }, [ownerId])

@@ -39,6 +39,7 @@ import { requireReportManager } from './reports.ts'
 import { compressResponses, staticDelivery } from './http-delivery.ts'
 import { UsageAnalyticsStore } from './usage-analytics.ts'
 import { usageAnalyticsRouter, usageAnalyticsSuccessMiddleware } from './usage-analytics-routes.ts'
+import { requestTiming } from './request-timing.ts'
 
 interface AppOptions { store?: Store; dbPath?: string; enableScheduler?: boolean; dingtalkClient?: DingTalkClient; nativeClient?: DingTalkNativeClient; usageAnalytics?: UsageAnalyticsStore }
 /** Trust named loopback or explicit proxy addresses, never a caller-supplied hop count. */
@@ -77,7 +78,7 @@ export function createApp(options: AppOptions = {}) {
     res.locals.requestId = randomUUID()
     res.set('X-Request-Id', res.locals.requestId)
     next()
-  })
+  }, requestTiming(store))
   const regularJson = express.json({ limit: '256kb' }), importJson = express.json({ limit: '16mb' }), restoreJson = express.json({ limit: '35mb' }), feedbackJson = express.json({ limit: '9mb' }), reportAssetJson = express.json({ limit: '18mb' }), reportEditJson = express.json({ limit: '4mb' })
   app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next() }, createOriginGuard(canonical), (req, res, next) => {
     const large = /^\/(?:v1\/)?imports(?:\/|$)/i.test(req.path)

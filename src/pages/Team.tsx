@@ -3,6 +3,7 @@ import { Plus, Users, Search } from 'lucide-react'
 import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from '../../shared/auth-policy'
 import type { TeamPage } from '../../shared/directory-workspace'
 import { useWorkspaceQuery } from '../workspace-query'
+import { useDebouncedSearch } from '../use-debounced-search'
 import DirectoryPagination, { firstDirectoryPage } from '../components/DirectoryPagination'
 import RegistrationRequests from '../components/RegistrationRequests'
 import AccountDeleteDialog from '../components/AccountDeleteDialog'
@@ -28,7 +29,8 @@ export default function Team({ data, notify, intent }: PageProps) {
   const [deleting, setDeleting] = useState<User | null>(null)
   const [saving, setSaving] = useState(false)
   const scope = `${data.user.id}:${data.user.role}:${data.operationEpoch}:${data.accessScopeVersion}`
-  const params = new URLSearchParams({ status, q: search, limit: '30' })
+  const querySearch = useDebouncedSearch(search)
+  const params = new URLSearchParams({ status, q: querySearch, limit: '30' })
   if (intent?.id) params.set('focusId', intent.id)
   if (paging.cursor) params.set('cursor', paging.cursor)
   const query = useWorkspaceQuery<TeamPage>(`/workspace/team?${params}`, scope, undefined, { onCursorStale: () => { const first = new URLSearchParams(params); first.delete('cursor'); setPaging(firstDirectoryPage()); return `/workspace/team?${first}` } })

@@ -33,6 +33,8 @@ import { TaskCancellationAction, TaskCancellationModal } from '../components/Tas
 import { PriorityBadge, WorkTypeBadge, TaskLegend, ContextHelp } from '../components/TaskSignals'
 import { taskPriority, workKind } from '../task-presentation'
 import { recordTarget, advanceWeek, weeklyRecordState, type WorkTarget, type ReviewRequest } from '../weekly-submission-flow'
+import { weeklyPageQuery } from '../period-query'
+import { useDebouncedSearch } from '../use-debounced-search'
 import {
   Badge,
   Empty,
@@ -64,8 +66,9 @@ const statusTone: Record<string, string> = {
 type WeeklyProps = PageProps & { navigate?: Navigate }
 interface WeeklyControls { value: WeeklyWorkspace | null; setQuery: (query: string) => void }
 export default function Weekly(props: WeeklyProps) {
-  const initial = new URLSearchParams({ weekStart: props.intent?.weekStart || monday(), ownerId: props.intent?.ownerId || (props.data.user.role === 'manager' ? '' : props.data.user.id) }); if (props.intent?.id) initial.set('id', props.intent.id)
-  const [query, setQuery] = useState(initial.toString()), [cursors, setCursors] = useState<string[]>([])
+  // Matches WeeklyBody's first query so entering the page issues a single read.
+  const initial = weeklyPageQuery({ weekStart: props.intent?.weekStart || monday(), ownerId: props.intent?.ownerId || (props.data.user.role === 'manager' ? '' : props.data.user.id), status: props.intent?.status || 'all', q: props.intent?.query || '', source: 'all', includeInactive: false, id: props.intent?.id })
+  const [query, setQuery] = useState(initial), [cursors, setCursors] = useState<string[]>([])
   const firstPath = `/workspace/weekly?${query}`, resource = useWorkspaceQuery<WeeklyWorkspace>(firstPath + (cursors.length ? `&cursor=${encodeURIComponent(cursors.at(-1)!)}` : ''), periodScope(props.data), undefined, { onCursorStale: () => { setCursors([]); return firstPath } })
   const [initialized, setInitialized] = useState(!props.intent?.id)
   useEffect(() => { if (resource.value) setInitialized(true) }, [resource.value])
@@ -100,11 +103,12 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
   const handledIntent = useRef(false)
   const detailSequence = useRef(0)
   useEffect(() => () => { detailSequence.current++ }, [])
+  // The current page filters locally at once; the server read waits for a typing pause.
+  const querySearch = useDebouncedSearch(search)
   useEffect(() => {
     if (!period) return
-    const params = new URLSearchParams({ weekStart: week, ownerId: owner, status: filter, q: search, source: sourceFilter, includeInactive: String(includeInactive) }); if (intent?.id && !handledIntent.current) params.set('id', intent.id)
-    period.setQuery(params.toString())
-  }, [week, owner, filter, search, sourceFilter, includeInactive])
+    period.setQuery(weeklyPageQuery({ weekStart: week, ownerId: owner, status: filter, q: querySearch, source: sourceFilter, includeInactive, id: intent?.id && !handledIntent.current ? intent.id : undefined }))
+  }, [week, owner, filter, querySearch, sourceFilter, includeInactive])
   const [cycleWeek, setCycleWeek] = useState(intent?.cycleWeek || initialWeek)
   const [submissionView, setSubmissionView] = useState<WeeklySubmissionView | null>(null)
   const noSubmissionDuty = submissionView?.week === cycleWeek && submissionView.deadlineAt === null

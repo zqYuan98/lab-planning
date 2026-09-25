@@ -12,7 +12,8 @@ import { historicalPlanDataSql } from './workspace-plan-snapshot.ts'
 import { weekOf, shanghaiDate } from './collaboration-calendar.ts'
 
 const taskField = (name: string) => `json_extract(t.data,'$.${name}')`
-const openFollowup = `EXISTS(SELECT 1 FROM entities f WHERE f.collection='followupRequests' AND json_extract(f.data,'$.taskId')=t.id AND json_extract(f.data,'$.ownerId')=${taskField('ownerId')} AND json_extract(f.data,'$.status')='open')`
+// Pinned: without statistics SQLite picks the generic status index and scans every open request per task.
+const openFollowup = `EXISTS(SELECT 1 FROM entities f INDEXED BY followup_open_task_owner WHERE f.collection='followupRequests' AND json_extract(f.data,'$.taskId')=t.id AND json_extract(f.data,'$.ownerId')=${taskField('ownerId')} AND json_extract(f.data,'$.status')='open')`
 const trackingState = `(SELECT json_extract(k.data,'$.state') FROM entities k WHERE k.collection='taskTrackings' AND k.id=t.id)`
 
 /** Full counts and bounded rows share one authorization/query snapshot. */

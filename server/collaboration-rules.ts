@@ -41,11 +41,11 @@ export function evaluateWorkRisks(store: Store, now = new Date(), actor?: User):
     }
     const baseline = [tracking.enrolledAt, tracking.activeFrom, tracking.reminderBaselineAt, tracking.lastMeaningfulOwnerProgressAt ?? ''].sort().at(-1)!
     if (workdayCount(shanghaiDate(new Date(baseline)), day, overrides) >= settings.staleWorkdays) add('stale', baseline, '', `本人最近有效进展：${tracking.lastMeaningfulOwnerProgressAt ?? '纳入后尚无'}；已满 ${settings.staleWorkdays} 个完整工作日`)
-    const currentRequests = requests ?? store.selectJson<FollowupRequest>(`SELECT data FROM entities WHERE collection='followupRequests' AND json_extract(data,'$.taskId')=? AND json_extract(data,'$.status')='open' AND json_extract(data,'$.ownerId')=? AND json_extract(data,'$.generation')=?`, [task.id, task.ownerId, tracking.generation])
+    const currentRequests = requests ?? store.selectJson<FollowupRequest>(`SELECT data FROM entities INDEXED BY followup_open_task_owner WHERE collection='followupRequests' AND json_extract(data,'$.taskId')=? AND json_extract(data,'$.status')='open' AND json_extract(data,'$.ownerId')=? AND json_extract(data,'$.generation')=?`, [task.id, task.ownerId, tracking.generation])
     for (const request of currentRequests.filter(row => row.taskId === task.id && row.status === 'open' && row.ownerId === task.ownerId && row.generation === tracking.generation)) {
       if (request.dueAt < now.toISOString()) add('followup_overdue', request.id, request.dueAt, `回应期限：${request.dueAt}；${request.requirement}`)
     }
-    const currentEpisodes = episodes ?? store.selectJson<BlockerEpisode>(`SELECT data FROM entities WHERE collection='blockerEpisodes' AND json_extract(data,'$.parentTaskId')=? AND COALESCE(json_extract(data,'$.resolvedAt'),'')='' AND COALESCE(json_extract(data,'$.managementClosedAt'),'')='' AND json_extract(data,'$.ownerId')=? AND json_extract(data,'$.generation')=?`, [task.id, task.ownerId, tracking.generation])
+    const currentEpisodes = episodes ?? store.selectJson<BlockerEpisode>(`SELECT data FROM entities INDEXED BY blocker_parent_owner WHERE collection='blockerEpisodes' AND json_extract(data,'$.parentTaskId')=? AND COALESCE(json_extract(data,'$.resolvedAt'),'')='' AND COALESCE(json_extract(data,'$.managementClosedAt'),'')='' AND json_extract(data,'$.ownerId')=? AND json_extract(data,'$.generation')=?`, [task.id, task.ownerId, tracking.generation])
     for (const episode of currentEpisodes.filter(row => row.parentTaskId === task.id && !row.resolvedAt && !row.managementClosedAt && row.ownerId === task.ownerId && row.generation === tracking.generation)) {
       if (episode.reviewAt && episode.reviewAt > now.toISOString()) continue
       if (episode.sourceType === 'weeklyRecord') {

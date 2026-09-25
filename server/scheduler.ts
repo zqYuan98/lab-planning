@@ -10,6 +10,7 @@ import { runCollaborationDigests } from './collaboration-digests.ts'
 
 interface ScheduleRun extends Entity { key: string; type: 'weekly' | 'monthly'; period: string; reportId: string }
 const SCHEDULE_ID = 'report-schedule'
+const SLOW_TICK_MS = 200
 export function getReportSchedule(store: Store): ReportSchedule {
   return store.transaction(() => store.get<ReportSchedule>('settings', SCHEDULE_ID) || store.insert<ReportSchedule>('settings', {
     id: SCHEDULE_ID, enabled: false, weeklyDay: 5, weeklyTime: '17:00', monthlyDay: 0, monthlyTime: '18:00', timezone: 'Asia/Shanghai'
@@ -58,12 +59,20 @@ export function runScheduledReports(store: Store, now = new Date()): string[] {
 }
 export function startScheduler(store: Store): () => void {
   const submissions = new WeeklySubmissionService(store)
+  // Ticks share the request thread; log the slow steps so stalls can be attributed.
+  const timed = (step: string, run: () => unknown, steps: Record<string, number>) => {
+    const started = performance.now()
+    try { run() } finally { steps[step] = Math.round(performance.now() - started) }
+  }
   const tick = () => {
     const finish = beginRuntimeRun(store, 'scheduler'); let success = true
-    try { submissions.reconcile() } catch (error) { success = false; console.error('周提报核对未完成：', error instanceof Error ? error.message : '未知错误') }
-    try { runScheduledReports(store) } catch (error) { success = false; console.error('报告定时任务未完成：', error instanceof Error ? error.message : '未知错误') }
-    try { runNotificationReminders(store) } catch (error) { success = false; console.error('消息提醒生成失败：', error instanceof Error ? error.name : '未知错误') }
-    try { publishCollaborationEvents(store); runCollaborationDigests(store) } catch (error) { success = false; console.error('工作协作摘要生成失败：', error instanceof Error ? error.name : '未知错误') }
+    const steps: Record<string, number> = {}, started = performance.now()
+    try { timed('weeklyReconcile', () => submissions.reconcile(), steps) } catch (error) { success = false; console.error('周提报核对未完成：', error instanceof Error ? error.message : '未知错误') }
+    try { timed('reports', () => runScheduledReports(store), steps) } catch (error) { success = false; console.error('报告定时任务未完成：', error instanceof Error ? error.message : '未知错误') }
+    try { timed('reminders', () => runNotificationReminders(store), steps) } catch (error) { success = false; console.error('消息提醒生成失败：', error instanceof Error ? error.name : '未知错误') }
+    try { timed('collaboration', () => { publishCollaborationEvents(store); runCollaborationDigests(store) }, steps) } catch (error) { success = false; console.error('工作协作摘要生成失败：', error instanceof Error ? error.name : '未知错误') }
+    const ms = Math.round(performance.now() - started)
+    if (ms >= SLOW_TICK_MS) console.warn(JSON.stringify({ event: 'slow_scheduler_tick', ms, steps }))
     finish(success)
   }
   const interval = setInterval(tick, 30000)

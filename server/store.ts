@@ -1,4 +1,4 @@
-import { DatabaseSync } from 'node:sqlite'
+import { DatabaseSync, type StatementSync } from 'node:sqlite'
 import { randomUUID } from 'node:crypto'
 import { dirname } from 'node:path'
 import { mkdirSync } from 'node:fs'
@@ -14,6 +14,7 @@ import { registerWorkspaceProgressFunctions, workspaceProgressSql, workspaceProg
 import { historicalPlanDataSql } from './workspace-plan-snapshot.ts'
 
 const deliveryStatuses = new Set(['pending', 'sending', 'accepted', 'delivered', 'failed', 'unknown', 'skipped'])
+const STATEMENT_CACHE_SIZE = 500
 interface DeliveryQuery extends DeliveryFilter { dueAt?: string; leaseExpiredAt?: string; order?: 'due' | 'created' | 'oldest'; }
 function deliveryWhere(filter: DeliveryQuery, cursor = true) {
   const clauses = ["d.collection='notificationDeliveries'"], values: string[] = []
@@ -52,9 +53,24 @@ export class Store {
   /** Instrument actual SQLite result rows; query text is never recorded. */
   private readRows(sql: string, values: (string | number | null)[] = []) {
     this.assertTransactionActive()
-    const rows = this.db.prepare(sql).all(...values)
+    const rows = this.statement(sql).all(...values)
     this.readMetrics.sql++; this.readMetrics.returnedRows += rows.length
     return rows
+  }
+  /**
+   * Statement texts are fixed by our query builders (values are always bound), so the set is
+   * small; preparing the long page queries used to cost more than running them. Each call
+   * runs to completion synchronously and no SQL function re-enters the store, so a cached
+   * statement is never reset while in use.
+   */
+  private statements = new Map<string, StatementSync>()
+  private statement(sql: string): StatementSync {
+    let prepared = this.statements.get(sql)
+    if (prepared) { this.statements.delete(sql); this.statements.set(sql, prepared); return prepared }
+    prepared = this.db.prepare(sql)
+    this.statements.set(sql, prepared)
+    if (this.statements.size > STATEMENT_CACHE_SIZE) this.statements.delete(this.statements.keys().next().value!)
+    return prepared
   }
   private parseRow<T>(data: string): T {
     this.readMetrics.parsedRows++; this.readMetrics.parsedBytes += Buffer.byteLength(data)
@@ -96,6 +112,11 @@ export class Store {
   /** Page services select only their authorized rows/projections, retaining JSON read metrics. */
   selectJson<T>(sql: string, values: (string | number | null)[] = []): T[] {
     return this.selectRows(sql, values).map(row => this.parseRow<T>(row.data as string))
+  }
+  /** Query-plan evidence for an internal fixed SELECT; plan rows only, no data. */
+  explainSelect(sql: string, values: (string | number | null)[] = []): string[] {
+    if (!/^\s*(SELECT|WITH)\b/i.test(sql)) throw new Error('Read queries must be SELECT statements')
+    return this.readRows(`EXPLAIN QUERY PLAN ${sql}`, values).map(row => String(row.detail))
   }
   /** Preserve list('events') insertion order, including equal-version snapshot precedence. */
   entityEvents(entityType: string, entityId: string): import('../shared/types.ts').AuditEvent[] {
@@ -179,7 +200,9 @@ export class Store {
       UNION ALL SELECT 'deliveryDecision',d.id FROM entities d JOIN entities r ON r.collection='taskDeliveries' AND r.id=${field('deliveryId','d')} WHERE d.collection='deliveryDecisions' AND ${field('taskId','r')}=?
     )`
     const values: (string|number|null)[] = observerGrant ? [taskId] : [taskId, taskId, manager ? 1 : 0, actorId, taskId, taskId, taskId, taskId, taskId, taskId]
-    const predicates = ["e.collection='events'", observerGrant ? `${field('entityType')}='task' AND ${field('entityId')}=?` : `EXISTS(SELECT 1 FROM related r WHERE r.type=${field('entityType')} AND r.id=${field('entityId')})`]
+    // Drive from the related objects into their events by index; the same rows as testing
+    // EXISTS(related) against every audit event, without scanning the whole history.
+    const predicates = ["e.collection='events'", observerGrant ? `${field('entityType')}='task' AND ${field('entityId')}=?` : `e.rowid IN (SELECT ev.rowid FROM related r JOIN entities ev INDEXED BY event_object_created ON ev.collection='events' AND ${field('entityType', 'ev')}=r.type AND ${field('entityId', 'ev')}=r.id)`]
     if (!manager && !observerGrant) { predicates.push(`(${field('entityType')} NOT IN ('task','weeklyRecord') OR COALESCE(${field('after.ownerId')},${field('before.ownerId')})=?)`); values.push(actorId) }
     if (observerGrant?.historyPolicy !== undefined && observerGrant.historyPolicy !== 'all_history') {
       if (!Array.isArray(observerGrant.excludedFactIds)) predicates.push('0=1')
@@ -194,7 +217,7 @@ export class Store {
     const now = new Date().toISOString()
     const entity = { ...input, id: input.id || randomUUID(), version: 1, createdAt: now, updatedAt: now } as T
     try {
-      this.db.prepare('INSERT INTO entities(collection,id,version,data) VALUES(?,?,?,?)')
+      this.statement('INSERT INTO entities(collection,id,version,data) VALUES(?,?,?,?)')
         .run(collection, entity.id, 1, JSON.stringify(entity))
     } catch (error) {
       const mapped = storageError(error)
@@ -210,7 +233,7 @@ export class Store {
     if (!Number.isInteger(expectedVersion) || expectedVersion !== before.version) throw new HttpError(409, '数据已更新，请刷新后重试', 'VERSION_CONFLICT')
     const entity = { ...before, ...patch, id, createdAt: before.createdAt, updatedAt: new Date().toISOString(), version: before.version + 1 }
     try {
-      const result = this.db.prepare('UPDATE entities SET version=?,data=? WHERE collection=? AND id=? AND version=?')
+      const result = this.statement('UPDATE entities SET version=?,data=? WHERE collection=? AND id=? AND version=?')
         .run(entity.version, JSON.stringify(entity), collection, id, expectedVersion)
       if (result.changes !== 1) throw new HttpError(409, '数据已更新，请刷新后重试', 'VERSION_CONFLICT')
     } catch (error) { throw storageError(error) }
@@ -223,32 +246,32 @@ export class Store {
     if (!Number.isInteger(limit) || limit < 1 || limit > 201 || filter.order !== undefined && !['due', 'created', 'oldest'].includes(filter.order)) throw new HttpError(400, '投递分页参数无效')
     const where = deliveryWhere(filter)
     const order = filter.order === 'due' ? "json_extract(d.data,'$.nextAttemptAt'),d.id" : filter.order === 'oldest' ? "json_extract(d.data,'$.createdAt'),d.id" : "json_extract(d.data,'$.createdAt') DESC,d.id DESC"
-    return this.db.prepare(`SELECT d.data FROM entities d WHERE ${where.sql} ORDER BY ${order} LIMIT ?`).all(...where.values, limit).map(row => JSON.parse(row.data as string) as NotificationDelivery)
+    return this.statement(`SELECT d.data FROM entities d WHERE ${where.sql} ORDER BY ${order} LIMIT ?`).all(...where.values, limit).map(row => JSON.parse(row.data as string) as NotificationDelivery)
   }
   deliveryCounts(filter: DeliveryFilter = {}): Partial<Record<DeliveryStatus, number>> {
     this.assertTransactionActive()
     const where = deliveryWhere(filter, false)
-    return Object.fromEntries(this.db.prepare(`SELECT json_extract(d.data,'$.status') AS status,COUNT(*) AS count FROM entities d WHERE ${where.sql} GROUP BY json_extract(d.data,'$.status')`).all(...where.values).map(row => [String(row.status), Number(row.count)]))
+    return Object.fromEntries(this.statement(`SELECT json_extract(d.data,'$.status') AS status,COUNT(*) AS count FROM entities d WHERE ${where.sql} GROUP BY json_extract(d.data,'$.status')`).all(...where.values).map(row => [String(row.status), Number(row.count)]))
   }
   deliveryOldest(status: 'pending' | 'accepted', dueAt?: string): string | null {
     this.assertTransactionActive()
     const where = deliveryWhere({ status, dueAt })
     const field = status === 'accepted' ? 'acceptedAt' : 'createdAt'
-    const row = this.db.prepare(`SELECT MIN(json_extract(d.data,'$.${field}')) AS oldest FROM entities d WHERE ${where.sql}`).get(...where.values)
+    const row = this.statement(`SELECT MIN(json_extract(d.data,'$.${field}')) AS oldest FROM entities d WHERE ${where.sql}`).get(...where.values)
     return typeof row?.oldest === 'string' ? row.oldest : null
   }
   operationalCounts(collection: 'nativeCallbackInbox' | 'nativeOperations' | 'reminderOccurrences'): Record<string, number> {
     this.assertTransactionActive()
     if (!['nativeCallbackInbox', 'nativeOperations', 'reminderOccurrences'].includes(collection)) throw new HttpError(400, '诊断集合无效')
-    if (collection === 'reminderOccurrences') return Object.fromEntries(this.db.prepare("SELECT CASE WHEN COALESCE(json_extract(data,'$.cancelledReason'),'')<>'' THEN 'cancelled' ELSE 'recorded' END AS state,COUNT(*) AS count FROM entities WHERE collection=? GROUP BY state").all(collection).map(row => [String(row.state), Number(row.count)]))
-    return Object.fromEntries(this.db.prepare("SELECT COALESCE(json_extract(data,'$.status'),'other') AS status,COUNT(*) AS count FROM entities WHERE collection=? GROUP BY json_extract(data,'$.status')").all(collection).map(row => [String(row.status), Number(row.count)]))
+    if (collection === 'reminderOccurrences') return Object.fromEntries(this.statement("SELECT CASE WHEN COALESCE(json_extract(data,'$.cancelledReason'),'')<>'' THEN 'cancelled' ELSE 'recorded' END AS state,COUNT(*) AS count FROM entities WHERE collection=? GROUP BY state").all(collection).map(row => [String(row.state), Number(row.count)]))
+    return Object.fromEntries(this.statement("SELECT COALESCE(json_extract(data,'$.status'),'other') AS status,COUNT(*) AS count FROM entities WHERE collection=? GROUP BY json_extract(data,'$.status')").all(collection).map(row => [String(row.status), Number(row.count)]))
   }
   delete(collection: string, id: string, expectedVersion: number): void {
     const before = this.get<Entity>(collection, id)
     if (!before) throw new HttpError(404, '记录不存在')
     if (!Number.isInteger(expectedVersion) || expectedVersion !== before.version) throw new HttpError(409, '数据已更新，请刷新后重试', 'VERSION_CONFLICT')
     try {
-      const result = this.db.prepare('DELETE FROM entities WHERE collection=? AND id=? AND version=?').run(collection, id, expectedVersion)
+      const result = this.statement('DELETE FROM entities WHERE collection=? AND id=? AND version=?').run(collection, id, expectedVersion)
       if (result.changes !== 1) throw new HttpError(409, '数据已更新，请刷新后重试', 'VERSION_CONFLICT')
     } catch (error) { throw storageError(error) }
   }
@@ -257,7 +280,7 @@ export class Store {
     this.assertTransactionActive()
     if (!entity.id || !Number.isInteger(entity.version) || entity.version < 1 || !Number.isFinite(Date.parse(entity.createdAt)) || !Number.isFinite(Date.parse(entity.updatedAt))) throw new HttpError(400, '恢复记录缺少有效标识或版本时间')
     try {
-      this.db.prepare('INSERT INTO entities(collection,id,version,data) VALUES(?,?,?,?)').run(collection, entity.id, entity.version, JSON.stringify(entity))
+      this.statement('INSERT INTO entities(collection,id,version,data) VALUES(?,?,?,?)').run(collection, entity.id, entity.version, JSON.stringify(entity))
     } catch (error) {
       const mapped = storageError(error)
       if (mapped !== error) throw mapped
@@ -289,7 +312,7 @@ export class Store {
     this.assertTransactionActive()
     if (this.depth === 0 || incoming.id !== 'weekly-submission-rule' || !this.isUnusedWeeklyRule(before)) throw new HttpError(409, '默认周提报规则已使用或变化，请重新预览')
     try {
-      const result = this.db.prepare('UPDATE entities SET version=?,data=? WHERE collection=? AND id=? AND version=?')
+      const result = this.statement('UPDATE entities SET version=?,data=? WHERE collection=? AND id=? AND version=?')
         .run(incoming.version, JSON.stringify(incoming), 'weeklyRules', before.id, before.version)
       if (result.changes !== 1) throw new HttpError(409, '默认周提报规则已变化，请重新预览')
     } catch (error) { throw storageError(error) }
@@ -326,5 +349,5 @@ export class Store {
       }
     })
   }
-  close() { this.db.close() }
+  close() { this.statements.clear(); this.db.close() }
 }

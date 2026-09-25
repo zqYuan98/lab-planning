@@ -3,6 +3,7 @@ import type { ProjectsPage } from '../../shared/directory-workspace'
 import DirectoryAccountPicker, { directoryAccountName } from '../components/DirectoryAccountPicker'
 import DirectoryPagination, { firstDirectoryPage } from '../components/DirectoryPagination'
 import { useWorkspaceQuery } from '../workspace-query'
+import { useDebouncedSearch } from '../use-debounced-search'
 import { Archive, FolderKanban, Plus, Search } from 'lucide-react'
 import type { Project } from '../../shared/types'
 import { api, json, finishSaved } from '../api'
@@ -29,7 +30,8 @@ export default function Projects({ data, notify, intent }: PageProps) {
   const manager = data.user.role === 'manager',
     project = editing && editing !== 'new' ? editing : null
   const scope = `${data.user.id}:${data.user.role}:${data.operationEpoch}:${data.accessScopeVersion}`
-  const params = new URLSearchParams({ status: showArchived ? 'all' : 'active', q: search, limit: '30' })
+  const querySearch = useDebouncedSearch(search)
+  const params = new URLSearchParams({ status: showArchived ? 'all' : 'active', q: querySearch, limit: '30' })
   if (intent?.id) params.set('focusId', intent.id)
   if (paging.cursor) params.set('cursor', paging.cursor)
   const query = useWorkspaceQuery<ProjectsPage>(`/workspace/projects?${params}`, scope, undefined, { onCursorStale: () => { const first = new URLSearchParams(params); first.delete('cursor'); setPaging(firstDirectoryPage()); return `/workspace/projects?${first}` } })

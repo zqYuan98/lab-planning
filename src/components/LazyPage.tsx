@@ -7,7 +7,7 @@ export const PageReloadContext = createContext<(() => void) | undefined>(undefin
 
 export function retryableLazy<Props extends object>(importer: () => Promise<{ default: ComponentType<Props> }>, options?: { fallback: (children: ReactNode, props: Props) => ReactNode }) {
   const resource = createLazyResource(importer)
-  return function LazyPage(props: Props) {
+  function LazyPage(props: Props) {
     const [attempt, setAttempt] = useState(0)
     const onReload = useContext(PageReloadContext)
     const renderFallback = options ? (children: ReactNode) => options.fallback(children, props) : undefined
@@ -21,4 +21,7 @@ export function retryableLazy<Props extends object>(importer: () => Promise<{ de
       </Suspense>
     </PageErrorBoundary>
   }
+  /** Start the chunk download early; failures surface through the normal render path. */
+  const preload = () => { void resource.load().catch(() => {}) }
+  return Object.assign(LazyPage, { preload })
 }

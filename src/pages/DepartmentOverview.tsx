@@ -2,6 +2,7 @@ import { openTask } from '../navigation';
 import { useState } from "react";
 import type { DepartmentOverviewResponse, OverviewDrill, OverviewRow } from "../../shared/overview-workspace";
 import { useWorkspaceQuery } from "../workspace-query";
+import { useDebouncedSearch } from "../use-debounced-search";
 import {
   Users,
   List,
@@ -93,7 +94,8 @@ export default function DepartmentOverview({
     }));
     setSelectedView("");
   }
-  const parameters = new URLSearchParams({ period: config.period, date: config.date, includeInactive: String(!!config.includeInactive), ownerId: config.ownerId, projectId: config.projectId, status: config.status, q: config.query, riskOnly: String(config.riskOnly), sort: config.sort, limit: '50' });
+  const querySearch = useDebouncedSearch(config.query);
+  const parameters = new URLSearchParams({ period: config.period, date: config.date, includeInactive: String(!!config.includeInactive), ownerId: config.ownerId, projectId: config.projectId, status: config.status, q: querySearch, riskOnly: String(config.riskOnly), sort: config.sort, limit: '50' });
   if (cursors.at(-1)) parameters.set('cursor', cursors.at(-1)!);
   const query = useWorkspaceQuery<DepartmentOverviewResponse>(`/workspace/overview/department?${parameters}`, `${data.user.id}:${data.operationEpoch}:${data.accessScopeVersion}`, undefined, { onCursorStale: () => { const first = new URLSearchParams(parameters); first.delete('cursor'); setCursors(['']); return `/workspace/overview/department?${first}` } });
   const reloadFirst = () => { const first = new URLSearchParams(parameters); first.delete('cursor'); setCursors(['']); return query.reload(`/workspace/overview/department?${first}`) };

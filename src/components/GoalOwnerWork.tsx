@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { GoalOwnerProgress, GoalOwnerTasks } from '../../shared/goal-owner'
 import { useWorkspaceQuery } from '../workspace-query'
+import { useDebouncedSearch } from '../use-debounced-search'
 import { Badge } from '../ui'
 
 const statuses: Record<string, string> = { todo: '待开始', planned: '待开始', doing: '进行中', blocked: '受阻', done: '已完成', not_done: '未完成' }
@@ -11,7 +12,8 @@ export default function GoalOwnerWork({ planId, scope }: { planId: string; scope
 }
 function OwnerTasks({ planId, scope }: { planId: string; scope: string }) {
   const [q, setQuery] = useState(''), [cursor, setCursor] = useState(''), [taskId, setTaskId] = useState('')
-  const firstPath = `/workspace/goal-owner/plans/${encodeURIComponent(planId)}/tasks?limit=10&q=${encodeURIComponent(q)}`
+  const querySearch = useDebouncedSearch(q)
+  const firstPath = `/workspace/goal-owner/plans/${encodeURIComponent(planId)}/tasks?limit=10&q=${encodeURIComponent(querySearch)}`
   const query = useWorkspaceQuery<GoalOwnerTasks>(`${firstPath}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, scope, undefined, { onCursorStale: () => { setCursor(''); return firstPath } })
   const refresh = () => { setCursor(''); setTaskId(''); void query.reload(firstPath).catch(() => {}) }
   return <section className="submission-card" aria-label="目标关联任务与周进展">
