@@ -48,8 +48,9 @@ if (mode === 'setup') {
   assert.deepEqual(Array.from(bytes.slice(0, 2)), [80, 75])
 } else {
   await request('/auth/login', credentials)
-  const data = await request('/bootstrap')
-  assert.equal(data.projects.filter(project => project.code === 'CONTAINER-PERSISTENCE').length, 1)
-  assert.equal(data.reports.length, 1)
+  const projects = await request('/workspace/projects?q=CONTAINER-PERSISTENCE')
+  const reports = await request('/workspace/reports')
+  assert.equal(projects.items.filter(project => project.code === 'CONTAINER-PERSISTENCE').length, 1)
+  assert.equal(reports.total, 1)
 }
 console.log(`Deployment ${mode}: static assets, authenticated API, SQLite ${mode === 'setup' ? 'writes and Word export' : 'persistence after restart'} passed.`)

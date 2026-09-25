@@ -6,7 +6,7 @@ import type { AuditEvent, Entity, User } from '../shared/types.ts'
 import { createApp } from '../server/app.ts'
 import { createSession, type StoredUser } from '../server/auth.ts'
 import { exportBusinessData, previewRestore, restoreBusinessData } from '../server/data-transfer.ts'
-import { Domain } from '../server/domain.ts'
+import { TestDomain as Domain } from './fixtures/legacy-domain.ts'
 import { createIntegrationToken } from '../server/integration-auth.ts'
 import { Store } from '../server/store.ts'
 
@@ -272,7 +272,7 @@ test('HTTP preview/delete enforce authentication, manager access, same origin, v
   const removed = await send(`/users/${member.id}`, managerCookie, 'DELETE', request(member))
   assert.equal(removed.status, 200)
   assert.deepEqual(await removed.json(), { deleted: true, id: member.id })
-  assert.equal((await send('/bootstrap', memberCookie)).status, 401)
+  assert.equal((await send('/workspace', memberCookie)).status, 401)
   assert.equal((await send(previewPath, managerCookie)).status, 404)
   assert.equal(domain.bootstrap(manager).users.some(user => user.id === member.id), false)
 })

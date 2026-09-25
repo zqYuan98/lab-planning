@@ -53,7 +53,7 @@ export default function WorkRegister({ data, refresh, notify, navigate }: PagePr
       return [{ ...row, task, title: task.title, dueDate: task.dueDate, progress: task.currentProgress || row.progress }]
     })
     return { ...page, items, result: { ...page.result, rows: items } }
-  })
+  }, { onCursorStale: () => { setCursors([]); return `/workspace/register?${selectionKey}&limit=50` } })
   useEffect(() => { setCursors([]) }, [selectionKey, data.user.id, data.operationEpoch, data.accessScopeVersion])
   const mounted = useRef(true), reloadSequence = useRef(0)
   useEffect(() => {

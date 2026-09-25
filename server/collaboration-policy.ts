@@ -3,6 +3,7 @@ import type { MonthlyPlan, Project, Task, User } from '../shared/types.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
 import { isActiveTask } from '../shared/task-state.ts'
 import { HttpError, type Store } from './store.ts'
+import { readWorkCalendar, workingDay } from './work-calendar.ts'
 
 export const COLLABORATION_SETTINGS_ID = 'collaboration'
 export function readCollaborationSettings(store: Store): CollaborationSettings {
@@ -60,10 +61,7 @@ export function taskTrackingEligible(store: Store, task: Task, _now = new Date()
 }
 export function shanghaiDay(time: Date): string { return new Date(time.getTime() + 8 * 3600000).toISOString().slice(0, 10) }
 export function collaborationWorkday(store: Store, day: string): boolean {
-  const overrides = readCollaborationSettings(store).calendarOverrides
-  if (Object.hasOwn(overrides, day)) return overrides[day]
-  const weekday = new Date(`${day}T00:00:00Z`).getUTCDay()
-  return weekday !== 0 && weekday !== 6
+  return workingDay(day, readWorkCalendar(store).overrides)
 }
 export function defaultFollowupDueAt(store: Store, now: Date): string {
   const day = new Date(`${shanghaiDay(now)}T00:00:00Z`)

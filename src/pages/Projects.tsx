@@ -1,9 +1,11 @@
 import { useState } from 'react'
-import { canUseAccount } from '../../shared/auth-policy'
-import { accountDisplayName, assignmentAccounts } from '../account-options'
+import type { ProjectsPage } from '../../shared/directory-workspace'
+import DirectoryAccountPicker, { directoryAccountName } from '../components/DirectoryAccountPicker'
+import DirectoryPagination, { firstDirectoryPage } from '../components/DirectoryPagination'
+import { useWorkspaceQuery } from '../workspace-query'
 import { Archive, FolderKanban, Plus, Search } from 'lucide-react'
 import type { Project } from '../../shared/types'
-import { api, json } from '../api'
+import { api, json, finishSaved } from '../api'
 import '../portfolio.css'
 import {
   Badge,
@@ -12,10 +14,9 @@ import {
   Form,
   Modal,
   PageHeader,
-  nameOf,
   type PageProps,
 } from '../ui'
-export default function Projects({ data, refresh, notify, intent }: PageProps) {
+export default function Projects({ data, notify, intent }: PageProps) {
   const [editing, setEditing] = useState<Project | 'new' | null>(
       intent?.action === 'create' && data.user.role === 'manager'
         ? 'new'
@@ -23,18 +24,18 @@ export default function Projects({ data, refresh, notify, intent }: PageProps) {
     ),
     [archive, setArchive] = useState<Project | null>(null),
     [search, setSearch] = useState(intent?.query || ''),
-    [showArchived, setShowArchived] = useState(
-      data.projects.some(
-        (project) => project.id === intent?.id && project.status === 'archived',
-      ),
-    )
+    [showArchived, setShowArchived] = useState(!!intent?.id),
+    [paging, setPaging] = useState(firstDirectoryPage)
   const manager = data.user.role === 'manager',
     project = editing && editing !== 'new' ? editing : null
-  const projects = data.projects.filter(
-    (item) =>
-      (showArchived || item.status === 'active') &&
-      `${item.name}${item.code}`.includes(search),
-  )
+  const scope = `${data.user.id}:${data.user.role}:${data.operationEpoch}:${data.accessScopeVersion}`
+  const params = new URLSearchParams({ status: showArchived ? 'all' : 'active', q: search, limit: '30' })
+  if (intent?.id) params.set('focusId', intent.id)
+  if (paging.cursor) params.set('cursor', paging.cursor)
+  const query = useWorkspaceQuery<ProjectsPage>(`/workspace/projects?${params}`, scope, undefined, { onCursorStale: () => { const first = new URLSearchParams(params); first.delete('cursor'); setPaging(firstDirectoryPage()); return `/workspace/projects?${first}` } })
+  const reloadFirst = async () => { const first = new URLSearchParams(params); first.delete('cursor'); setPaging(firstDirectoryPage()); await query.reload(`/workspace/projects?${first}`) }
+  const projects = query.value?.items ?? []
+  const focus = query.value?.focus
   return (
     <>
       <PageHeader
@@ -60,18 +61,22 @@ export default function Projects({ data, refresh, notify, intent }: PageProps) {
             aria-label="搜索项目"
             placeholder="搜索项目名称或编号"
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => { setSearch(event.target.value); setPaging(firstDirectoryPage()) }}
           />
         </label>
         <label className="checkbox-label">
           <input
             type="checkbox"
             checked={showArchived}
-            onChange={(event) => setShowArchived(event.target.checked)}
+            onChange={(event) => { setShowArchived(event.target.checked); setPaging(firstDirectoryPage()) }}
           />
           显示已归档项目
         </label>
       </div>
+      {query.error && <p className="error" role="alert">{query.error}<button className="text-button" onClick={() => { setPaging(firstDirectoryPage()); void reloadFirst().catch(() => {}) }}>重新读取</button></p>}
+      {query.loading && !query.value && <p role="status">正在读取项目…</p>}
+      {focus && !projects.some(row => row.id === focus.id) && <div className="panel navigation-highlight"><strong>{focus.name}</strong><p>{directoryAccountName(focus.owner)} · {focus.status === 'active' ? '进行中' : '已归档'}</p>{manager && <button className="button secondary" onClick={() => setEditing(focus)}>编辑定位项目</button>}</div>}
+      {query.value && <DirectoryPagination total={query.value.total} nextCursor={query.value.nextCursor} paging={paging} setPaging={setPaging} loading={query.loading} />}
       {projects.length ? (
         <div className="panel">
           <div className="table-scroll" role="region" aria-label="项目档案表，可横向滚动" tabIndex={0}>
@@ -111,15 +116,9 @@ export default function Projects({ data, refresh, notify, intent }: PageProps) {
                         <p className="cell-description">{item.description}</p>
                       )}
                     </td>
-                    <td>{nameOf(data, item.ownerId)}</td>
+                    <td>{directoryAccountName(item.owner)}</td>
                     <td>
-                      {
-                        data.plans.filter(
-                          (plan) =>
-                            plan.projectId === item.id &&
-                            plan.status === 'published',
-                        ).length
-                      }{' '}
+                      {item.publishedPlanCount}{' '}
                       项
                     </td>
                     <td>
@@ -172,7 +171,7 @@ export default function Projects({ data, refresh, notify, intent }: PageProps) {
             onCancel={() => setEditing(null)}
             onSubmit={async (event) => {
               const values = Object.fromEntries(new FormData(event.currentTarget))
-              await api(
+              const saved = await api<Project>(
                 project ? `/projects/${project.id}` : '/projects',
                 json(
                   {
@@ -183,8 +182,8 @@ export default function Projects({ data, refresh, notify, intent }: PageProps) {
                   project ? 'PATCH' : 'POST',
                 ),
               )
-              await refresh()
               notify('项目资料已保存')
+              await finishSaved(async () => { await reloadFirst(); setEditing(null) }, saved.version)
               setEditing(null)
             }}
           >
@@ -205,19 +204,9 @@ export default function Projects({ data, refresh, notify, intent }: PageProps) {
                 placeholder="例如 LAB-2026-01"
               />
             </Field>
-            <Field label="项目负责人">
-              <select
-                name="ownerId"
-                defaultValue={project?.ownerId || data.user.id}
-              >
-                {assignmentAccounts(data.users, project ? [project.ownerId] : [])
-                  .map((user) => (
-                    <option key={user.id} value={user.id} disabled={!canUseAccount(user)}>
-                      {accountDisplayName(user)}
-                    </option>
-                  ))}
-              </select>
-            </Field>
+            <div className="field"><span>项目负责人</span>
+              <DirectoryAccountPicker name="ownerId" defaultSelectedIds={[project?.ownerId || data.user.id]} scope={`${scope}:${project?.id ?? 'new'}`} />
+            </div>
             <Field label="项目说明">
               <textarea
                 name="description"
@@ -246,7 +235,7 @@ export default function Projects({ data, refresh, notify, intent }: PageProps) {
             onCancel={() => setArchive(null)}
             submitLabel={archive.status === 'active' ? '确认归档' : '确认恢复'}
             onSubmit={async () => {
-              await api(
+              const saved = await api<Project>(
                 `/projects/${archive.id}`,
                 json(
                   {
@@ -256,8 +245,8 @@ export default function Projects({ data, refresh, notify, intent }: PageProps) {
                   'PATCH',
                 ),
               )
-              await refresh()
               notify('项目状态已更新')
+              await finishSaved(async () => { await reloadFirst(); setArchive(null) }, saved.version)
               setArchive(null)
             }}
           >

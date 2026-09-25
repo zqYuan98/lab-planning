@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { once } from 'node:events'
 import type { AddressInfo } from 'node:net'
 import { Store } from '../server/store.ts'
-import { Domain } from '../server/domain.ts'
+import { TestDomain as Domain } from './fixtures/legacy-domain.ts'
 import { createApp } from '../server/app.ts'
 import { isActiveTask } from '../shared/task-state.ts'
 import { buildWorkspace, summarizeWorkRows } from '../src/overview-workspace-data.ts'
@@ -205,7 +205,7 @@ test('HTTP cancellation requires authentication and manager authority, and drops
     const response = await request(`/tasks/${task.id}/cancel`, { version: task.version, reason: '已明确不再使用' })
     assert.equal(response.status, 200)
     assert.equal(response.data.cancellation.reason, '已明确不再使用')
-    assert.equal(((await request('/bootstrap')).data as Bootstrap).tasks.some(item => item.id === task.id), false)
+    assert.equal(((await request('/workspace/tasks')).data.items as Task[]).some(item => item.id === task.id), false)
     assert.equal((await request(`/tasks/${task.id}`, { version: response.data.version, title: '复活' }, 'PATCH')).status, 409)
   } finally {
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))

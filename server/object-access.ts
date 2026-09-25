@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { AuditEvent, Bootstrap, Entity, MonthlyPlan, Project, Task, User, WeeklyRecord } from '../shared/types.ts'
+import type { Bootstrap, Entity, MonthlyPlan, Project, Task, User, WeeklyRecord } from '../shared/types.ts'
 import type { AuthorizedProjectSummary, AuthorizedTaskView, AuthorizedWorkResponse, ObjectCapability, ObjectGrant, ObjectType, ScopedReport, ScopeFact } from '../shared/object-access.ts'
 import type { DeliveryDecision, DeliverySeries } from '../shared/deliveries.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
@@ -25,7 +25,18 @@ export function readScopeVersion(store: Store, actor: User): string {
   const current = liveObjectActor(store, actor)
   const now = Date.now()
   const grants = store.list<ObjectGrant>('objectGrants').filter(grant => grant.subjectId === current.id).map(grant => [grant.id, grant.version, !grant.revokedAt && (!grant.expiresAt || Date.parse(grant.expiresAt) > now)]).sort((a, b) => String(a[0]).localeCompare(String(b[0])))
-  return createHash('sha256').update(JSON.stringify([current.id, current.version, current.role, grants])).digest('hex')
+  // Start with owned goals. Unary + on the TEXT id removes affinity so SQLite can seek
+  // the JSON-expression task index; identifiers themselves remain unchanged strings.
+  const derived = current.role === 'member' ? store.selectRows(`SELECT
+    (SELECT json_group_array(id) FROM (SELECT id FROM entities WHERE collection='plans' AND json_extract(data,'$.ownerId')=? AND json_extract(data,'$.status')!='merged' AND json_extract(data,'$.visibility') IS NULL ORDER BY id)) AS plans,
+    (SELECT json_group_array(json_array(id,goal,owner,memberAvailable)) FROM (
+      SELECT t.id AS id,p.id AS goal,json_extract(t.data,'$.ownerId') AS owner,
+        COALESCE(json_extract(u.data,'$.active')=1 AND json_extract(u.data,'$.role')='member' AND (json_extract(u.data,'$.registrationStatus') IS NULL OR json_extract(u.data,'$.registrationStatus')='approved'),0) AS memberAvailable
+      FROM entities p CROSS JOIN entities t LEFT JOIN entities u ON u.collection='users' AND u.id=json_extract(t.data,'$.ownerId')
+      WHERE p.collection='plans' AND json_extract(p.data,'$.ownerId')=? AND json_extract(p.data,'$.status')!='merged' AND json_extract(p.data,'$.visibility') IS NULL
+        AND t.collection='tasks' AND json_extract(t.data,'$.monthlyPlanId')=+p.id AND json_extract(t.data,'$.cancellation') IS NULL ORDER BY t.id)) AS tasks,
+    (SELECT version FROM entities WHERE collection='settings' AND id='weekly-review-delegation') AS delegation`, [current.id, current.id])[0] : null
+  return createHash('sha256').update(JSON.stringify([current.id, current.version, current.role, grants, ...(derived ? [derived] : [])])).digest('hex')
 }
 export const scopeVersion = readScopeVersion
 const collections: Record<ObjectType, string> = { task: 'tasks', project_summary: 'projects', scoped_report: 'scopedReports' }
@@ -72,7 +83,7 @@ export function historicalBoundary(store: Store, type: ObjectType, id: string): 
   return [
     ...store.list<WeeklyRecord>('weeklyRecords').filter(row => row.taskId === id).map(row => `weeklyRecord:${row.id}`),
     ...store.list<Entity & { taskId: string }>('taskDeliveries').filter(row => row.taskId === id).map(row => `delivery:${row.id}`),
-    ...store.list<AuditEvent>('events').filter(row => row.entityType === 'task' && row.entityId === id).map(row => `history:${row.id}`),
+    ...store.entityEvents('task', id).map(row => `history:${row.id}`),
   ].sort()
 }
 type DeliveryRow = Entity & { taskId: string; seriesId: string; revision: number; submittedAt: string; actualOutcome: string; evidenceRefs: unknown[]; acceptanceCriteriaSnapshot: string }
@@ -85,7 +96,7 @@ export class ObjectAccessService {
     const privileged = actor.role !== 'observer', evidence = privileged || !!activeGrant(this.store, actor, 'task', id, 'read_evidence')
     const safeTask: Task = { id: task.id, version: task.version, createdAt: task.createdAt, updatedAt: task.updatedAt, title: task.title, monthlyPlanId: task.monthlyPlanId, ownerId: task.ownerId, description: task.description, dueDate: task.dueDate, status: task.status, isTemporary: task.isTemporary, temporaryReason: '', currentProgress: task.currentProgress ?? '', requestedOutcome: task.requestedOutcome ?? '', nextAction: task.nextAction ?? '', ...(task.priority ? { priority: task.priority } : {}), ...(task.cancellation ? { cancellation: { ...task.cancellation, reason: '' } } : {}), ...(evidence && task.evidenceUrl ? { evidenceUrl: task.evidenceUrl } : {}) }
     const weeklyRecords = this.store.list<WeeklyRecord>('weeklyRecords').filter(row => row.taskId === id && row.submitted && !row.deletion && (privileged || !!grant && historyVisible(grant, row, 'weeklyRecord'))).map(row => ({ id: row.id, version: row.version, createdAt: row.createdAt, updatedAt: row.updatedAt, taskId: row.taskId, monthlyPlanId: row.monthlyPlanId, ownerId: row.ownerId, weekStart: row.weekStart, commitment: row.commitment, actualOutcome: row.actualOutcome, evidenceUrl: evidence ? row.evidenceUrl : '', blocker: row.blocker, nextAction: row.nextAction, status: row.status, submitted: true }))
-    const history = this.store.list<AuditEvent>('events').filter(row => row.entityType === 'task' && row.entityId === id && (privileged || !!grant && historyVisible(grant, row))).map(row => ({ id: row.id, action: row.action, occurredAt: row.createdAt, actorName: this.store.get<User>('users', row.actorId)?.name ?? '成员' }))
+    const history = this.store.entityEvents('task', id).filter(row => privileged || !!grant && historyVisible(grant, row)).map(row => ({ id: row.id, action: row.action, occurredAt: row.createdAt, actorName: this.store.get<User>('users', row.actorId)?.name ?? '成员' }))
     const deliveries = this.store.list<DeliveryRow>('taskDeliveries').filter(row => row.taskId === id && (privileged || !!grant && historyVisible(grant, { ...row, occurredAt: row.submittedAt }, 'delivery'))).map(row => {
       const decisions = this.store.list<DeliveryDecision>('deliveryDecisions').filter(decision => decision.deliveryId === row.id)
       const superseded = new Set(decisions.map(decision => decision.supersedesDecisionId))

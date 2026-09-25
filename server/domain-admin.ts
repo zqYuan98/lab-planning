@@ -1,5 +1,5 @@
 import { assertBusinessActor } from './object-access.ts'
-import type { AnnualGoal, Entity, Project, User } from '../shared/types.ts'
+import type { AnnualGoal, Entity, MonthlyPlan, Project, User } from '../shared/types.ts'
 import { canUseAccount, registrationApproved } from '../shared/auth-policy.ts'
 import { checkPassword, hashPassword, safeUser, type StoredUser } from './auth.ts'
 import { HttpError } from './store.ts'
@@ -158,7 +158,7 @@ export class AdminService extends DomainBase {
     actor = assertBusinessActor(this.store, actor)
     manager(actor)
     return this.store.transaction(() => {
-      const goal = this.store.insert<AnnualGoal>('annualGoals', { title: text(input.title, '年度目标', true, 300), year: number(input.year, '年份', 1900, 2200, true), target: text(input.target, '目标要求'), progress: number(input.progress ?? 0, '进展', 0, 100), description: text(input.description, '说明', false), ownerId: this.activeUser(input.ownerId ?? actor.id).id, status: 'active' })
+      const goal = this.store.insert<AnnualGoal>('annualGoals', { title: text(input.title, '年度目标', true, 300), year: number(input.year, '年份', 1900, 2200, true), target: text(input.target, '目标要求'), progress: number(input.progress ?? 0, '进展', 0, 100), ...(input.progressMode !== undefined ? { progressMode: choice(input.progressMode, ['manual', 'linked'], '进展方式') } : {}), description: text(input.description, '说明', false), ownerId: this.activeUser(input.ownerId ?? actor.id).id, status: 'active' })
       this.audit(actor, 'annualGoal', goal.id, 'create', null, goal)
       return goal
     })
@@ -171,6 +171,8 @@ export class AdminService extends DomainBase {
       const patch: Partial<AnnualGoal> = {}
       if (input.title !== undefined) patch.title = text(input.title, '年度目标', true, 300)
       if (input.year !== undefined) patch.year = number(input.year, '年份', 1900, 2200, true)
+      if (patch.year !== undefined && patch.year !== before.year && this.store.list<MonthlyPlan>('plans').some(plan => plan.annualGoalId === id && Number(plan.month.slice(0, 4)) !== patch.year)) throw new HttpError(409, '此年度目标已有其他年份的月度关联，请先调整关联')
+      if (input.progressMode !== undefined) patch.progressMode = choice(input.progressMode, ['manual', 'linked'], '进展方式')
       if (input.target !== undefined) patch.target = text(input.target, '目标要求')
       if (input.progress !== undefined) patch.progress = number(input.progress, '进展', 0, 100)
       if (input.description !== undefined) patch.description = text(input.description, '说明', false)

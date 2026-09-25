@@ -1,4 +1,13 @@
-import { useState } from 'react'
+import AnnualGoalPicker from '../components/AnnualGoalPicker'
+import GoalOwnerWork from '../components/GoalOwnerWork'
+import { draftText } from '../draft-recovery'
+import { useEffect, useRef, useState } from 'react'
+import type { MonthlyScope, MonthlyWorkspace, PeriodReferences, PublicationSummary } from '../../shared/period-workspace'
+import type { WorkspacePage } from '../../shared/workspace-query'
+import type { Publication } from '../../shared/types'
+import { useWorkspaceQuery } from '../workspace-query'
+import { captureMutationContext } from '../mutation-response'
+import { mergePeriod, periodScope, PeriodPager, PeriodEditorDirectory, usePeriodCandidates } from '../period-workspace'
 import { canUseAccount } from '../../shared/auth-policy'
 import { accountDisplayName, assignmentAccounts, visibleMonthlyPlan } from '../account-options'
 import WorkflowGuide from '../components/WorkflowGuide'
@@ -56,7 +65,23 @@ const tones: Record<string, string> = {
   published: 'green',
   merged: 'neutral',
 }
-export default function Monthly({ data, refresh, notify, intent, navigate }: PageProps & { navigate?: Navigate }) {
+type MonthlyProps = PageProps & { navigate?: Navigate }
+interface MonthlyControls { value: MonthlyWorkspace | null; setQuery: (query: string) => void; reload: () => Promise<void> }
+export default function Monthly(props: MonthlyProps) {
+  const initial = new URLSearchParams({ month: props.intent?.month || currentMonth() }); if (props.intent?.id) initial.set('id', props.intent.id)
+  const [query, setQuery] = useState(initial.toString()), [cursors, setCursors] = useState<string[]>([])
+  const firstPath = `/workspace/monthly?${query}`, path = firstPath + (cursors.length ? `&cursor=${encodeURIComponent(cursors.at(-1)!)}` : '')
+  const resource = useWorkspaceQuery<MonthlyWorkspace>(path, periodScope(props.data), undefined, { onCursorStale: () => { setCursors([]); return firstPath } })
+  const [initialized, setInitialized] = useState(!props.intent?.id)
+  useEffect(() => { if (resource.value) setInitialized(true) }, [resource.value])
+  const data = { ...props.data, users: resource.value?.references.users ?? [props.data.user], projects: resource.value?.references.projects ?? [], plans: resource.value?.references.plans ?? [], tasks: [], weeklyRecords: [], publications: [] }
+  const reload = async () => { setCursors([]); await resource.reload(firstPath) }
+  if (!initialized) return resource.error ? <div className="error" role="alert">{resource.error}<button onClick={() => void reload().catch(() => {})}>重新读取指定目标</button></div> : <p role="status">正在读取指定目标…</p>
+  return <>{resource.error && <div className="error" role="alert">{resource.error}<button onClick={() => void reload().catch(() => {})}>重新读取本月</button></div>}{resource.loading && <p role="status">正在读取月度目标…</p>}<MonthlyBody {...props} data={data} refresh={reload} period={{ value: resource.value, reload, setQuery: next => { setQuery(old => { if (old !== next) setCursors([]); return next }); } }} /><PeriodPager total={resource.value?.total ?? 0} next={!!resource.value?.nextCursor} previous={!!cursors.length} loading={resource.loading} onNext={() => setCursors(old => [...old, resource.value!.nextCursor!])} onPrevious={() => setCursors(old => old.slice(0, -1))} /></>
+}
+export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate, period }: MonthlyProps & { period?: MonthlyControls }) {
+  const [detailReferences, setDetailReferences] = useState<PeriodReferences>()
+  const data = mergePeriod(pageData, detailReferences)
   const manager = data.user.role === 'manager'
   const archivedProjectIds = new Set(
     data.projects
@@ -64,7 +89,7 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
       .map((project) => project.id),
   )
   const canPublish = (plan: MonthlyPlan) =>
-    plan.status === 'approved' &&
+    !plan.visibility && plan.status === 'approved' &&
     (!plan.projectId || !archivedProjectIds.has(plan.projectId))
   const canEdit = (plan: MonthlyPlan) => !plan.visibility && plan.status !== 'merged' &&
     (manager || (plan.isTemporary && plan.ownerId === data.user.id && ['draft', 'returned'].includes(plan.status)))
@@ -74,6 +99,7 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
   const initialMonth = intent?.month || currentMonth()
   const initialPlan = data.plans.find((plan) => plan.id === intent?.id)
   const [includeInactive, setIncludeInactive] = useState(!!initialPlan && !visibleMonthlyPlan(initialPlan, data.users))
+  const [scope, setScope] = useState<MonthlyScope>('current')
   const readyToPublish =
     manager &&
     intent?.action === 'publish' &&
@@ -96,15 +122,41 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
     [history, setHistory] = useState<AuditEvent[] | null>(null)
   const action = useAction(refresh, notify)
   const [createdPersonalTask, setCreatedPersonalTask] = useState<Task | null>(null)
-  const monthPlans = data.plans.filter((plan) => plan.month === month && visibleMonthlyPlan(plan, data.users, includeInactive))
-  const filtered = monthPlans.filter(
+  const handledIntent = useRef(false)
+  const detailSequence = useRef(0)
+  const lastDetailRead = useRef('')
+  function showModal(type: string) { detailSequence.current++; setModal(type) }
+  useEffect(() => () => { detailSequence.current++ }, [])
+  useEffect(() => {
+    if (!period) return
+    const params = new URLSearchParams({ month, scope, status: scope === 'historical' ? 'all' : filter, q: search, includeInactive: String(includeInactive) }); if (intent?.id && !handledIntent.current) params.set('id', intent.id)
+    period.setQuery(params.toString())
+  }, [month, scope, filter, search, includeInactive])
+  useEffect(() => {
+    const plan = period?.value?.detail
+    if (!plan || handledIntent.current) return
+    handledIntent.current = true; setMonth(plan.month); setSelected(plan)
+    setIncludeInactive(!visibleMonthlyPlan(plan, data.users))
+    setModal(manager && intent?.action === 'review' && plan.status === 'submitted' ? 'review' : manager && intent?.action === 'result' && plan.status === 'published' ? 'result' : intent?.action === 'create-task' && canCreateOwnTask(plan) ? 'task' : 'detail')
+  }, [period?.value?.detail])
+  useEffect(() => { if (period?.value && !handledIntent.current && intent?.action === 'publish') { handledIntent.current = true; if (period.value.summary.publishable) setModal('publish') } }, [period?.value])
+  // A cleared/pending page has no list membership. Keep modal references separate
+  // so an open detail or draft cannot repopulate rows or counters after revocation.
+  const listPlans = period ? period.value?.items ?? [] : data.plans
+  const monthPlans = listPlans.filter((plan) => !plan.visibility && plan.month === month && visibleMonthlyPlan(plan, data.users, includeInactive))
+  const historicalPlans = listPlans.filter((plan) => !!plan.visibility && plan.month === month && visibleMonthlyPlan(plan, data.users, includeInactive))
+  const pagePlans = period ? period.value?.items ?? [] : scope === 'historical' ? historicalPlans : monthPlans
+  const filtered = pagePlans.filter(
     (plan) =>
-      (filter === 'all' || plan.status === filter) &&
+      (scope === 'historical' ? !!plan.visibility : !plan.visibility) &&
+      (scope === 'historical' || filter === 'all' || plan.status === filter) &&
       `${plan.title}${nameOf(data, plan.ownerId)}${projectOf(data, plan.projectId)}`.includes(
         search,
       ),
   )
-  const approved = data.plans.filter(plan => plan.month === month && canPublish(plan))
+  const approved = listPlans.filter(plan => plan.month === month && canPublish(plan))
+  const approvedCount = period?.value?.summary.publishable ?? approved.length
+  const publicationCount = period ? period.value?.summary.publications ?? 0 : data.publications.filter(value => value.month === month).length
   const publications = data.publications
     .filter((value) => value.month === month)
     .sort((a, b) => b.revision - a.revision)
@@ -114,8 +166,10 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
     groups.set(group, [...(groups.get(group) || []), plan])
   }
   const close = () => {
+    detailSequence.current++
     setModal('')
     setSelected(null)
+    setDetailReferences(undefined)
     setHistory(null)
     setCreatedPersonalTask(null)
   }
@@ -124,11 +178,25 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
     notify(message)
     close()
   })
-  function open(type: string, plan: MonthlyPlan) {
+  async function open(type: string, plan: MonthlyPlan) {
     setCreatedPersonalTask(null)
-    setSelected(plan)
-    setModal(type)
+    const sequence = ++detailSequence.current, context = captureMutationContext()
+    try {
+      const [result, events] = await Promise.all([period ? api<{ plan: MonthlyPlan; references: PeriodReferences }>(`/workspace/monthly/plans/${encodeURIComponent(plan.id)}`) : Promise.resolve({ plan, references: undefined }), type === 'history' ? api<AuditEvent[]>(`/plans/${encodeURIComponent(plan.id)}/history`) : Promise.resolve(null)])
+      if (sequence !== detailSequence.current || context !== captureMutationContext()) return
+      const nextModal = result.plan.visibility && type !== 'history' ? 'detail' : type
+      lastDetailRead.current = `${plan.id}:${nextModal}:${period?.value?.revision ?? ''}`
+      setSelected(result.plan); setDetailReferences(result.references); setHistory(events); setModal(nextModal)
+    } catch (failure) { if (sequence === detailSequence.current) notify(failure instanceof Error ? failure.message : '目标读取失败') }
   }
+  useEffect(() => {
+    if (!period?.value || !selected || !['detail', 'history'].includes(modal)) return
+    const key = `${selected.id}:${modal}:${period.value.revision}`
+    if (lastDetailRead.current === key) return
+    // Only read-only views follow remote changes; a user's open form keeps its versioned draft.
+    lastDetailRead.current = key
+    void open(modal, selected)
+  }, [period?.value?.revision, modal, selected?.id])
   return (
     <>
       <PageHeader
@@ -140,28 +208,28 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
             {manager && (
               <button
                 className="button secondary"
-                onClick={() => setModal('merge')}
+                onClick={() => showModal('merge')}
               >
                 合并提报
               </button>
             )}
             <button
               className="button secondary"
-              onClick={() => setModal('versions')}
+              onClick={() => showModal('versions')}
             >
               <GitBranch size={16} />
-              发布版本{publications.length > 0 && ` ${publications.length}`}
+              发布版本{publicationCount > 0 && ` ${publicationCount}`}
             </button>
             <button
               className={manager ? 'button secondary' : 'button primary'}
-              onClick={() => setModal('temporary')}
+              onClick={() => showModal('temporary')}
             >
               <Plus size={17} />
               新增临时目标
             </button>
             {manager && <button
               className="button primary"
-              onClick={() => setModal('create')}
+              onClick={() => showModal('create')}
             >
               <Plus size={17} />
               新增月度目标
@@ -189,7 +257,7 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
             <input
               type="month"
               value={month}
-              onChange={(event) => setMonth(event.target.value)}
+              onChange={(event) => { detailSequence.current++; setMonth(event.target.value) }}
               required
             />
           </Field>
@@ -199,37 +267,42 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
               aria-label="搜索计划、项目或负责人"
               placeholder="搜索计划、项目或负责人"
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) => { detailSequence.current++; setSearch(event.target.value) }}
             />
           </label>
           <label className="checkbox-label">
-            <input type="checkbox" checked={includeInactive} onChange={event => setIncludeInactive(event.target.checked)} />
+            <input type="checkbox" checked={includeInactive} onChange={event => { detailSequence.current++; setIncludeInactive(event.target.checked) }} />
             包含停用成员
           </label>
         </div>
         {manager && (
           <button
             className="button primary"
-            disabled={!approved.length || action.busy}
-            onClick={() => setModal('publish')}
+            disabled={!approvedCount || action.busy}
+            onClick={() => showModal('publish')}
           >
             <Send size={16} />
-            发布已审核计划{approved.length ? `（${approved.length}）` : ''}
+            发布已审核计划{approvedCount ? `（${approvedCount}）` : ''}
           </button>
         )}
       </div>
-      <div className="tabs" role="group" aria-label="计划状态筛选">
+      {!manager && <div className="tabs" role="group" aria-label="月度目标范围">
+        <button className={scope === 'current' ? 'selected' : ''} onClick={() => { detailSequence.current++; setScope('current') }}>当前参与<span>{period?.value?.summary.statuses.all ?? monthPlans.length}</span></button>
+        <button className={scope === 'historical' ? 'selected' : ''} onClick={() => { detailSequence.current++; setScope('historical') }}>历史记录<span>{period?.value?.summary.historical ?? historicalPlans.length}</span></button>
+      </div>}
+      {scope === 'historical' && <p className="modal-intro">以下为曾参与目标的历史快照或历史任务引用，仅供查阅，不计入当前参与目标。</p>}
+      {scope === 'current' && <div className="tabs" role="group" aria-label="计划状态筛选">
         {[['all', '全部'], ...Object.entries(statuses)].map(
           ([value, label]) => (
             <button
               className={filter === value ? 'selected' : ''}
               key={value}
-              onClick={() => setFilter(value)}
+              onClick={() => { detailSequence.current++; setFilter(value) }}
             >
               {label}
               <span>
                 {
-                  monthPlans.filter(
+                  period?.value?.summary.statuses[value] ?? monthPlans.filter(
                     (plan) => value === 'all' || plan.status === value,
                   ).length
                 }
@@ -237,7 +310,7 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
             </button>
           ),
         )}
-      </div>
+      </div>}
       <TaskLegend />
       {action.error && (
         <div className="error" role="alert">
@@ -256,10 +329,10 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
                 <table>
                   <thead>
                     <tr>
-                      <th className="wide-cell">本月交付与验收要求</th>
-                      <th>责任人 / 截止</th>
-                      <th>计划状态</th>
-                      <th>成果状态</th>
+                      <th className="wide-cell">{scope === 'historical' ? '历史成果与验收要求' : '本月交付与验收要求'}</th>
+                      <th>{scope === 'historical' ? '当时责任人 / 截止' : '责任人 / 截止'}</th>
+                      <th>{scope === 'historical' ? '当时计划状态' : '计划状态'}</th>
+                      <th>{scope === 'historical' ? '当时成果状态' : '成果状态'}</th>
                       <th className="actions-cell">操作</th>
                     </tr>
                   </thead>
@@ -278,8 +351,9 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
                               (plan.importSource ? '预期成果：原表未注明' : '')}
                           </p>
                           <div className="row-meta">
-                            <PriorityBadge priority={plan.priority} />
-                            <WorkTypeBadge isTemporary={plan.isTemporary} isMonthly />
+                            {plan.visibility && <Badge>{plan.visibility === 'reference' ? '历史引用 · 只读' : '历史记录 · 只读'}</Badge>}
+                            {plan.visibility !== 'reference' && <PriorityBadge priority={plan.priority} />}
+                            {plan.visibility !== 'reference' && <WorkTypeBadge isTemporary={plan.isTemporary} isMonthly />}
                             <span>{plan.category}</span>
                             {plan.importSource && (
                               <Badge tone="blue">已有计划导入</Badge>
@@ -295,19 +369,19 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
                                 <Badge>项目已归档</Badge>
                               )}
                             {plan.publishedVersion && (
-                              <span>发布 V{plan.publishedVersion}</span>
+                              <span>{plan.visibility ? '当时发布' : '发布'} V{plan.publishedVersion}</span>
                             )}
                           </div>
                         </td>
                         <td>
-                          <strong>{nameOf(data, plan.ownerId)}</strong>
+                          <strong>{plan.visibility === 'reference' ? '历史责任信息不可用' : `${plan.visibility ? '当时负责人：' : ''}${nameOf(data, plan.ownerId)}`}</strong>
                           <small className="cell-date">
                             {plan.dueDate ||
                               (plan.importSource ? '截止日期：原表未注明' : '')}
                           </small>
                           {plan.collaboratorIds.length > 0 && (
                             <small className="cell-date">
-                              协作：
+                              {plan.visibility ? '当时协作：' : '协作：'}
                               {plan.collaboratorIds
                                 .map((id) => nameOf(data, id))
                                 .join('、')}
@@ -315,8 +389,8 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
                           )}
                         </td>
                         <td>
-                          <Badge tone={tones[plan.status]}>
-                            {statuses[plan.status]}
+                          <Badge tone={plan.visibility ? 'neutral' : tones[plan.status]}>
+                            {plan.visibility === 'reference' ? '仅供查阅' : `${plan.visibility ? '当时：' : ''}${statuses[plan.status]}`}
                           </Badge>
                           {plan.reviewComment && (
                             <p className="cell-description review-comment">
@@ -327,14 +401,14 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
                         <td>
                           <Badge
                             tone={
-                              plan.acceptanceStatus === 'accepted'
+                              plan.visibility ? 'neutral' : plan.acceptanceStatus === 'accepted'
                                 ? 'green'
                                 : plan.acceptanceStatus === 'submitted'
                                   ? 'amber'
                                   : 'neutral'
                             }
                           >
-                            {results[plan.acceptanceStatus]}
+                            {plan.visibility === 'reference' ? '—' : `${plan.visibility ? '当时：' : ''}${results[plan.acceptanceStatus]}`}
                           </Badge>
                         </td>
                         <td>
@@ -364,7 +438,7 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
                                   提交
                                 </button>
                               )}
-                            {manager && plan.status === 'submitted' && (
+                            {!plan.visibility && manager && plan.status === 'submitted' && (
                               <button onClick={() => open('review', plan)}>
                                 审核
                               </button>
@@ -377,7 +451,7 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
                                   {manager ? '成果验收' : '提交成果'}
                                 </button>
                               )}
-                            {plan.status === 'published' &&
+                            {!plan.visibility && plan.status === 'published' &&
                               plan.acceptanceStatus !== 'accepted' &&
                               (!plan.projectId ||
                                 !archivedProjectIds.has(plan.projectId)) &&
@@ -388,17 +462,7 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
                               )}
                             {canCreateOwnTask(plan) && <button onClick={() => open('task', plan)}>关联个人任务</button>}
                             <button
-                              onClick={() => {
-                                open('history', plan)
-                                void api<AuditEvent[]>(
-                                  `/plans/${plan.id}/history`,
-                                )
-                                  .then(setHistory)
-                                  .catch((error) => {
-                                    close()
-                                    notify(error.message)
-                                  })
-                              }}
+                              onClick={() => void open('history', plan)}
                             >
                               历史
                             </button>
@@ -416,15 +480,15 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
         <div className="panel">
           <Empty
             title={
-              search || filter !== 'all'
+              scope === 'historical' ? '本月暂无可查看的历史目标' : search || filter !== 'all'
                 ? '没有符合条件的计划'
                 : manager ? '从第一个团队月度目标开始' : '本月暂无你参与的月度目标'
             }
-            description={manager ? '指定负责人和参与人员，明确预期成果与验收标准。' : '可提报本人的临时月度目标，或参与管理者发布的团队目标。'}
+            description={scope === 'historical' ? '负责人或参与人员变更后，曾参与的目标可在此查阅。' : manager ? '指定负责人和参与人员，明确预期成果与验收标准。' : '可提报本人的临时月度目标，或参与管理者发布的团队目标。'}
             action={
               <button
                 className="button secondary"
-                onClick={() => setModal(manager ? 'create' : 'temporary')}
+                onClick={() => showModal(manager ? 'create' : 'temporary')}
               >
                 <Plus size={16} />
                 {manager ? '新增月度目标' : '新增临时目标'}
@@ -442,7 +506,7 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
         />
       )}
       {(modal === 'temporary' || (manager && modal === 'create') || (modal === 'edit' && selected && canEdit(selected))) && (
-        <PlanEditor
+        period ? <PeriodEditorDirectory data={mergePeriod(data, selected ? { plans: [selected] } : {})} onCancel={close}>{editorData => <PlanEditor data={editorData} month={month} plan={selected} temporary={modal === 'temporary' || !!selected?.isTemporary} onClose={close} onSaved={saved} />}</PeriodEditorDirectory> : <PlanEditor
           data={data}
           month={month}
           plan={selected}
@@ -476,7 +540,8 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
           </fieldset>
         </Form>
       </Modal>}
-      {manager && modal === 'publish' && (
+      {manager && modal === 'publish' && period && <PublishMonth data={data} month={month} publicationCount={publicationCount} onClose={close} onSaved={saved} />}
+      {manager && modal === 'publish' && !period && (
         <Modal title="发布部门月度目标" onClose={close}>
           <p className="modal-intro">
             将 {month} 有效项目及部门工作中已审核通过的 {approved.length}{' '}
@@ -575,12 +640,14 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
           <CarryWorkflowWizard key={`${data.user.id}:${selected.id}:${data.operationEpoch}`} sourcePlan={selected} actorId={data.user.id} operationEpoch={data.operationEpoch || ''} refresh={refresh} onClose={close} onOpenTarget={target => {
             setMonth(target.month)
             setSelected(target)
-            setModal(target.status === 'submitted' ? 'review' : target.status === 'approved' ? 'publish' : ['draft', 'returned'].includes(target.status) ? 'edit' : 'detail')
+            showModal(target.status === 'submitted' ? 'review' : target.status === 'approved' ? 'publish' : ['draft', 'returned'].includes(target.status) ? 'edit' : 'detail')
           }} />
         </Modal>
       )}
-      {modal === 'versions' && (
+      {modal === 'versions' && period && <MonthPublications data={data} month={month} onClose={close} />}
+      {modal === 'versions' && !period && (
         <Modal title={`${month} 发布版本`} onClose={close} wide>
+          <p className="modal-intro">发布版本保留当时的目标和负责人；当前安排以月度目标列表为准。</p>
           {publications.length ? (
             <div className="timeline">
               {publications.map((publication) => (
@@ -613,6 +680,7 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
       )}
       {modal === 'history' && selected && (
         <Modal title={`变更历史 · ${selected.title}`} onClose={close} wide>
+          {selected.visibility && <p className="modal-intro">历史记录 · 只读。以下仅展示你曾参与期间可查看的内容，不代表当前负责人和执行状态。</p>}
           {history === null ? (
             <div className="loading-inline">正在读取历史记录…</div>
           ) : history.length ? (
@@ -656,8 +724,9 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
       )}
       {modal === 'detail' && selected && (
         <Modal title={selected.title} onClose={close} wide>
-          <div className="row-meta"><PriorityBadge priority={selected.priority} /><WorkTypeBadge isTemporary={selected.isTemporary} isMonthly /></div>
-          {manager && selected.status !== 'merged' && <div className="carry-actions"><button className="button secondary" onClick={() => setModal('carry')}>跨期处理 / 继续已有流程</button></div>}
+          {selected.visibility && <div className="context-box"><Badge>{selected.visibility === 'reference' ? '历史引用 · 只读' : '历史记录 · 只读'}</Badge><p>{selected.visibility === 'reference' ? '此目标仅保留历史任务关联，责任信息和目标详情不可查看。' : '以下为你曾参与期间的目标快照，负责人和状态均为当时信息。'}此记录不计入当前参与目标。</p></div>}
+          {selected.visibility !== 'reference' && <div className="row-meta"><PriorityBadge priority={selected.priority} /><WorkTypeBadge isTemporary={selected.isTemporary} isMonthly /></div>}
+          {!selected.visibility && manager && selected.status !== 'merged' && <div className="carry-actions"><button className="button secondary" onClick={() => showModal('carry')}>跨期处理 / 继续已有流程</button></div>}
           {manager && <NotificationStatus type="plan" id={selected.id} data={data} />}
           {selected.isTemporary && (
             <div className="context-box">
@@ -670,7 +739,7 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
           )}
           {selected.importSource && (
             <p className="modal-intro">
-              {selected.status === 'published' ? '已有计划导入，当前已发布，无需重新提报。' : `已有计划导入，当前状态为${statuses[selected.status]}。`}原文状态：
+              {selected.visibility ? `已有计划导入，当时状态为${statuses[selected.status]}。` : selected.status === 'published' ? '已有计划导入，当前已发布，无需重新提报。' : `已有计划导入，当前状态为${statuses[selected.status]}。`}原文状态：
               {selected.importSource.sourceStatus || '原表未注明'}
               ；原有成果已保留，验收结论单独记录。
             </p>
@@ -679,57 +748,81 @@ export default function Monthly({ data, refresh, notify, intent, navigate }: Pag
             <div>
               <span>预期成果</span>
               <p>
-                {selected.expectedOutcome ||
+                {selected.visibility === 'reference' ? '未保留' : selected.expectedOutcome ||
                   (selected.importSource ? '原表未注明' : '暂无')}
               </p>
             </div>
             <div>
               <span>验收标准</span>
               <p>
-                {selected.acceptanceCriteria ||
+                {selected.visibility === 'reference' ? '未保留' : selected.acceptanceCriteria ||
                   (selected.importSource ? '原表未注明' : '暂无')}
               </p>
             </div>
             <div>
-              <span>负责人 / 参与人员</span>
+              <span>{selected.visibility ? '当时负责人 / 参与人员' : '负责人 / 参与人员'}</span>
               <p>
-                {nameOf(data, selected.ownerId)} /{' '}
+                {selected.visibility === 'reference' ? '历史责任信息不可用' : <>{nameOf(data, selected.ownerId)} /{' '}
                 {selected.collaboratorIds
                   .map((id) => nameOf(data, id))
-                  .join('、') || '暂无'}
+                  .join('、') || '暂无'}</>}
               </p>
             </div>
             <div>
-              <span>截止日期 / 状态</span>
+              <span>{selected.visibility ? '当时截止日期 / 状态' : '截止日期 / 状态'}</span>
               <p>
-                {selected.dueDate ||
+                {selected.visibility === 'reference' ? '未保留' : <>{selected.dueDate ||
                   (selected.importSource ? '原表未注明' : '暂无')}{' '}
                 ·{' '}
-                {statuses[selected.status]}
+                {statuses[selected.status]}</>}
               </p>
             </div>
             <div>
-              <span>实际成果</span>
+              <span>{selected.visibility ? '当时实际成果' : '实际成果'}</span>
               <p>
-                {selected.actualOutcome ||
+                {selected.visibility === 'reference' ? '未保留' : selected.actualOutcome ||
                   (selected.importSource ? '原表未注明' : '尚未提交成果')}
               </p>
             </div>
             <div>
-              <span>验收结论</span>
+              <span>{selected.visibility ? '当时验收结论' : '验收结论'}</span>
               <p>
-                {results[selected.acceptanceStatus]} ·{' '}
+                {selected.visibility === 'reference' ? '未保留' : <>{results[selected.acceptanceStatus]} ·{' '}
                 {selected.acceptanceNote ||
                   (selected.importSource
                     ? '原表未记录验收说明'
-                    : '尚无验收说明')}
+                    : '尚无验收说明')}</>}
               </p>
             </div>
           </div>
+          {!selected.visibility && selected.status !== 'merged' && (manager || selected.ownerId === data.user.id) && <GoalOwnerWork planId={selected.id} scope={periodScope(data)} />}
         </Modal>
       )}
     </>
   )
+}
+function PublishMonth({ data, month, publicationCount, onClose, onSaved }: { data: PageProps['data']; month: string; publicationCount: number; onClose: () => void; onSaved: (message: string) => Promise<void> }) {
+  const candidates = usePeriodCandidates(data, data.user.id, 'publish', month), approved = candidates.value?.plans ?? []
+  return <Modal title="发布部门月度目标" onClose={onClose}>
+    {candidates.error ? <div role="alert" className="error">{candidates.error}<button onClick={candidates.retry}>重新读取完整清单</button></div> : !candidates.value ? <p role="status">正在核对整月可发布目标…</p> : <>
+      <p className="modal-intro">将 {month} 已审核通过的 {approved.length} 项成果发布为部门承诺。以下为完整可发布清单。</p>
+      <div className="compact-list">{approved.map(plan => <div key={plan.id}><CheckCircle2 size={16} /><span>{plan.title}</span><small>{nameOf(candidates.value!, plan.ownerId)}</small></div>)}</div>
+      <Form onCancel={onClose} submitLabel="确认发布" onSubmit={async event => { if (!approved.length) throw new Error('没有可发布目标'); await api(`/months/${month}/publish`, json({ planIds: approved.map(plan => plan.id), reason: new FormData(event.currentTarget).get('reason') })); await onSaved('部门月度目标已发布') }}><Field label="发布说明"><textarea name="reason" rows={3} required={publicationCount > 0} /></Field></Form>
+    </>}
+  </Modal>
+}
+function MonthPublications({ data, month, onClose }: { data: PageProps['data']; month: string; onClose: () => void }) {
+  const [cursors, setCursors] = useState<string[]>([]), [selected, setSelected] = useState<string | null>(null)
+  const firstPath = `/workspace/monthly/publications?month=${month}&limit=20`
+  const query = useWorkspaceQuery<WorkspacePage<PublicationSummary>>(`${firstPath}${cursors.length ? `&cursor=${encodeURIComponent(cursors.at(-1)!)}` : ''}`, periodScope(data), undefined, { onCursorStale: () => { setCursors([]); return firstPath } })
+  return <Modal title={`${month} 发布版本`} onClose={onClose} wide><p className="modal-intro">发布版本保留当时的目标和负责人；当前安排以月度目标列表为准。</p>{query.error && <div className="error" role="alert">{query.error}<button onClick={() => { setCursors([]); void query.reload(`/workspace/monthly/publications?month=${month}&limit=20`).catch(() => {}) }}>重新读取版本</button></div>}{query.loading && <p>正在读取发布版本…</p>}{query.value?.items.map(row => <article key={row.id}><Badge>V{row.revision}</Badge><h3>{row.reason || '月度目标发布'}</h3><p>{dateTime(row.createdAt)} · {row.planCount} 项已发布成果</p><button className="text-button" onClick={() => setSelected(selected === row.id ? null : row.id)}>查看发布原件</button>{selected === row.id && <PublicationDetails data={data} id={row.id} />}</article>)}{query.value && <PeriodPager total={query.value.total} next={!!query.value.nextCursor} previous={!!cursors.length} loading={query.loading} onNext={() => setCursors(old => [...old, query.value!.nextCursor!])} onPrevious={() => setCursors(old => old.slice(0, -1))} />}</Modal>
+}
+function PublicationDetails({ data, id }: { data: PageProps['data']; id: string }) {
+  const query = useWorkspaceQuery<{ publication: Publication; references: import('../../shared/period-workspace').PeriodReferences }>(`/workspace/monthly/publications/${encodeURIComponent(id)}`, periodScope(data))
+  if (query.error) return <p className="error" role="alert">{query.error}</p>
+  if (!query.value) return <p>正在读取发布原件…</p>
+  const context = mergePeriod(data, query.value.references)
+  return <ul>{query.value.publication.plans.map(plan => <li key={plan.id}>{plan.title} · {nameOf(context, plan.ownerId)} · {plan.dueDate}</li>)}</ul>
 }
 function PlanEditor({
   data,
@@ -748,6 +841,8 @@ function PlanEditor({
 }) {
   const manager = data.user.role === 'manager'
   const imported = !!plan?.importSource
+  const [annualGoalId, setAnnualGoalId] = useState(plan?.annualGoalId ?? '')
+  const [goalYear, setGoalYear] = useState(Number((plan?.month || month).slice(0, 4)))
   const categories = [
     '项目研发',
     '产品设计',
@@ -775,6 +870,8 @@ function PlanEditor({
       <Form
         onCancel={onClose}
         submitLabel={plan ? '保存计划' : '保存为草稿'}
+        draftContext={{ __annualGoalId: annualGoalId }}
+        onDraftRestore={values => { setAnnualGoalId(draftText(values, '__annualGoalId')); const restoredMonth = draftText(values, 'month'); if (restoredMonth) setGoalYear(Number(restoredMonth.slice(0, 4))) }}
         draftKey={`monthly-plan:${data.user.id}:${plan ? `${plan.id}:v${plan.version}` : `${month}:${temporary ? 'temporary' : 'regular'}:new`}`}
         onSubmit={async (event) => {
           const form = new FormData(event.currentTarget),
@@ -784,6 +881,7 @@ function PlanEditor({
             json(
               {
                 ...values,
+                annualGoalId: annualGoalId || null,
                 projectId: values.projectId || null,
                 collaboratorIds: form.getAll('collaboratorIds'),
                 ownerId: manager ? values.ownerId || plan?.ownerId : data.user.id,
@@ -807,6 +905,7 @@ function PlanEditor({
               name="month"
               type="month"
               defaultValue={plan?.month || month}
+              onChange={event => { const nextYear = Number(event.target.value.slice(0, 4)); if (nextYear !== goalYear) setAnnualGoalId(''); setGoalYear(nextYear) }}
               required
               readOnly={!!plan}
             />
@@ -826,6 +925,7 @@ function PlanEditor({
             </select>
           </Field>
         </div>
+        <Field label="关联年度目标" hint="选填，仅可关联同年度目标；跨年承接时自动清空。"><AnnualGoalPicker key={goalYear} year={goalYear} value={annualGoalId} onChange={setAnnualGoalId} scope={periodScope(data)} /></Field>
         <Field label={temporary ? '本月阶段成果名称' : '本月成果名称'}>
           <input
             name="title"

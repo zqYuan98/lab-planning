@@ -11,11 +11,17 @@ import { createDingTalkNativeClient } from './dingtalk-native.ts'
 import { startNativeWorker } from './native-worker.ts'
 import { startNativeStream } from './native-stream.ts'
 import { startReportAgentWorker } from './report-agent-jobs.ts'
+import { openUsageAnalytics } from './usage-analytics-startup.ts'
+import { readBuildVersion } from './build-version.ts'
+import { fileURLToPath } from 'node:url'
 
-const store = new Store(resolve(process.env.DATABASE_PATH || 'data/lab-planning.sqlite'))
+const databasePath = resolve(process.env.DATABASE_PATH || 'data/lab-planning.sqlite')
+const buildVersion = readBuildVersion(fileURLToPath(new URL('../dist/', import.meta.url)))
+const store = new Store(databasePath)
+const usageAnalytics = openUsageAnalytics(`${databasePath}.usage.sqlite`, buildVersion)
 const dingtalkClient = createDingTalkClient()
 const nativeClient = createDingTalkNativeClient()
-const app = createApp({ store, dingtalkClient, nativeClient })
+const app = createApp({ store, dingtalkClient, nativeClient, usageAnalytics })
 const port = Number(process.env.PORT || 4310)
 const host = process.env.HOST || '127.0.0.1'
 const server = app.listen(port, host)
@@ -24,6 +30,7 @@ let stopNotifications = async () => {}
 let stopNative = async () => {}
 let stopStream = async () => {}
 let stopReportAgent = async () => {}
+let usageCleanup: NodeJS.Timeout | undefined
 server.once('listening', () => {
   if (stopping) return
   stopScheduler = startScheduler(store)
@@ -31,6 +38,10 @@ server.once('listening', () => {
   stopNative = startNativeWorker(store, nativeClient)
   stopStream = startNativeStream(store, nativeClient)
   stopReportAgent = startReportAgentWorker(store)
+  usageCleanup = setInterval(() => {
+    try { usageAnalytics.cleanup() } catch { console.error('使用率历史清理失败，将在下一次检查重试') }
+  }, 60 * 60_000)
+  usageCleanup.unref()
   console.log(`部门计划系统已启动：http://${host}:${port}`)
 })
 let stopping = false
@@ -40,12 +51,12 @@ function shutdown() {
   const deadline = setTimeout(() => process.exit(1), SHUTDOWN_TIMEOUT_MS)
   deadline.unref()
   void drainServices({
-    stopScheduling: () => { stopScheduler(); closeImportServices(store) },
+    stopScheduling: () => { stopScheduler(); if (usageCleanup) clearInterval(usageCleanup); closeImportServices(store) },
     stopWorkers: async () => { await Promise.all([stopNotifications(), stopNative(), stopStream(), stopReportAgent()]) },
     closeHttp: () => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())),
-    closeStore: () => store.close(),
+    closeStore: () => { usageAnalytics.close(); store.close() },
   }).then(() => { clearTimeout(deadline); process.exitCode = 0 }).catch(() => { console.error('服务退出未完成，保留发送租约供重启核查'); process.exitCode = 1 })
 }
 process.on('SIGINT', shutdown)
 process.on('SIGTERM', shutdown)
-server.on('error', error => { stopScheduler(); store.close(); console.error('服务启动失败：', error.message); process.exitCode = 1 })
+server.on('error', error => { stopScheduler(); if (usageCleanup) clearInterval(usageCleanup); usageAnalytics.close(); store.close(); console.error('服务启动失败：', error.message); process.exitCode = 1 })

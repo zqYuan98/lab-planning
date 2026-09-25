@@ -1,5 +1,6 @@
 import type { WeeklyRecord } from './types'
 import type { WeeklyRule } from './weekly-submissions'
+import { resolveWeeklyDeadline } from './work-calendar'
 
 export function isActiveWeeklyRecord(record: WeeklyRecord): boolean { return !record.deletion }
 
@@ -16,6 +17,7 @@ export function isEffectiveWeeklyRecord(record: WeeklyRecord): boolean {
 export function isWeeklyPlanReviewCycle(rule: WeeklyRule, cycleWeek: string): boolean {
   return !!rule.planReviewEffectiveWeek && cycleWeek >= rule.planReviewEffectiveWeek
     && rule.windows.some(window => cycleWeek >= window.fromWeek && (!window.toWeek || cycleWeek < window.toWeek))
+    && resolveWeeklyDeadline(rule, cycleWeek).deadlineAt !== null
 }
 
 export function weeklyPlanManifest(records: WeeklyRecord[]) {
@@ -27,5 +29,6 @@ export function weeklyResultManifest(records: WeeklyRecord[]) {
   return records.filter(isActiveWeeklyRecord).map(record => ({ id: record.id, fingerprint: JSON.stringify([
     weeklyPlanFingerprint(record), record.submitted, record.status, record.actualOutcome, record.evidenceUrl,
     record.blocker, record.blockerImpact ?? '', record.supportNeeded ?? '', record.nextAction,
+    record.plannedEffortDays ?? null, record.actualEffortDays ?? null,
   ]) })).sort((a, b) => a.id.localeCompare(b.id))
 }

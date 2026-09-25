@@ -1,3 +1,4 @@
+import { effortInput } from '../../shared/effort'
 import { useRef, useState, type FormEvent } from 'react'
 import { LoaderCircle } from 'lucide-react'
 import type { Task } from '../../shared/types'
@@ -50,6 +51,7 @@ export default function WorkRegisterEditor({ userId, task, onClose, onSaved }: E
     const form = new FormData(event.currentTarget)
     const body: Record<string, unknown> = {
       version,
+      remainingEffortDays: effortInput(form.get('remainingEffortDays')),
       status,
       waitingForFeedback: status === 'done' ? false : waiting,
       ...(source ? { workSource: source } : {}),
@@ -115,7 +117,8 @@ export default function WorkRegisterEditor({ userId, task, onClose, onSaved }: E
         <Field label="当前进展"><textarea name="currentProgress" defaultValue={task.currentProgress || ''} rows={3} maxLength={12000} placeholder="已经完成什么，现在推进到哪一步" /></Field>
         <Field label="下一步行动"><textarea name="nextAction" defaultValue={task.nextAction || ''} rows={2} maxLength={12000} placeholder="写清楚接下来要推进的具体一步" /></Field>
         <div className="wr-form-grid">
-          <Field label="预计剩余投入" hint="按实际判断填写，用于协调工作顺序。"><input name="estimatedEffort" defaultValue={task.estimatedEffort || ''} maxLength={300} placeholder="例如：约 2 个工作日，或还需 3 次讨论" /></Field>
+          <Field label="预计剩余投入（人日）" hint="0.5 人日为一步，空值表示未估算，不会复制到每周。"><input type="number" name="remainingEffortDays" min="0" step="0.5" defaultValue={task.remainingEffortDays ?? ''} /></Field>
+          <Field label="投入备注" hint="原预计投入文本作为补充说明保留。"><input name="estimatedEffort" defaultValue={task.estimatedEffort || ''} maxLength={300} placeholder="例如：约 2 个工作日，或还需 3 次讨论" /></Field>
           <Field label="需领导决策 / 协调"><textarea name="decisionNeeded" defaultValue={task.decisionNeeded || ''} rows={2} maxLength={12000} placeholder="例如：确认 A 与 B 的先后顺序，或确定预算范围" /></Field>
         </div>
         <Field label="需要的支持"><textarea name="supportNeeded" required={status === 'blocked'} defaultValue={task.supportNeeded || ''} rows={2} maxLength={12000} placeholder="需要谁提供什么支持；暂不需要支持时请明确说明" /></Field>

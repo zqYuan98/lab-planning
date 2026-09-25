@@ -1,3 +1,5 @@
+import { isReadOnlyCommand } from './query-invalidation'
+
 export interface MutationResponse { context: number; path: string; value: unknown }
 export class MutationContextChangedError extends Error {
   constructor() { super('账号或访问范围已变化，已停止更新旧页面，请核对原账号的保存结果。'); this.name = 'MutationContextChangedError' }
@@ -20,6 +22,9 @@ export function publishMutationResponse(startedIn: number, path: string, value: 
   if (startedIn !== context) return false
   path = path.replace(/^\/api(?=\/)/, ''); if (!path.startsWith('/')) path = `/${path}`
   if (path.startsWith('/auth/')) return true
+  // This POST only calculates a preview. Keep the context guard above, but do not
+  // notify write subscribers: their global refresh would close its confirmation UI.
+  if (isReadOnlyCommand(path)) return true
   for (const listener of listeners) {
     if (startedIn !== context) return false
     listener({ context, path, value })

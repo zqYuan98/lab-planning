@@ -2,9 +2,9 @@ import ExcelJS from 'exceljs'
 import type { Entity, MonthlyPlan, User } from '../shared/types.ts'
 import type { HistoricalRecord } from './import-service.ts'
 import { visibleImportHistory } from './import-service.ts'
-import { Domain } from './domain.ts'
+import { readBusinessExportSources } from './business-export-read.ts'
 import { HttpError, Store } from './store.ts'
-import { businessEventCollections, collectionNames, emptyCollections, parsePacket, projectRow, rowReferences, type BusinessCollections, type BusinessDataPacket, type TransferCollection, type TransferType } from './data-transfer-schema.ts'
+import { businessEventCollections, collectionNames, emptyCollections, hasR4BusinessFields, hasWeeklyDeadlinePolicies, parsePacket, projectRow, rowReferences, type BusinessCollections, type BusinessDataPacket, type TransferCollection, type TransferType } from './data-transfer-schema.ts'
 import { collaborationCollectionNames, emptyCollaborationCollections } from './collaboration-transfer.ts'
 import { reportAgentTransferCollections, emptyReportAgentCollections } from './report-agent-transfer.ts'
 import { deliveryCollectionNames, emptyDeliveryCollections } from './delivery-transfer.ts'
@@ -31,8 +31,15 @@ export function exportBusinessData(store: Store, actor: User, options: ExportOpt
   if (options.month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(options.month)) throw new HttpError(400, '导出月份须为 YYYY-MM')
   for (const filter of [options.ownerId, options.projectId]) if (filter !== undefined && (typeof filter !== 'string' || filter.length > 200)) throw new HttpError(400, '导出筛选条件无效')
   return store.transaction(() => {
-    const visible = new Domain(store).bootstrap(actor, false, true)
+    const visible = readBusinessExportSources(store, actor)
+    const visibleTasks = new Map(visible.tasks.map(task => [task.id, task]))
+    const visibleTask = (id: unknown) => typeof id === 'string' ? visibleTasks.get(id) : undefined
     const isManager = actor.role === 'manager'
+    // Historical task snapshots preserve weekly dependencies; they do not grant
+    // access to raw deliveries or decisions created under a later owner.
+    const deliveryTaskIds = isManager ? new Set(visibleTasks.keys()) : new Set(store.selectRows(
+      "SELECT id FROM entities WHERE collection='tasks' AND json_extract(data,'$.ownerId')=?", [actor.id],
+    ).map(row => String(row.id)))
     const complete = type === 'all' && !options.month && !options.ownerId && !options.projectId
     const sources: BusinessCollections = {
       ...emptyCollaborationCollections(),
@@ -56,9 +63,12 @@ export function exportBusinessData(store: Store, actor: User, options: ExportOpt
     // Department frozen facts have their own member projection API. Raw migration is manager-only.
     if (isManager) for (const name of periodReviewCollectionNames) (sources[name] as Entity[]) = store.list<Entity>(name)
     for (const name of collaborationCollectionNames) (sources[name] as Entity[]) = store.list<Entity & { ownerId: string; taskId?: string; parentTaskId?: string }>(name)
-      .filter(row => (isManager || row.ownerId === actor.id) && visible.tasks.some(task => task.id === (row.taskId ?? row.parentTaskId)))
+      .filter(row => (isManager || row.ownerId === actor.id) && !!visibleTask(row.taskId ?? row.parentTaskId))
     const deliveryTaskId = (row: Record<string, unknown>) => row.taskId ?? store.get<{ id: string; taskId: string }>('deliverySeries', String(row.seriesId))?.taskId
-    for (const name of deliveryCollectionNames) (sources[name] as Entity[]) = store.list<Entity>(name).filter(row => visible.tasks.some(task => task.id === deliveryTaskId(row as unknown as Record<string, unknown>)))
+    for (const name of deliveryCollectionNames) (sources[name] as Entity[]) = store.list<Entity>(name).filter(row => {
+      const taskId = deliveryTaskId(row as unknown as Record<string, unknown>)
+      return typeof taskId === 'string' && deliveryTaskIds.has(taskId)
+    })
     const plans = new Map(visible.plans.map(row => [row.id, row]))
     const matches = (name: TransferCollection, value: Entity) => {
       const row = value as unknown as Record<string, unknown>
@@ -66,7 +76,7 @@ export function exportBusinessData(store: Store, actor: User, options: ExportOpt
       if ((reportAgentTransferCollections as readonly string[]).includes(name)) return complete
       if ((periodReviewCollectionNames as readonly string[]).includes(name)) return complete
       if ((collaborationCollectionNames as readonly string[]).includes(name) || (deliveryCollectionNames as readonly string[]).includes(name)) {
-        const task = visible.tasks.find(task => task.id === (row.taskId ?? row.parentTaskId ?? deliveryTaskId(row)))
+        const task = visibleTask(row.taskId ?? row.parentTaskId ?? deliveryTaskId(row))
         return !!task && (!options.ownerId || task.ownerId === options.ownerId) && (!options.projectId || plans.get(String(task.monthlyPlanId))?.projectId === options.projectId)
           && (!options.month || task.dueDate.startsWith(options.month) || plans.get(String(task.monthlyPlanId))?.month === options.month)
       }
@@ -121,7 +131,7 @@ export function exportBusinessData(store: Store, actor: User, options: ExportOpt
     const collections = emptyCollections()
     for (const name of collectionNames) (collections[name] as unknown[]) = (sources[name] as Entity[]).filter(row => selected[name].has(row.id)).map(row => projectRow(name, row))
     const hasDelivery = deliveryCollectionNames.some(name => collections[name].length) || collections.blockerEpisodes.some(row => row.coordinationState !== undefined) || collections.blockerActions.some(row => ['assign', 'respond', 'resolve'].includes(row.action))
-    return parsePacket({ application: 'lab-planning', formatVersion: periodReviewCollectionNames.some(name => collections[name].length) ? 6 : hasDelivery ? 5 : reportAgentTransferCollections.some(name => collections[name].length) || collections.reports.some(report => report.agent) ? 4 : collaborationCollectionNames.some(name => collections[name].length) ? 3 : 2, exportedAt: new Date().toISOString(), collections })
+    return parsePacket({ application: 'lab-planning', formatVersion: hasR4BusinessFields(collections) ? 8 : hasWeeklyDeadlinePolicies(collections) ? 7 : periodReviewCollectionNames.some(name => collections[name].length) ? 6 : hasDelivery ? 5 : reportAgentTransferCollections.some(name => collections[name].length) || collections.reports.some(report => report.agent) ? 4 : collaborationCollectionNames.some(name => collections[name].length) ? 3 : 2, exportedAt: new Date().toISOString(), collections })
   })
 }
 

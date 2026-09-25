@@ -1,8 +1,8 @@
 import type { User, WeeklyRecord, WorkOrigin } from '../shared/types.ts'
 import { assertBusinessActor } from './object-access.ts'
 import type { WeeklyDuty, WeeklyPlanReview, WeeklyRule, WeeklySubmission } from '../shared/weekly-submissions.ts'
-import { isActiveWeeklyRecord, isEffectiveWeeklyRecord, isWeeklyPlanReviewCycle, weeklyPlanFingerprint, weeklyPlanManifest } from '../shared/weekly-record-state.ts'
-import { DomainBase, manager, text, type Input } from './domain-common.ts'
+import { isActiveWeeklyRecord, isEffectiveWeeklyRecord, isWeeklyPlanReviewCycle, weeklyPlanFingerprint } from '../shared/weekly-record-state.ts'
+import { DomainBase, text, type Input } from './domain-common.ts'
 import { HttpError, type Store } from './store.ts'
 import { addWeekDays, shanghaiWeek } from './weekly-submission-clock.ts'
 import { weeklyDutyHistory } from './weekly-duty-view.ts'
@@ -10,6 +10,7 @@ import type { WeeklyAdjustment } from '../shared/weekly-submissions.ts'
 import { collaborationWorkMutation } from './collaboration-hooks.ts'
 import { endTaskRequests } from './collaboration-tracking.ts'
 import type { BlockerEpisode } from '../shared/collaboration.ts'
+import { assertWholePlanReviewer, wholePlanMatches, wholePlanRows } from './weekly-review-delegation.ts'
 
 const RULE = 'weekly-submission-rule'
 const unapproved = (): NonNullable<WeeklyRecord['planApproval']> => ({ required: true, approvedSubmissionId: null, approvedFingerprint: null })
@@ -64,27 +65,31 @@ export class WeeklyPlanReviewService extends DomainBase {
 
   review(actor: User, input: Input): WeeklyPlanReview {
     actor = assertBusinessActor(this.store, actor)
-    manager(actor)
     return collaborationWorkMutation(this.store, actor, input, 'weeklyRecord', () => {
+      actor = assertBusinessActor(this.store, actor)
       const dutyId = text(input.dutyId, '提报项'), submissionId = text(input.submissionId, '提交版本')
       const requestId = text(input.requestId, '审核请求编号', true, 100)
       const decision = String(input.decision)
       if (decision !== 'approved' && decision !== 'returned') throw new HttpError(400, '请选择通过或退回')
       const reason = text(input.reason, '审核意见', decision === 'returned')
-      const prior = this.store.list<WeeklyPlanReview>('weeklyPlanReviews').find(row => row.reviewedBy === actor.id && row.requestId === requestId)
-      if (prior) {
-        if (prior.dutyId !== dutyId || prior.submissionId !== submissionId || prior.decision !== decision || prior.reason !== reason) throw new HttpError(409, '此审核请求编号已用于其他内容')
-        return prior
-      }
-      const duty = this.current<WeeklyDuty>('weeklyDuties', dutyId, input)
+      const duty = this.need<WeeklyDuty>('weeklyDuties', dutyId)
       const rule = ensureWeeklyPlanReviewRule(this.store, this.clock())
       if (!weeklyPlanReviewRequired(rule, duty)) throw new HttpError(400, '该提报项不需要下周计划审核')
       const history = weeklyDutyHistory(duty, this.store.list<WeeklySubmission>('weeklySubmissions'), this.store.list<WeeklyAdjustment>('weeklyAdjustments'))
       const receipt = history.valid.at(-1)
       if (!receipt || receipt.id !== submissionId || history.exemptionReason) throw new HttpError(409, '提交版本已变化、失效或已豁免，请刷新后审核')
+      const rows = wholePlanRows(this.store, duty)
+      // Even a retry must still have live authority over the exact current whole-plan manifest.
+      assertWholePlanReviewer(this.store, actor, duty, receipt, rows)
+      if (!wholePlanMatches(receipt, rows)) throw new HttpError(409, '计划内容已变化，请成员核对后重新提交')
+      const prior = this.store.list<WeeklyPlanReview>('weeklyPlanReviews').find(row => row.reviewedBy === actor.id && row.requestId === requestId)
+      if (prior) {
+        if (prior.dutyId !== dutyId || prior.submissionId !== submissionId || prior.decision !== decision || prior.reason !== reason) throw new HttpError(409, '此审核请求编号已用于其他内容')
+        if (duty.version !== Number(input.version) + 1) throw new HttpError(409, '提报项已变化，请刷新后核对', 'VERSION_CONFLICT')
+        return prior
+      }
+      this.current<WeeklyDuty>('weeklyDuties', dutyId, input)
       if (this.store.list<WeeklyPlanReview>('weeklyPlanReviews').some(row => row.submissionId === receipt.id)) throw new HttpError(409, '此提交版本已有审核结论，请提交修订版本')
-      const rows = this.store.list<WeeklyRecord>('weeklyRecords').filter(row => isActiveWeeklyRecord(row) && row.ownerId === duty.ownerId && row.weekStart === duty.contentWeek)
-      if (!receipt.planManifest || JSON.stringify(weeklyPlanManifest(rows)) !== JSON.stringify(receipt.planManifest)) throw new HttpError(409, '计划内容已变化，请成员核对后重新提交')
       const review = this.store.insert<WeeklyPlanReview>('weeklyPlanReviews', { dutyId, ownerId: duty.ownerId, cycleWeek: duty.cycleWeek, submissionId,
         decision, reviewedBy: actor.id, reviewedAt: this.clock().toISOString(), reason, requestId })
       if (decision === 'approved') for (const snapshot of receipt.records) {

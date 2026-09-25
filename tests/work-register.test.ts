@@ -209,7 +209,7 @@ test('CSV quotes commas, quotes and line breaks, and neutralizes formulas in dat
   ]
   const result = buildWorkRegister({ user: { ...user, name: '=领导' }, tasks, weeklyRecords: [] }, { today })
   const csv = workRegisterReportCsv(createWorkRegisterSnapshot(result, { generatedAt: '2026-01-01T00:00:00Z' }))
-  assert.ok(csv.startsWith('\uFEFF"我的工作清单汇报"\r\n'))
+  assert.ok(csv.startsWith('\uFEFF"我的工作清单汇报（非正式报告）"\r\n'))
   assert.ok(csv.endsWith('\r\n'))
   for (const value of ["\"'=SUM(1,2)\"", "\"'\t@危险\"", "\"'  +CMD\"", "\"'\u0000-1\"", "\"'-2小时\"", "\"'@危险\"", "\"'=领导\"", "\"'\n内容\""]) {
     assert.ok(csv.includes(value), `missing escaped cell ${JSON.stringify(value)}`)

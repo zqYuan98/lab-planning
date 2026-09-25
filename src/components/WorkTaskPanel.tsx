@@ -20,6 +20,7 @@ import { assignmentAttempt, type SubmissionAttempt } from '../notification-navig
 import { Badge, Field, Form, Modal, dateTime, nameOf, type PageProps } from '../ui'
 import TaskProgressSummary from './TaskProgressSummary'
 import ManagerRecipients from './ManagerRecipients'
+import { queryAffected } from '../query-invalidation'
 
 const statusNames: Record<string, string> = { todo: '未开始', doing: '进行中', blocked: '受阻', done: '成员自报完成' }
 const requestNames: Record<string, string> = { open: '待处理', responded: '已回应', cancelled: '已关闭', superseded: '已被新安排替代', approved: '已批准', returned: '已退回' }
@@ -61,7 +62,7 @@ export default function WorkTaskPanel({ taskId, data, refresh, notify, onClose, 
     void load().catch(() => {})
     const refocus=()=>{detailRead.current!.invalidate();void load().catch(()=>{})};window.addEventListener('focus',refocus)
     const unsubscribe = subscribeMutationResponses(event => {
-      if (!mounted.current || event.context !== captureMutationContext()) return
+      if (!mounted.current || event.context !== captureMutationContext() || !queryAffected(`/tasks/${currentTaskId.current}/view`, event.path)) return
       detailRead.current!.invalidate()
       if (currentView.current) {
         const next = applyTaskViewMutation(currentView.current, event.value)
@@ -92,7 +93,7 @@ export default function WorkTaskPanel({ taskId, data, refresh, notify, onClose, 
   const selectedWeekly=view?.weeklyRecords.find(row=>row.id===selectedWeeklyId) || view?.weeklyRecords.find(row=>isActiveWeeklyRecord(row)&&row.weekStart===monday()) || view?.weeklyRecords.find(isActiveWeeklyRecord) || view?.weeklyRecords[0]
   const canEdit=!!view?.allowedActions.includes('edit_task') && !readOnly
   const open = view?.followups.find(row => row.status === 'open')
-  const linkedRecord = open?.weeklyRecordId ? data.weeklyRecords.find(row => row.id === open.weeklyRecordId) : undefined
+  const linkedRecord = open?.weeklyRecordId ? view?.weeklyRecords.find(row => row.id === open.weeklyRecordId) : undefined
   return <Modal wide title={task?.title || '工作详情'} onClose={onClose}>
     {saveState !== 'idle' && <div className="note" role="status"><p>{saveState === 'saving' ? '正在保存，请稍候。' : saveState === 'failed' ? '内容已经保存，但刷新失败。无需重复提交，请重新加载已保存结果。' : '内容已保存，正在重新读取结果。'}</p>{saveState === 'failed' && <button className="button primary" type="button" onClick={() => { void savedRefresh.current!.retry().catch(() => {}) }}>重新加载已保存结果</button>}</div>}
     <fieldset className="form-fields" disabled={saveState !== 'idle'}>

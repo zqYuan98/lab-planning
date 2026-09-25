@@ -57,6 +57,8 @@ export function userDeletionPreview(store: Store, actor: User, user: User): User
   add('feedbackCommands', '问题反馈请求历史', store.list<{ actorId: string }>('feedbackCommands').filter(row => row.actorId === user.id).length)
   add('reportAgentJobs', '周报生成任务', store.list<{ actorId: string }>('reportAgentJobs').filter(row => row.actorId === user.id).length)
   add('reportAgentSchedule', '周报定时负责人', Number(store.get<{ actorId: string }>('settings', 'report-agent-schedule')?.actorId === user.id))
+  add('reportAgentMonthlySchedule', '月报定时负责人', Number(store.get<{ actorId: string }>('settings', 'report-agent-monthly-schedule')?.actorId === user.id))
+  add('weeklyReviewDelegation', '已配置周计划审核委托', Number(store.get<{ enabledOwnerIds: string[] }>('settings', 'weekly-review-delegation')?.enabledOwnerIds.includes(user.id)))
   // Grants and scoped reports are local runtime objects, excluded from business packets,
   // but their recipient and author identities remain part of the access audit trail.
   add('objectGrants', '对象授权接收人及授权人', store.list<{ subjectId: string; grantedBy: string }>('objectGrants')

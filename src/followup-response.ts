@@ -1,15 +1,17 @@
 import type { CollaborationSettings, CollaborationTaskStatusSummary, FollowupRequest, TaskTracking } from '../shared/collaboration'
 import type { NotificationDigest, WorkRisk } from '../shared/collaboration-notifications'
 import type { Task } from '../shared/types'
+import type { CollaborationCounts, CollaborationTaskRow, CollaborationDigestSummary } from '../shared/collaboration-query'
 import { reconcileVersionedList } from './latest-read'
 import { mutationEntities, type ConfirmedMutations } from './workspace-response'
 
 export interface FollowupDashboard {
   settings: CollaborationSettings
   preference: { version: number; memberActionsEnabled: boolean }
-  tasks: ({ task: Task; tracking: TaskTracking | null; openFollowup: FollowupRequest | null } & CollaborationTaskStatusSummary)[]
+  tasks: ({ task: Task; tracking: TaskTracking | null; openFollowup: FollowupRequest | null } & CollaborationTaskStatusSummary & Partial<Pick<CollaborationTaskRow, 'owner' | 'plan'>>)[]
   risks: WorkRisk[]
-  digests: NotificationDigest[]
+  digests: (NotificationDigest | CollaborationDigestSummary)[]
+  counts?: CollaborationCounts; total?: number; nextCursor?: string | null; revision?: string; accessScopeVersion?: string
 }
 export function reconcileFollowupDashboard(current: FollowupDashboard | null, incoming: FollowupDashboard, confirmed: ConfirmedMutations) {
   const known = new Map((current?.tasks ?? []).map(row => [row.task.id, row.task]))

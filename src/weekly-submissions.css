@@ -38,6 +38,10 @@
 .submission-review-history { margin: 10px 0; }
 .submission-frozen-preview { max-height: 400px; border: 1px solid var(--border, #e2e7e5); border-radius: 4px; }
 .submission-frozen-preview article:last-child { border-bottom: 0; }
+.submission-deadline-settings > section { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--border, #e2e7e5); }
+.submission-deadline-settings h3 { margin: 0 0 12px; font-size: 16px; }
+.submission-deadline-settings .submission-notice { overflow-wrap: anywhere; }
+.submission-deadline-settings .submission-notice p { margin: 6px 0; }
 .submission-frozen-preview p { overflow-wrap: anywhere; }
 .weekly-card-footer .weekly-delete-action { display: inline-flex; align-items: center; gap: 5px; color: #a13932; }
 .weekly-deletion-result { align-items: center; flex-wrap: wrap; }

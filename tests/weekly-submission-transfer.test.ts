@@ -2,10 +2,11 @@ import test, { type TestContext } from 'node:test'
 import assert from 'node:assert/strict'
 import { Store } from '../server/store.ts'
 import { WeeklySubmissionService } from '../server/weekly-submissions.ts'
+import { WeeklyCalendarService } from '../server/weekly-calendar-service.ts'
 import { exportBusinessData, exportCsv, previewRestore, restoreBusinessData } from '../server/data-transfer.ts'
 import { collectionNames, parsePacket } from '../server/data-transfer-schema.ts'
-import type { User, Task, WeeklyRecord, Report, MonthlyPlan } from '../shared/types.ts'
-import type { WeeklyCycle, WeeklyDuty, WeeklySubmission } from '../shared/weekly-submissions.ts'
+import type { User, Task, WeeklyRecord, Report, MonthlyPlan, AuditEvent } from '../shared/types.ts'
+import type { WeeklyCycle, WeeklyDuty, WeeklySubmission, WeeklyRule, WeeklyDeadlineSnapshot } from '../shared/weekly-submissions.ts'
 
 function fixture(t: TestContext, suffix: string, populate = false) {
   const store = new Store(':memory:')
@@ -44,6 +45,179 @@ function fixture(t: TestContext, suffix: string, populate = false) {
   }
   return { store, service, manager, member, other }
 }
+
+function holidayFixture(t: TestContext, suffix: string, restWeek = false) {
+  const context = fixture(t, suffix)
+  const { store, member, manager } = context
+  const entity = { version: 1, createdAt: '2026-09-21T00:00:00.000Z', updatedAt: '2026-09-21T00:00:00.000Z' }
+  const workingDays = restWeek ? [] : ['2026-09-21', '2026-09-22', '2026-09-23', '2026-09-24']
+  const deadlinePolicy: WeeklyDeadlineSnapshot = { policyVersion: 1, mode: 'last_workday', workingDays }
+  const deadlineAt = restWeek ? null : '2026-09-24T08:00:00.000Z'
+  store.restoreEntity<WeeklyRule>('weeklyRules', { ...entity, id: 'weekly-submission-rule', enabled: true, effectiveWeek: '2026-09-21', timezone: 'Asia/Shanghai', windows: [{ fromWeek: '2026-09-21', toWeek: null }], deadlinePolicies: [{ version: 1, fromWeek: '2026-09-21', mode: 'last_workday', calendarOverrides: Object.fromEntries(['2026-09-21', '2026-09-22', '2026-09-23', '2026-09-24', '2026-09-25', '2026-09-26', '2026-09-27'].map(day => [day, workingDays.includes(day)])) }] })
+  const cycle = store.restoreEntity<WeeklyCycle>('weeklyCycles', { ...entity, id: '2026-09-21', week: '2026-09-21', deadlineAt, deadlinePolicy, rosterIds: [member.id], needsReview: false, confirmedBy: null, confirmationReason: '', frozenAt: entity.createdAt })
+  if (!restWeek) store.restoreEntity<WeeklyDuty>('weeklyDuties', { ...entity, id: 'holiday-duty', ownerId: member.id, cycleWeek: cycle.week, kind: 'results', contentWeek: cycle.week, deadlineAt: deadlineAt!, deadlinePolicy })
+  store.restoreEntity<Report>('reports', { ...entity, id: 'holiday-report', type: 'weekly', period: cycle.week, title: '假期周冻结报告', status: 'finalized', revision: 1, narrative: '', authorId: manager.id, finalizedAt: entity.createdAt,
+    snapshot: { plans: [], tasks: [], weeklyRecords: [], projects: [], annualGoals: [], users: [], nextPlans: [], nextWeeklyRecords: [], publications: [], changes: [], weeklySubmissions: restWeek ? [] : [{ ownerId: member.id, cycleWeek: cycle.week, kind: 'results', status: 'due', deadlineAt: deadlineAt!, deadlinePolicy, firstSubmittedAt: null, missingAtDeadline: false, exemptionReason: '' }] } })
+  return context
+}
+
+test('v7 holiday snapshots survive export, account remap and repeated restore without consulting live calendar', t => {
+  const source = holidayFixture(t, 'source'), target = fixture(t, 'target')
+  const packet = exportBusinessData(source.store, source.manager)
+  assert.equal(packet.formatVersion, 7)
+  const preview = previewRestore(target.store, target.manager, packet)
+  assert.equal(preview.canRestore, true, preview.issues.join('\n'))
+  restoreBusinessData(target.store, target.manager, packet, {}, preview.fingerprint)
+  assert.deepEqual(target.store.get<WeeklyCycle>('weeklyCycles', '2026-09-21')!.deadlinePolicy, packet.collections.weeklyCycles[0].deadlinePolicy)
+  assert.deepEqual(target.store.get<WeeklyDuty>('weeklyDuties', 'holiday-duty')!.deadlinePolicy, packet.collections.weeklyDuties[0].deadlinePolicy)
+  const summary = target.store.get<Report>('reports', 'holiday-report')!.snapshot.weeklySubmissions![0]
+  assert.equal(summary.ownerId, target.member.id)
+  assert.deepEqual(summary.deadlinePolicy, packet.collections.reports[0].snapshot.weeklySubmissions![0].deadlinePolicy)
+  assert.equal(summary.deadlineAt, '2026-09-24T08:00:00.000Z')
+  assert.equal(previewRestore(target.store, target.manager, exportBusinessData(target.store, target.manager)).canRestore, true)
+})
+
+test('holiday transfer rejects altered snapshots, duty deadlines, fake rest-week duties and version downgrade', t => {
+  const source = holidayFixture(t, 'source'), target = fixture(t, 'target')
+  const packet = exportBusinessData(source.store, source.manager)
+  const mutations: Array<(copy: typeof packet) => void> = [
+    copy => { copy.collections.weeklyCycles[0].deadlineAt = '2026-09-25T08:00:00.000Z' },
+    copy => { copy.collections.weeklyCycles[0].deadlinePolicy!.workingDays.push('2026-09-28') },
+    copy => { copy.collections.weeklyCycles[0].deadlinePolicy!.workingDays.reverse() },
+    copy => { copy.collections.weeklyCycles[0].deadlinePolicy!.workingDays.push('2026-09-24') },
+    copy => { copy.collections.weeklyCycles[0].deadlinePolicy!.workingDays.shift() },
+    copy => { copy.collections.weeklyCycles[0].deadlinePolicy!.policyVersion = 2 },
+    copy => { copy.collections.weeklyRules[0].deadlinePolicies![0].calendarOverrides['2026-09-22'] = false },
+    copy => { copy.collections.weeklyDuties[0].deadlineAt = '2026-09-25T08:00:00.000Z' },
+    copy => { delete copy.collections.weeklyDuties[0].deadlinePolicy },
+    copy => { copy.collections.weeklyDuties[0].deadlinePolicy!.workingDays.shift() },
+    copy => { copy.collections.reports[0].snapshot.weeklySubmissions![0].deadlineAt = '2026-09-25T08:00:00.000Z' },
+    copy => { delete copy.collections.reports[0].snapshot.weeklySubmissions![0].deadlinePolicy },
+  ]
+  for (const mutate of mutations) {
+    const broken = structuredClone(packet); mutate(broken)
+    const preview = previewRestore(target.store, target.manager, broken)
+    assert.equal(preview.canRestore, false, mutate.toString())
+    assert.throws(() => restoreBusinessData(target.store, target.manager, broken, {}, preview.fingerprint), { status: 409 })
+  }
+  const rest = holidayFixture(t, 'rest', true), restPacket = exportBusinessData(rest.store, rest.manager)
+  assert.equal(previewRestore(target.store, target.manager, restPacket).canRestore, true)
+  restPacket.collections.weeklyDuties.push({ ...packet.collections.weeklyDuties[0], ownerId: rest.member.id })
+  assert.equal(previewRestore(target.store, target.manager, restPacket).canRestore, false)
+  for (const version of [2, 3, 4, 5, 6] as const) assert.throws(() => parsePacket({ ...packet, formatVersion: version }), { status: 400 })
+  assert.equal(target.store.list('weeklyCycles').length, 0)
+})
+
+test('rest-week cycles roundtrip with null deadline and frozen summaries remain self-contained after later policy changes', t => {
+  const source = holidayFixture(t, 'source', true), target = fixture(t, 'target')
+  const packet = exportBusinessData(source.store, source.manager)
+  const preview = previewRestore(target.store, target.manager, packet)
+  restoreBusinessData(target.store, target.manager, packet, {}, preview.fingerprint)
+  assert.equal(target.store.get<WeeklyCycle>('weeklyCycles', '2026-09-21')!.deadlineAt, null)
+  assert.deepEqual(target.store.list('weeklyDuties'), [])
+  assert.deepEqual(exportBusinessData(target.store, target.manager).collections.weeklyCycles[0].deadlinePolicy, packet.collections.weeklyCycles[0].deadlinePolicy)
+  const reportOnly = holidayFixture(t, 'report')
+  const frozen = exportBusinessData(reportOnly.store, reportOnly.manager)
+  frozen.collections.weeklyRules = []; frozen.collections.weeklyCycles = []; frozen.collections.weeklyDuties = []
+  const fresh = fixture(t, 'fresh'), reportPreview = previewRestore(fresh.store, fresh.manager, frozen)
+  assert.equal(reportPreview.canRestore, true, reportPreview.issues.join('\n'))
+  restoreBusinessData(fresh.store, fresh.manager, frozen, {}, reportPreview.fingerprint)
+  assert.equal(exportBusinessData(fresh.store, fresh.manager).formatVersion, 7, 'summary alone requires v7')
+  const broken = structuredClone(frozen)
+  broken.collections.reports[0].snapshot.weeklySubmissions![0].deadlinePolicy!.workingDays.push('2026-09-28')
+  const other = fixture(t, 'other')
+  assert.equal(previewRestore(other.store, other.manager, broken).canRestore, false)
+})
+
+test('legacy formats v2-v6 retain Friday facts and reports without inventing holiday policy', t => {
+  const source = fixture(t, 'source', true), original = exportBusinessData(source.store, source.manager)
+  for (const formatVersion of [2, 3, 4, 5, 6] as const) {
+    const target = fixture(t, `v${formatVersion}`), packet = { ...structuredClone(original), formatVersion }
+    const preview = previewRestore(target.store, target.manager, packet)
+    assert.equal(preview.canRestore, true, preview.issues.join('\n'))
+    restoreBusinessData(target.store, target.manager, packet, {}, preview.fingerprint)
+    assert.equal(target.store.list<WeeklyCycle>('weeklyCycles')[0].deadlinePolicy, undefined)
+    assert.equal(target.store.list<Report>('reports')[0].snapshot.weeklySubmissions![0].deadlinePolicy, undefined)
+    assert.equal(target.store.list<WeeklyRule>('weeklyRules')[0].deadlinePolicies, undefined)
+  }
+})
+
+test('audit snapshots verify immutable policy inputs while repair audits cannot change frozenAt', t => {
+  const source = holidayFixture(t, 'source'), target = fixture(t, 'target')
+  const packet = exportBusinessData(source.store, source.manager), cycle = packet.collections.weeklyCycles[0]
+  packet.collections.events.push({ id: 'cycle-audit', version: 1, createdAt: cycle.createdAt, updatedAt: cycle.updatedAt, entityType: 'weeklyCycle', entityId: cycle.id, actorId: source.manager.id, action: 'confirm', reason: '核对名单', before: structuredClone(cycle), after: structuredClone(cycle) })
+  assert.equal(previewRestore(target.store, target.manager, packet).canRestore, true)
+  for (const nested of [false, true]) {
+    const broken = structuredClone(packet)
+    ;(broken.collections.events[0].before as WeeklyCycle).deadlinePolicy!.workingDays.shift()
+    if (nested) { broken.collections.reports[0].snapshot.changes = broken.collections.events; broken.collections.events = [] }
+    assert.equal(previewRestore(target.store, target.manager, broken).canRestore, false, nested ? 'report audit snapshot' : 'audit snapshot')
+  }
+  const repaired = structuredClone(packet), event = repaired.collections.events[0]
+  event.action = 'deadline_repair'
+  const after = event.after as WeeklyCycle
+  after.version++; after.deadlinePolicy!.policyVersion = 0
+  assert.equal(previewRestore(target.store, target.manager, repaired).canRestore, true)
+  after.frozenAt = '2026-09-22T00:00:00.000Z'
+  assert.equal(previewRestore(target.store, target.manager, repaired).canRestore, false)
+})
+
+test('deadline repair audit before and after keep their own deadline semantics and frozenAt through restore', t => {
+  const source = holidayFixture(t, 'source'), target = fixture(t, 'target')
+  const cycle = source.store.get<WeeklyCycle>('weeklyCycles', '2026-09-21')!, duty = source.store.get<WeeklyDuty>('weeklyDuties', 'holiday-duty')!
+  cycle.deadlinePolicy!.policyVersion = 0; duty.deadlinePolicy!.policyVersion = 0
+  for (const [entityType, row] of [['weeklyCycle', cycle], ['weeklyDuty', duty]] as const) {
+    const before = { ...row, deadlineAt: '2026-09-25T08:00:00.000Z' }; delete before.deadlinePolicy
+    const after = source.store.update<WeeklyCycle | WeeklyDuty>(entityType === 'weeklyCycle' ? 'weeklyCycles' : 'weeklyDuties', row.id, row.version, { deadlinePolicy: row.deadlinePolicy })
+    source.store.restoreEntity<AuditEvent>('events', { id: `${entityType}-repair`, version: 1, createdAt: after.updatedAt, updatedAt: after.updatedAt, entityType, entityId: row.id, actorId: source.manager.id, action: 'deadline_repair', reason: '假期校正', before, after })
+  }
+  const packet = exportBusinessData(source.store, source.manager)
+  assert.equal(packet.collections.events.length, 2)
+  packet.collections.reports[0].snapshot.changes = structuredClone(packet.collections.events)
+  const preview = previewRestore(target.store, target.manager, packet)
+  assert.equal(preview.canRestore, true, preview.issues.join('\n'))
+  restoreBusinessData(target.store, target.manager, packet, {}, preview.fingerprint)
+  const second = exportBusinessData(target.store, target.manager)
+  assert.equal(second.collections.events.filter(event => event.action === 'deadline_repair').length, 2)
+  assert.equal(target.store.get<WeeklyCycle>('weeklyCycles', cycle.id)!.frozenAt, cycle.frozenAt)
+  for (const entityType of ['weeklyCycle', 'weeklyDuty']) for (const field of ['before', 'after'] as const) {
+    const broken = structuredClone(packet), audit = broken.collections.events.find(event => event.entityType === entityType)!
+    ;(audit[field] as WeeklyDuty).deadlineAt = '2026-09-23T08:00:00.000Z'
+    const fresh = fixture(t, `${entityType}-${field}`)
+    assert.equal(previewRestore(fresh.store, fresh.manager, broken).canRestore, false)
+  }
+})
+
+test('service-created deadline repair exports all duty audits and restores as v7 without runtime calendar settings', t => {
+  const source = fixture(t, 'source'), target = fixture(t, 'target')
+  const now = () => new Date('2026-09-24T01:00:00.000Z')
+  const service = new WeeklySubmissionService(source.store, now), calendar = new WeeklyCalendarService(source.store, now)
+  const rule = service.getRule()
+  source.store.update<WeeklyRule>('weeklyRules', rule.id, rule.version, { effectiveWeek: '2026-09-21', windows: [{ fromWeek: '2026-09-21', toWeek: null }] })
+  const cycle = service.view(source.member, '2026-09-21').cycle!
+  calendar.updatePolicy(source.manager, { version: service.getRule().version, mode: 'last_workday', calendarVersion: 0, calendarOverrides: { '2026-09-25': false } })
+  const preview = calendar.previewRepair(source.manager, { week: cycle.week })
+  assert.equal(preview.eligible, true, preview.reasons.join('\n'))
+  calendar.repair(source.manager, { week: cycle.week, token: preview.token, reason: '中秋节前提报时间校正' })
+  const packet = exportBusinessData(source.store, source.manager)
+  assert.equal(packet.formatVersion, 7)
+  assert.equal(packet.collections.events.filter(event => event.entityType === 'weeklyDuty' && event.action === 'deadline_repair').length, packet.collections.weeklyDuties.length)
+  const restore = previewRestore(target.store, target.manager, packet)
+  assert.equal(restore.canRestore, true, restore.issues.join('\n'))
+  restoreBusinessData(target.store, target.manager, packet, {}, restore.fingerprint)
+  assert.equal(target.store.list('collaborationSettings').length, 0)
+  assert.equal(target.store.get<WeeklyCycle>('weeklyCycles', cycle.id)!.frozenAt, cycle.frozenAt)
+  assert.ok(target.store.list<WeeklyDuty>('weeklyDuties').every(duty => duty.deadlineAt === '2026-09-24T08:00:00.000Z' && duty.deadlinePolicy?.policyVersion === 0))
+})
+
+test('holiday missing facts use the duty deadline and reject a mismatched cutoff', t => {
+  const source = holidayFixture(t, 'source'), target = fixture(t, 'target')
+  const packet = exportBusinessData(source.store, source.manager), duty = packet.collections.weeklyDuties[0]
+  packet.collections.weeklyMissing.push({ id: 'holiday-missing', version: 1, createdAt: duty.deadlineAt, updatedAt: duty.deadlineAt, dutyId: duty.id, ownerId: duty.ownerId, cycleWeek: duty.cycleWeek, kind: duty.kind, deadlineAt: duty.deadlineAt, detectedAt: duty.deadlineAt })
+  assert.equal(previewRestore(target.store, target.manager, packet).canRestore, true)
+  packet.collections.weeklyMissing[0].deadlineAt = '2026-09-25T08:00:00.000Z'
+  assert.equal(previewRestore(target.store, target.manager, packet).canRestore, false)
+})
 
 test('v2 roundtrip remaps nested users and retains UUID duties, immutable timestamps, drafts and report summaries', t => {
   const source = fixture(t, 'source', true), target = fixture(t, 'target')

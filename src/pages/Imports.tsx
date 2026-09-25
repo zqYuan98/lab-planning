@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import WorkflowGuide from '../components/WorkflowGuide'
+import AnnualGoalPicker from '../components/AnnualGoalPicker'
 import ImportDeleteDialog, { type ImportDeleteTarget } from '../components/ImportDeleteDialog'
 import ImportSourceReview from '../components/ImportSourceReview'
 import { canRequestImportReview, importAnalysisRequest, importReconciliationText, importReviewCounts, importReviewRequired, importRowDisposition, importRowOutcomeLabel, importWorkFields, newImportCandidate, restoredImportOptions, selectImportTask, type ImportWorkFields } from '../import-review'
@@ -34,7 +35,9 @@ import {
   importedWeeklyStatus,
 } from '../../shared/import-status'
 import type { Navigate } from '../navigation'
-import { api, json } from '../api'
+import { api, json, finishSaved, SavedResultError } from '../api'
+import { combineImportReferences, emptyImportReferences, ImportCandidateLookup, useImportReferences } from '../import-workspace'
+import type { ImportCandidateKind, ImportReferences } from '../../shared/import-workspace'
 import {
   filesFromTransfer,
   hasTransferredFiles,
@@ -153,8 +156,8 @@ const collectionLabels: Record<string, string> = {
   history: '历史资料',
   publications: '发布快照',
   reports: '报告',
-  reportAssets: '周报 Word 文件与范例',
-  reportTemplates: '周报模板与确认规则',
+  reportAssets: '周报 / 月报 Word 文件与范例',
+  reportTemplates: '周报 / 月报模板与确认规则',
   events: '变更记录',
   weeklyRules: '周提报规则',
   weeklyCycles: '周提报名单',
@@ -185,12 +188,12 @@ async function fileBase64(file: File): Promise<string> {
 }
 
 export default function Imports({
-  data,
-  refresh,
+  data: shell,
+  refresh: refreshShell,
   notify,
   navigate,
 }: PageProps & { navigate?: Navigate }) {
-  const manager = data.user.role === 'manager'
+  const manager = shell.user.role === 'manager'
   const [batches, setBatches] = useState<ImportBatchSummary[]>([])
   const [pendingOnly, setPendingOnly] = useState(false)
   const [batch, setBatch] = useState<ImportBatch | null>(null)
@@ -256,6 +259,21 @@ export default function Imports({
   const lock = useRef(false)
   const activeBatchId = useRef<string | null>(null)
   const interactionCount = useRef(0)
+  const scope = `${shell.user.id}:${shell.user.role}:${shell.operationEpoch}:${shell.accessScopeVersion}`
+  const [candidatePages, setCandidatePages] = useState<Partial<Record<ImportCandidateKind, ImportReferences>>>({})
+  const [savedRead, setSavedRead] = useState<SavedResultError | null>(null)
+  const currentRows = [...(batch?.rows || []), ...(editing ? [editing] : []), ...(historyRecord ? [historyRecord.row] : []), ...(editingHistory ? [editingHistory.row] : []), ...history.filter(item => `${item.row.title} ${item.row.ownerName} ${item.row.projectName} ${item.row.month} ${item.row.weekStart} ${item.row.category} ${item.row.sourceText} ${item.row.isTemporary ? '临时交办' : ''} ${item.row.temporaryReason || ''}`.toLowerCase().includes(historyQuery.trim().toLowerCase())).slice(0, historyLimit).map(item => item.row)]
+  const uniqueIds = (values: (string | undefined)[]) => [...new Set(values.filter((value): value is string => !!value))].sort()
+  const references = useImportReferences({
+    users: uniqueIds([shell.user.id, ...batches.map(item => item.ownerId), bulk.ownerId, ...Object.values(restoreMapping), ...Object.values(restorePreview?.mapping || {}), ...currentRows.flatMap(row => [row.ownerId, ...(row.collaboratorIds || [])])]),
+    projects: uniqueIds([bulk.projectId, ...currentRows.map(row => row.projectId)]),
+    plans: uniqueIds([bulk.monthlyPlanId, ...currentRows.map(row => row.monthlyPlanId)]),
+    tasks: uniqueIds(currentRows.map(row => row.taskId)),
+  }, scope)
+  const data = { ...shell, ...combineImportReferences(emptyImportReferences(), ...Object.values(candidatePages), references.value) }
+  const acceptCandidates = (kind: ImportCandidateKind, value: ImportReferences) => setCandidatePages(previous => ({ ...previous, [kind]: value }))
+  const candidateLookups = (kinds: ImportCandidateKind[]) => <details className="form-hint"><summary>搜索更多成员、项目或关联事项</summary>{kinds.map(kind => <ImportCandidateLookup key={kind} kind={kind} scope={scope} ownerId={kind === 'tasks' ? editing?.ownerId : ''} onItems={acceptCandidates} />)}</details>
+  const refresh = async () => { await references.reload(); await refreshShell() }
   const activeUsers = data.users.filter(
     (user) =>
       canUseAccount(user) &&
@@ -264,7 +282,7 @@ export default function Imports({
   const activeProjects = data.projects.filter(
     (project) => project.status === 'active',
   )
-  const availablePlans = data.plans.filter((plan) => plan.status !== 'merged')
+  const availablePlans = data.plans.filter((plan) => plan.status !== 'merged' && plan.visibility !== 'historical' && plan.visibility !== 'reference' && (manager || !plan.projectId || !data.projects.some(project => project.id === plan.projectId && project.status !== 'active')))
   const selected = batch?.rows.filter((row) => row.selected) || []
   const selectedIssues = selected.filter((row) => row.issues.length)
   const reviewCounts = importReviewCounts(batch?.rows || [])
@@ -424,6 +442,7 @@ export default function Imports({
     try {
       await action()
     } catch (cause) {
+      if (cause instanceof SavedResultError) setSavedRead(cause)
       setError(cause instanceof Error ? cause.message : '操作失败，请重试。')
     } finally {
       lock.current = false
@@ -634,6 +653,8 @@ export default function Imports({
         void upload(files, issues)
       }}
     >
+      {references.error && <div role="alert">{references.error}<button className="button secondary" onClick={() => void references.reload().catch(() => {})}>重读关联信息</button></div>}
+      {savedRead && <div role="status">{savedRead.message}<button className="button secondary" disabled={!!busy} onClick={() => void run('正在重读保存结果', async () => { await savedRead.retry(); setSavedRead(null) })}>只重试读取</button></div>}
       <PageHeader
         title="数据导入"
         description="把已有表格、文字和截图变成可校对的数据，支持管理导入批次与历史资料。"
@@ -1199,6 +1220,7 @@ export default function Imports({
                       {!!selected.some((row) => row.taskId) && (
                         <p className="import-bulk-hint">已关联个人任务的记录沿用该任务的性质与月度关联，批量设置不会将它改为新任务。</p>
                       )}
+                      {candidateLookups(['users', 'projects', 'plans'])}
                       <div className="import-bulk-fields">
                         <select
                           aria-label="批量匹配负责人"
@@ -1208,6 +1230,7 @@ export default function Imports({
                           }
                         >
                           <option value="">负责人：保持原值</option>
+                          {bulk.ownerId && !activeUsers.some(user => user.id === bulk.ownerId) && <option value={bulk.ownerId} disabled>已选成员（正在核对或不可用）</option>}
                           {activeUsers.map((user) => (
                             <option key={user.id} value={user.id}>
                               {user.name}
@@ -1223,6 +1246,7 @@ export default function Imports({
                         >
                           <option value="">项目：保持原值</option>
                           <option value="__clear">清空项目（部门工作）</option>
+                          {bulk.projectId && bulk.projectId !== '__clear' && !activeProjects.some(project => project.id === bulk.projectId) && <option value={bulk.projectId} disabled>已选项目（正在核对或不可用）</option>}
                           {activeProjects.map((project) => (
                             <option key={project.id} value={project.id}>
                               {project.name}
@@ -1249,6 +1273,7 @@ export default function Imports({
                           }
                         >
                           <option value="">周记录关联月度目标：保持原值</option>
+                          {bulk.monthlyPlanId && !availablePlans.some(plan => plan.id === bulk.monthlyPlanId) && <option value={bulk.monthlyPlanId} disabled>已选目标（正在核对或仅供历史引用）</option>}
                           {availablePlans.map((plan) => (
                             <option key={plan.id} value={plan.id}>
                               {plan.month} · {plan.title}
@@ -1595,8 +1620,7 @@ export default function Imports({
                               )
                               return
                             }
-                            await refresh()
-                            if (historyLoaded) await loadHistory()
+                            await finishSaved(async () => { await refresh(); if (historyLoaded) await loadHistory() }, next.version)
                             notify(
                               `${savedBatchLabel(next.mode)}：${savedBatchCounts(next)}。`,
                             )
@@ -1921,7 +1945,7 @@ export default function Imports({
                 >
                   <option value="xlsx">Excel (.xlsx)</option>
                   <option value="csv" disabled={exportType === 'all'}>
-                    CSV（单一数据范围）
+                    CSV（辅助数据，非正式报告）
                   </option>
                   <option value="json">JSON（结构化数据）</option>
                 </select>
@@ -1996,6 +2020,7 @@ export default function Imports({
                   <p>
                     来源账号不自动创建；请为以下人员选择对应的现有成员。姓名、邮箱保留用于核对。
                   </p>
+                  {candidateLookups(['users'])}
                   {restoreCandidates.map((source) => (
                     <Field
                       key={source.id}
@@ -2026,6 +2051,7 @@ export default function Imports({
                         }}
                       >
                         <option value="">请选择对应成员</option>
+                        {(restoreMapping[source.id] || restorePreview?.mapping[source.id]) && !activeUsers.some(user => user.id === (restoreMapping[source.id] || restorePreview?.mapping[source.id])) && <option value={restoreMapping[source.id] || restorePreview?.mapping[source.id]} disabled>已选成员（正在核对或不可用）</option>}
                         {activeUsers.map((user) => (
                           <option key={user.id} value={user.id}>
                             {user.name} · {user.email}
@@ -2126,8 +2152,8 @@ export default function Imports({
                           }),
                         )
                         setRestoreResult(result)
-                        await refresh()
-                        if (historyLoaded) await loadHistory()
+                        setRestorePreview(null)
+                        await finishSaved(async () => { await refresh(); if (historyLoaded) await loadHistory() })
                         notify(
                           `业务数据恢复完成：新增 ${result.restored} 条，跳过 ${result.skipped} 条相同记录。`,
                         )
@@ -2328,6 +2354,12 @@ export default function Imports({
             </p>
             <dl>
               <div><dt>任务性质</dt><dd>{historyRecord.row.isTemporary ? '临时交办' : '常规工作'}</dd></div>
+              {historyRecord.row.kind === 'monthly' && historyRecord.row.annualGoalId && <div><dt>年度目标关联</dt><dd>已保留关联</dd></div>}
+              {historyRecord.row.kind === 'weekly' && <>
+                <div><dt>预计投入（人日）</dt><dd>{historyRecord.row.plannedEffortDays ?? '未填写'}</dd></div>
+                <div><dt>实际投入（人日）</dt><dd>{historyRecord.row.actualEffortDays ?? '未填写'}</dd></div>
+                <div><dt>任务剩余工作量（人日）</dt><dd>{historyRecord.row.remainingEffortDays ?? '未填写'}</dd></div>
+              </>}
               {historyRecord.row.isTemporary && <div><dt>交办说明</dt><dd>{historyRecord.row.temporaryReason || '原始资料未注明'}</dd></div>}
               {(
                 [
@@ -2496,6 +2528,7 @@ export default function Imports({
               className="import-editor-fields"
               disabled={readOnlyEditor}
             >
+              {!readOnlyEditor && candidateLookups(['users', 'projects', 'plans', 'tasks'])}
               {editingNew && <div className="import-editor-source-input">
                 <h3>遗漏事项的原始来源</h3>
                 <div className="import-form-grid">
@@ -2596,6 +2629,7 @@ export default function Imports({
                     }
                   >
                     <option value="">暂不匹配</option>
+                    {editing.ownerId && !data.users.some(user => user.id === editing.ownerId) && <option value={editing.ownerId} disabled>已选成员（正在核对或无访问权限）</option>}
                     {data.users
                       .filter(
                         (user) =>
@@ -2628,6 +2662,7 @@ export default function Imports({
                     }
                   >
                     <option value="">暂不匹配 / 部门工作</option>
+                    {editing.projectId && !data.projects.some(project => project.id === editing.projectId) && <option value={editing.projectId} disabled>已选项目（正在核对或无访问权限）</option>}
                     {data.projects
                       .filter(
                         (project) =>
@@ -2635,7 +2670,7 @@ export default function Imports({
                           project.id === editing.projectId,
                       )
                       .map((project) => (
-                        <option key={project.id} value={project.id}>
+                        <option key={project.id} value={project.id} disabled={project.status !== 'active'}>
                           {project.name}
                         </option>
                       ))}
@@ -2750,6 +2785,14 @@ export default function Imports({
                   />
                 </Field>
               </div>
+              {editing.kind === 'monthly' && <Field label="关联年度目标" hint="仅关联同年度目标；留空表示未关联。">
+                {/^(20\d\d)-\d\d$/.test(editing.month) ? <AnnualGoalPicker key={`${scope}:${editing.id}:${editing.month.slice(0, 4)}`} year={Number(editing.month.slice(0, 4))} value={editing.annualGoalId || ''} scope={scope} onChange={value => setEditing({ ...editing, annualGoalId: value || null })} /> : <p>先填写所属月份后选择年度目标。</p>}
+              </Field>}
+              {editing.kind === 'weekly' && <div className="form-grid">
+                {([['plannedEffortDays', '本周预计投入'], ['actualEffortDays', '本周实际投入'], ['remainingEffortDays', '任务剩余工作量']] as const).map(([field, label]) => <Field key={field} label={`${label}（人日）`} hint={field === 'remainingEffortDays' && editingTaskLocked ? '沿用现有任务；更正请到原任务处理。' : '按 0.5 人日填写；空白表示未知，0 表示零投入。'}>
+                  <input type="number" min="0" step="0.5" disabled={field === 'remainingEffortDays' && editingTaskLocked} value={field === 'remainingEffortDays' && editingTask ? editingTask.remainingEffortDays ?? '' : editing[field] ?? ''} onChange={event => setEditing({ ...editing, [field]: event.target.value === '' ? null : Number(event.target.value) })} />
+                </Field>)}
+              </div>}
               {(editing.kind === 'monthly' || !!editing.collaboratorIds?.length) && <div className="import-editor-collaborators">
                 <h3>明确匹配协作成员</h3>
                 <p>协作参与与负责人分别记录；请核对同名和无法匹配的原文姓名。</p>
@@ -2793,14 +2836,15 @@ export default function Imports({
                       }}
                     >
                       <option value="">新建个人任务</option>
+                      {editing.taskId && !data.tasks.some(task => task.id === editing.taskId) && <option value={editing.taskId} disabled>已关联任务（正在核对或无访问权限）</option>}
                       {data.tasks
                         .filter(
                           (task) => task.id === editing.taskId ||
-                            ((manager || task.ownerId === data.user.id) && activeUsers.some(user => user.id === task.ownerId)),
+                            (!task.cancellation && (manager || task.ownerId === data.user.id) && activeUsers.some(user => user.id === task.ownerId)),
                         )
                         .map((task) => (
-                          <option key={task.id} value={task.id} disabled={!activeUsers.some(user => user.id === task.ownerId)}>
-                            {task.title}{task.isTemporary ? ' · 临时交办' : ''}{!activeUsers.some(user => user.id === task.ownerId) ? ' · 责任人账号不可用' : ''}
+                          <option key={task.id} value={task.id} disabled={!!task.cancellation || !activeUsers.some(user => user.id === task.ownerId)}>
+                            {task.title}{task.cancellation ? ' · 已作废' : task.isTemporary ? ' · 临时交办' : ''}{!activeUsers.some(user => user.id === task.ownerId) ? ' · 责任人账号不可用' : ''}
                           </option>
                         ))}
                     </select>
@@ -2831,6 +2875,7 @@ export default function Imports({
                       }
                     >
                       <option value="">暂不关联</option>
+                      {editing.monthlyPlanId && !availablePlans.some(plan => plan.id === editing.monthlyPlanId) && <option value={editing.monthlyPlanId} disabled>{data.plans.find(plan => plan.id === editing.monthlyPlanId)?.title || '已关联目标'} · 正在核对或仅供历史引用</option>}
                       {availablePlans.map((plan) => (
                         <option key={plan.id} value={plan.id}>
                           {plan.month} · {plan.title}

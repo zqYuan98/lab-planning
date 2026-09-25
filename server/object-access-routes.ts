@@ -11,7 +11,7 @@ export function observerRouteGuard(store: Store): RequestHandler {
       if (req.user.role !== 'observer') return next()
       const path = req.path.toLowerCase().replace(/\/+$/, '')
       if (req.method === 'POST' && path === '/auth/logout') return next()
-      if (['GET', 'HEAD'].includes(req.method) && (/^\/(?:auth\/me|bootstrap|workspace|my-actions|authorized-work(?:\/[^/]+)?|tasks\/[^/]+\/(?:view|history)|scoped-reports\/[^/]+(?:\/export)?)$/.test(path))) return next()
+      if (['GET', 'HEAD'].includes(req.method) && (/^\/(?:auth\/me|workspace|my-actions|authorized-work(?:\/[^/]+)?|tasks\/[^/]+\/(?:view|history)|scoped-reports\/[^/]+(?:\/export)?)$/.test(path))) return next()
       return next(new HttpError(['GET', 'HEAD'].includes(req.method) ? 404 : 403, '观察者仅能读取明确授权的内容', 'READ_ONLY_OBSERVER'))
     } catch (error) { next(error) }
   }

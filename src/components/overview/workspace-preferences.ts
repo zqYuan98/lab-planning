@@ -78,6 +78,7 @@ function validConfig(value: unknown): value is WorkspacePreferences {
       "draft",
       "unscheduled",
       "overdue",
+      "unplanned",
     ].includes(row.status) &&
     typeof row.riskOnly === "boolean" &&
     (row.includeInactive === undefined || typeof row.includeInactive === "boolean") &&

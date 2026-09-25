@@ -13,6 +13,11 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/planning.example.com/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     client_max_body_size 256k;
+    # Node owns Accept-Encoding negotiation and Vary (gzip/deflate/Brotli), including
+    # direct requests. Keep its Content-Encoding, validators and Cache-Control intact.
+    # Only Vite manifest assets are immutable; HTML revalidates; all API data is no-store.
+    gzip off;
+    proxy_cache off;
 
     # Complete JSON restore packets may contain Word assets (32 MiB plus envelope).
     location ~* ^/api/data/restore/(?:preview|commit)/?$ {
@@ -20,6 +25,7 @@ server {
         proxy_pass http://127.0.0.1:4310;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
+        proxy_set_header Accept-Encoding $http_accept_encoding;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Real-IP $remote_addr;
@@ -34,6 +40,7 @@ server {
         proxy_pass http://127.0.0.1:4310;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
+        proxy_set_header Accept-Encoding $http_accept_encoding;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Real-IP $remote_addr;
@@ -48,6 +55,7 @@ server {
         proxy_pass http://127.0.0.1:4310;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
+        proxy_set_header Accept-Encoding $http_accept_encoding;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Real-IP $remote_addr;
@@ -62,6 +70,7 @@ server {
         proxy_pass http://127.0.0.1:4310;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
+        proxy_set_header Accept-Encoding $http_accept_encoding;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Real-IP $remote_addr;
@@ -74,6 +83,7 @@ server {
         proxy_pass http://127.0.0.1:4310;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
+        proxy_set_header Accept-Encoding $http_accept_encoding;
         proxy_set_header X-Forwarded-Proto $scheme;
         # Overwrite untrusted inbound forwarding headers at this sole edge proxy.
         proxy_set_header X-Forwarded-For $remote_addr;

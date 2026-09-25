@@ -43,15 +43,15 @@ test('real HTTP workflow from manager goal to published month, weekly evidence a
     plan = await manager<MonthlyPlan>(`/plans/${plan.id}/submit`, { version: plan.version })
     plan = await manager<MonthlyPlan>(`/plans/${plan.id}/review`, { version: plan.version, decision: 'approve', comment: '按此成果发布' })
     await manager('/months/2026-09/publish', { planIds: [plan.id] })
-    let data = await member<Bootstrap>('/bootstrap')
-    plan = data.plans.find(p => p.id === plan.id)!
+    let data = await member<{ items: MonthlyPlan[] }>('/workspace/plans?month=2026-09')
+    plan = data.items.find(p => p.id === plan.id)!
     assert.equal(plan.status, 'published')
-    assert.equal((await outsider<Bootstrap>('/bootstrap')).plans.length, 0)
+    assert.equal((await outsider<{ items: MonthlyPlan[] }>('/workspace/plans?month=2026-09')).items.length, 0)
     const task = await member<Task>('/tasks', { title: '补全固定测试集评测', monthlyPlanId: plan.id, description: '输出可重复的评测记录', dueDate: '2026-09-11' })
     let week = await member<WeeklyRecord>('/weekly-records', { taskId: task.id, weekStart: '2026-09-07', commitment: '交付评测记录', status: 'doing', submitted: true })
     week = await member<WeeklyRecord>(`/weekly-records/${week.id}`, { version: week.version, status: 'done', actualOutcome: '已交付评测记录 v1，固定测试集验证通过', evidenceUrl: 'https://example.test/evidence/v1' }, 'PATCH')
-    data = await member<Bootstrap>('/bootstrap')
-    assert.equal(data.plans.find(p => p.id === plan.id)!.acceptanceStatus, 'pending', 'weekly self completion must not accept monthly result')
+    data = await member<{ items: MonthlyPlan[] }>('/workspace/plans?month=2026-09')
+    assert.equal(data.items.find(p => p.id === plan.id)!.acceptanceStatus, 'pending', 'weekly self completion must not accept monthly result')
     const carried = await member<WeeklyRecord>(`/weekly-records/${week.id}/carry`, { weekStart: '2026-09-14', commitment: '复核剩余边界场景' })
     assert.equal(carried.taskId, task.id)
     assert.equal(carried.status, 'planned')
@@ -66,7 +66,7 @@ test('real HTTP workflow from manager goal to published month, weekly evidence a
     await manager(`/reports/${report.id}`, { version: report.version, narrative: '不允许覆盖定稿' }, 'PATCH', 409)
     const fresh = await manager<Report>('/reports', { type: 'weekly', period: '2026-09-07' })
     assert.ok(fresh.revision > report.revision)
-    plan = (await member<Bootstrap>('/bootstrap')).plans.find(p => p.id === plan.id)!
+    plan = (await member<{ items: MonthlyPlan[] }>('/workspace/plans?month=2026-09')).items.find(p => p.id === plan.id)!
     plan = await member<MonthlyPlan>(`/plans/${plan.id}/result`, { version: plan.version, actualOutcome: '已提交 v1 部署包及评测记录', acceptanceStatus: 'submitted' })
     plan = await manager<MonthlyPlan>(`/plans/${plan.id}/result`, { version: plan.version, actualOutcome: plan.actualOutcome, acceptanceStatus: 'accepted', acceptanceNote: '按月初标准确认通过' })
     assert.equal(plan.acceptanceStatus, 'accepted')

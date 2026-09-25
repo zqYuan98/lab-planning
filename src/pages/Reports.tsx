@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
+import { retryableLazy } from '../components/LazyPage'
 import {
   CalendarClock,
   CheckCheck,
@@ -38,8 +39,8 @@ import {
 import '../reports.css'
 import '../report-agent.css'
 import { allowDraftLeave } from '../draft-recovery'
-const ReportAgentCenter = lazy(() => import('../components/ReportAgentCenter'))
-const ReportAgentEditor = lazy(() => import('../components/ReportAgentEditor'))
+const ReportAgentCenter = retryableLazy(() => import('../components/ReportAgentCenter'))
+const ReportAgentEditor = retryableLazy(() => import('../components/ReportAgentEditor'))
 import type { NavigationIntent } from '../navigation'
 import type { ReportMetadata, WorkspacePage } from '../../shared/workspace-query'
 import { useWorkspaceQuery } from '../workspace-query'
@@ -80,9 +81,11 @@ export default function Reports({
     [scheduleOpen, setScheduleOpen] = useState(false)
   const [finalizeOpen, setFinalizeOpen] = useState(false)
   const [agentOpen, setAgentOpen] = useState(false)
+  const [managedTypes, setManagedTypes] = useState<Report['type'][]>([])
+  useEffect(() => { const controller = new AbortController(); if (data.user.role === 'manager') void api<{ managedTypes: Report['type'][] }>('/report-agent/policy', { signal: controller.signal }).then(value => setManagedTypes(value.managedTypes)).catch(() => {}); return () => controller.abort() }, [data.user.id, data.accessScopeVersion, agentOpen])
   const scope = `${data.user.id}:${data.operationEpoch}:${data.accessScopeVersion}`
   const [cursors, setCursors] = useState<string[]>([])
-  const historyQuery = useWorkspaceQuery<WorkspacePage<ReportMetadata>>(`/workspace/reports?limit=50${cursors.length ? `&cursor=${encodeURIComponent(cursors.at(-1)!)}` : ''}`, scope)
+  const historyQuery = useWorkspaceQuery<WorkspacePage<ReportMetadata>>(`/workspace/reports?limit=50${cursors.length ? `&cursor=${encodeURIComponent(cursors.at(-1)!)}` : ''}`, scope, undefined, { onCursorStale: () => { setCursors([]); return '/workspace/reports?limit=50' } })
   const history = historyQuery.value?.items ?? []
   const detailSequence = useRef(0)
   useEffect(() => { detailSequence.current++; setSelected(null); setSelectedId(''); setCursors([]); return () => { detailSequence.current++ } }, [scope])
@@ -90,7 +93,7 @@ export default function Reports({
   const unsaved = Boolean(
     selected && !selected.agent && (title !== selected.title || narrative !== selected.narrative),
   )
-  const editable = selected?.status === 'draft'
+  const editable = selected?.status === 'draft' && !managedTypes.includes(selected.type)
   const metrics = selected ? reportMetrics(selected.snapshot) : null
   const warnings = selected ? snapshotWarnings(selected) : []
   useEffect(() => {
@@ -216,8 +219,8 @@ export default function Reports({
     )
   if (agentOpen) return (
     <div className="reports-page">
-      <PageHeader eyebrow="MANAGEMENT / REPORTS" title="报告中心" description="沿用公司模板，生成有据可查的周报。" actions={<button className="button secondary" onClick={() => { if (canLeave()) setAgentOpen(false) }}>返回汇报档案</button>} />
-      <Suspense fallback={<p role="status">正在加载周报智能体…</p>}><ReportAgentCenter key={data.user.id} data={data} refresh={refresh} notify={notify} onOpenReport={report => { choose(report); setAgentOpen(false) }} /></Suspense>
+      <PageHeader eyebrow="MANAGEMENT / REPORTS" title="报告中心" description="沿用公司 Word 模板，生成有据可查的周报与月报。" actions={<button className="button secondary" onClick={() => { if (canLeave()) setAgentOpen(false) }}>返回汇报档案</button>} />
+      <Suspense fallback={<p role="status">正在加载报告模板与生成…</p>}><ReportAgentCenter key={data.user.id} initialType={type} data={data} refresh={refresh} notify={notify} onOpenReport={report => { choose(report); setAgentOpen(false) }} /></Suspense>
     </div>
   )
   return (
@@ -227,7 +230,7 @@ export default function Reports({
         title="报告中心"
         description="让计划、成果与管理判断各有依据。"
         actions={
-          <><button className="button primary" disabled={busy} onClick={() => { if (canLeave()) setAgentOpen(true) }}><Sparkles size={17} />周报模板与生成</button>
+          <><button className="button primary" disabled={busy} onClick={() => { if (canLeave()) setAgentOpen(true) }}><Sparkles size={17} />周报 / 月报模板与生成</button>
           <button
             className="button secondary"
             disabled={busy}
@@ -245,6 +248,7 @@ export default function Reports({
           </span>
         </div>
       )}
+      <p className="report-quiet">正式报告请使用「周报 / 月报模板与生成」。启用同类型 Word 模板后，旧版本保留只读归档和下载；调度暂停不会恢复旧写入。</p>
       <section className="report-generator" aria-label="生成管理者汇报">
         <div>
           <FileText size={22} />
@@ -279,11 +283,11 @@ export default function Reports({
         </label>
         <button
           className="button primary"
-          disabled={busy || !period}
+          disabled={busy || !period || managedTypes.includes(type)}
           onClick={() => generate()}
         >
           <Plus size={17} />
-          {busy ? '处理中…' : '生成汇报草稿'}
+          {managedTypes.includes(type) ? '已由正式 Word 模板接管' : busy ? '处理中…' : '生成汇报草稿'}
         </button>
       </section>
       {error && (
@@ -330,7 +334,7 @@ export default function Reports({
         </aside>
         <section className="report-document">
           {selected?.agent ? (
-            <Suspense fallback={<p role="status">正在加载周报编辑器…</p>}><ReportAgentEditor key={`${data.user.id}:${selected.id}`} report={selected} accountId={data.user.id} aiConfigured={data.aiConfigured} refresh={refresh} notify={notify} onSaved={choose} /></Suspense>
+            <Suspense fallback={<p role="status">正在加载报告编辑器…</p>}><ReportAgentEditor key={`${data.user.id}:${selected.id}`} report={selected} accountId={data.user.id} aiConfigured={data.aiConfigured} refresh={refresh} notify={notify} onSaved={choose} /></Suspense>
           ) : !selected || !metrics ? (
             <Empty
               title="准备好本期汇报"
@@ -566,7 +570,7 @@ export default function Reports({
                 <div>
                   <button
                     className="button secondary"
-                    disabled={busy}
+                    disabled={busy || managedTypes.includes(selected.type)}
                     onClick={() => generate(selected.type, selected.period)}
                   >
                     <RefreshCw size={15} />
@@ -774,9 +778,10 @@ function SourceFacts({ report }: { report: Report }) {
       if (!originals.has(plan.id)) originals.set(plan.id, plan)
   return (
     <div className="report-facts">
+      {s.effortSummary && <section><h3>冻结投入汇总</h3><p>{s.effortSummary.basis}</p><p>预计 {s.effortSummary.plannedEffortDays} 人日（未填 {s.effortSummary.missingPlannedCount} 条）；实际 {s.effortSummary.actualEffortDays} 人日（未填 {s.effortSummary.missingActualCount} 条）。</p>{s.effortSummary.byProject.map(row => <p key={row.projectId || 'department'}>{row.projectName}：预计 {row.plannedEffortDays} 人日，实际 {row.actualEffortDays} 人日；预计 / 实际未填 {row.missingPlannedCount} / {row.missingActualCount} 条</p>)}</section>}
       <section>
-        <h3>年度目标 · 独立记录</h3>
-        <p>仅引用生成时已记录的年度进展，不使用月计划完成条数推算。</p>
+        <h3>年度目标 · 冻结进度</h3>
+        <p>年度关联进度在生成时冻结；旧报告缺少自动汇总时保留原手工进度。</p>
         {s.annualGoals.length ? (
           <div className="report-table-wrap">
             <table>
@@ -794,7 +799,7 @@ function SourceFacts({ report }: { report: Report }) {
                     <td>{g.title}</td>
                     <td>{g.target}</td>
                     <td>{person(g.ownerId)}</td>
-                    <td className="report-number">{g.progress}%</td>
+                    <td className="report-number">{(() => { const frozen = s.annualGoalSummaries?.find(row => row.goalId === g.id); return frozen ? `${frozen.autoProgress === null ? '暂无关联' : `自动 ${frozen.autoProgress}%`}；${frozen.manualOverride ? '人工覆盖' : '采用自动值'} ${frozen.effectiveProgress ?? '暂无'}${frozen.effectiveProgress === null ? '' : '%'}` : `${g.progress}%（历史手工记录）` })()}</td>
                   </tr>
                 ))}
               </tbody>

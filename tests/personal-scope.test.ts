@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { once } from 'node:events'
 import type { AddressInfo } from 'node:net'
 import { Store } from '../server/store.ts'
-import { Domain } from '../server/domain.ts'
+import { TestDomain as Domain } from './fixtures/legacy-domain.ts'
 import { getOperationEpoch } from '../server/operation-context.ts'
 import { exportBusinessData } from '../server/data-transfer.ts'
 import { ExistingPlanWriter } from '../server/existing-plan-writer.ts'
@@ -202,7 +202,7 @@ test('HTTP shared-goal scope covers import candidates and rejects guessed task, 
   }
   try {
     await request('/auth/login', { email: f.member.email, password: 'Scope-password-123!' })
-    for (const path of ['/bootstrap', '/context', '/data/export?format=json']) {
+    for (const path of ['/workspace/tasks', '/workspace/weekly-records', '/workspace/plans', '/context', '/data/export?format=json']) {
       const value = await request(path)
       assert.ok(!JSON.stringify(value).includes(b.task.title))
       assert.ok(!JSON.stringify(value).includes(b.week.commitment))

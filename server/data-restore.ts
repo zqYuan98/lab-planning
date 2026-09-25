@@ -7,7 +7,7 @@ import { addWeekDays } from './weekly-submission-clock.ts'
 import { manager } from './domain-common.ts'
 import { HttpError, Store } from './store.ts'
 import { rotateOperationEpoch } from './operation-context.ts'
-import { reportSubmissionIssues, weeklyTransferIssues } from './weekly-submission-transfer.ts'
+import { reportSubmissionIssues, weeklyDeadlineRowIssues, weeklyTransferIssues } from './weekly-submission-transfer.ts'
 import type { WeeklyReportSubmission, WeeklyRule } from '../shared/weekly-submissions.ts'
 import type { CollaborationSettings, TaskTracking } from '../shared/collaboration.ts'
 import { collaborationTransferIssues } from './collaboration-transfer.ts'
@@ -35,6 +35,7 @@ function requireManager(store: Store, actor: User) {
 function semanticIssues(name: TransferCollection, input: unknown, issue: (message: string) => void, nested = false) {
   const row = input as Record<string, unknown>
   const label = `${name}/${String(row.id)}`
+  weeklyDeadlineRowIssues(name, input, issue)
   if (Date.parse(String(row.updatedAt)) < Date.parse(String(row.createdAt))) issue(`${label}：更新时间早于创建时间`)
   for (const field of ['id', ...(name === 'projects' ? ['name', 'code'] : ['annualGoals', 'plans', 'tasks', 'reports'].includes(name) ? ['title'] : [])]) {
     if (typeof row[field] === 'string' && !(row[field] as string).trim()) issue(`${label}：${field} 不能为空白`)
@@ -76,7 +77,13 @@ function semanticIssues(name: TransferCollection, input: unknown, issue: (messag
       : /^\d{4}-\d{2}-\d{2}$/.test(report.period) && Number.isFinite(Date.parse(`${report.period}T00:00:00Z`)) && new Date(`${report.period}T00:00:00Z`).toISOString().slice(0, 10) === report.period && new Date(`${report.period}T00:00:00Z`).getUTCDay() === 1
     if (!validPeriod) issue(`${label}：报告周期无效`)
     if ((report.status === 'finalized') !== (report.finalizedAt !== null)) issue(`${label}：定稿状态与定稿时间不一致`)
+    for (const summary of report.snapshot.annualGoalSummaries ?? []) if (summary.acceptedChainCount > summary.chainCount || summary.chainCount > summary.linkedPlanCount) issue(`${label}：年度汇总的链计数不一致`)
+    if (report.snapshot.effortSummary) {
+      const effort = report.snapshot.effortSummary
+      for (const total of [effort, ...effort.byProject, ...effort.byOwnerWeek]) if (total.missingActualCount > total.recordCount || total.missingPlannedCount > total.recordCount) issue(`${label}：投入汇总的缺失数量超出记录数`)
+    }
     for (const [key, entries] of Object.entries(report.snapshot)) {
+      if (key === 'effortSummary' || key === 'annualGoalSummaries') continue
       if (key === 'weeklySubmissions') { for (const entry of entries as WeeklyReportSubmission[]) reportSubmissionIssues(entry, issue); continue }
       const target = ({ contextPlans: 'plans', nextPlans: 'plans', nextWeeklyRecords: 'weeklyRecords', changes: 'events' } as Record<string, TransferCollection>)[key] ?? key as TransferCollection
       for (const entry of entries) semanticIssues(target, entry, issue, true)
@@ -196,6 +203,8 @@ function inspectRestore(store: Store, packet: BusinessDataPacket, requestedMappi
   const plans = available.plans as Map<string, MonthlyPlan>
   const tasks = available.tasks as Map<string, Task>
   for (const plan of rows.plans) {
+    const annualGoal = plan.annualGoalId ? available.annualGoals.get(plan.annualGoalId) as { year: number } | undefined : undefined
+    if (annualGoal && annualGoal.year !== Number(plan.month.slice(0, 4))) issue(`plans/${plan.id}：月目标与关联年度目标年份不一致`)
     if (plan.status === 'published' && ![...available.publications.values()].some(value => {
       const publication = value as Publication
       return publication.month === plan.month && publication.revision === plan.publishedVersion && publication.plans.some(item => item.id === plan.id)

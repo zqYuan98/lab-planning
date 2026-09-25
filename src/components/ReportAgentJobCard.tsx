@@ -45,7 +45,7 @@ export default function ReportAgentJobCard({ initial, onComplete, onOpen }: { in
     finally { mutationLock.current = false; setBusy(false) }
   }
   return <article className="agent-job">
-    <div className="agent-toolbar"><strong>{job.kind === 'learn' ? '学习写作规则' : job.kind === 'rewrite' ? '章节改写' : '生成周报'}</strong><Badge tone={job.status === 'ready' ? 'green' : 'amber'}>{agentJobLabels[job.status]}</Badge></div>
+    <div className="agent-toolbar"><strong>{job.kind === 'learn' ? '学习写作规则' : job.kind === 'rewrite' ? '章节改写' : '生成报告'}</strong><Badge tone={job.status === 'ready' ? 'green' : 'amber'}>{agentJobLabels[job.status]}</Badge></div>
     <p role="status">{job.progress || '等待处理'}{job.completedBlockIds.length ? ` · 已处理 ${job.completedBlockIds.length} 个区域` : ''}</p>
     <p className="agent-note">创建于 {agentTime(job.createdAt)}{job.startedAt ? ` · 开始于 ${agentTime(job.startedAt)}` : ''}</p>
     {job.error && <p className="error" role="alert">{job.error}</p>}

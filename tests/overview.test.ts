@@ -187,3 +187,23 @@ test("micro comparisons require observed history; returned submissions are not m
   assert.equal(empty.weekChange, null);
   assert.equal(empty.reviewScope.length, 0);
 });
+
+test("historical goals never affect current metrics or focus, while earlier publication trends remain historical evidence", () => {
+  const data = base();
+  data.plans = [
+    plan("former-published", { status: "published", visibility: "historical", acceptanceStatus: "accepted" }),
+    plan("former-review", { status: "submitted", visibility: "historical" }),
+    plan("former-approved", { status: "approved", visibility: "historical" }),
+    plan("former-returned", { status: "returned", visibility: "historical" }),
+    plan("legacy-reference", { visibility: "reference" }),
+  ];
+  data.publications = [
+    { ...entity, id: "september-original", month: "2026-09", revision: 1, actorId: "manager", reason: "", plans: [plan("former-published", { status: "published" })] },
+    { ...entity, id: "august-original", month: "2026-08", revision: 1, actorId: "manager", reason: "", plans: [plan("august-published", { month: "2026-08", status: "published" })] },
+  ];
+  const result = buildOverview(data, "2026-09-24");
+  for (const key of ["plans", "published", "pending", "approved", "reviewScope", "accepted", "awaitingAcceptance", "returned", "focusPlans"] as const) assert.equal(result[key].length, 0, key);
+  assert.equal(result.missingMembers.length, 1);
+  assert.deepEqual(result.monthTrend.map(point => point.value), [null, null, 1, 0]);
+  assert.equal(result.monthChange, -1);
+});

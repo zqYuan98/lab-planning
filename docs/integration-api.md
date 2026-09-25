@@ -33,6 +33,8 @@
 | DELETE `/imports/history/:id` | `{version}`；删除单条历史资料，保留来源与其他记录；需 imports:commit |
 | GET `/data/export?format=json&type=all` | 业务导出；format支持json/csv/xlsx，type见界面；可加month/ownerId/projectId |
 
+R3 保留 `/context` 的完整集成协议，内部已使用独立读取，不再调用全量工作空间方法。网页候选改用分页查询；业务导出仍覆盖完整授权集合，不受网页页长限制。网页接口及退役说明见[页面数据路径](workspace-data-paths.md)。
+
 结构化写入示例（所有编号先从 `/context` 获取）：
 
 ```json
@@ -96,3 +98,9 @@
 管理员JSON恢复只通过网页认证 `/api/data/restore/preview` 和 `/commit` 开放，令牌不允许恢复整个数据包。模型连接配置与令牌创建同样要求管理员网页会话。
 
 业务 JSON 导出和恢复保留历史行及其审计快照中的 `isTemporary`、`temporaryReason`，旧包不含这些字段仍可恢复。CSV/XLSX 在历史资料的 `row` JSON 单元格、审计快照单元格及月目标／任务对应字段列中保留临时属性。此次仅增加可选 JSON 字段，不改变数据库或迁移包格式版本。
+
+## R4 年度关联与投入字段
+
+校对及结构化导入支持 `annualGoalId?: string|null`、`remainingEffortDays?: number|null`、`plannedEffortDays?: number|null`、`actualEffortDays?: number|null`。月目标年度关联须同年；后面三项用于个人任务剩余工作量及周预计/实际投入。导入允许数字字符串并规范化为非负 0.5 人日步长数值；空白规范化为 null，零保留为零，未提供字段不覆盖旧值。选择现有任务时沿用其任务级字段。
+
+包含 R4 字段、冻结汇总或月报模板的业务包使用格式 8；无新内容的老包保留原版本选择。CSV 属于辅助数据，正式报告通过 Word 模板流程生成。完整口径、权限与回退说明见[业务补齐说明](business-r4.md)。

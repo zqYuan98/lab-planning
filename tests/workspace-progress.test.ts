@@ -1,7 +1,7 @@
 import test, { type TestContext } from 'node:test'
 import assert from 'node:assert/strict'
 import { Store } from '../server/store.ts'
-import { Domain } from '../server/domain.ts'
+import { TestDomain as Domain } from './fixtures/legacy-domain.ts'
 import { WorkspaceQueryService } from '../server/workspace-query.ts'
 import { workProgressProjector } from '../server/work-progress.ts'
 import { buildWorkRegister, workRegisterToday } from '../shared/work-register.ts'

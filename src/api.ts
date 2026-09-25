@@ -1,5 +1,6 @@
 import { rememberClientError } from './error-context'
 import { captureMutationContext, MutationContextChangedError, publishMutationResponse } from './mutation-response'
+import { rejectSessionIdentity, sessionActor } from './session-identity'
 
 export class ApiError extends Error {
   constructor(
@@ -29,6 +30,10 @@ export async function api<T = unknown>(
 ): Promise<T> {
   const mutationContext = captureMutationContext()
   const method = (options.method || 'GET').toUpperCase()
+  const normalizedPath = path.startsWith('/api/') ? path.slice(4) : `/${path.replace(/^\//, '')}`
+  const discoverIdentity = normalizedPath.startsWith('/auth/') || normalizedPath.split('?')[0] === '/workspace'
+  const identity = sessionActor()
+  if (!discoverIdentity && identity.blocked) throw new MutationContextChangedError()
   let response: Response
   try { response = await fetch(
     path.startsWith('/api/')
@@ -46,6 +51,7 @@ export async function api<T = unknown>(
           ? { 'Content-Type': 'application/json' }
           : {}),
         ...options.headers,
+        ...(!discoverIdentity && identity.actorId ? { 'X-Lab-Actor-Id': identity.actorId } : {}),
       },
     },
   ) } catch (error) {
@@ -75,6 +81,7 @@ export async function api<T = unknown>(
     throw new ApiError(message, response.status, requestId)
   }
   if (!response.ok) {
+    if (value?.code === 'SESSION_IDENTITY_CHANGED') rejectSessionIdentity(mutationContext)
     const requestId = response.headers.get('X-Request-Id') || (typeof value?.requestId === 'string' ? value.requestId : undefined)
     const message = response.status === 401 && !path.includes('/auth/') ? '登录已过期，请重新登录。请保留当前页面，已暂存的草稿可在登录后恢复。' : value?.error || `请求失败（${response.status}）`
     if (response.status >= 500) rememberClientError(message, requestId)
@@ -83,7 +90,6 @@ export async function api<T = unknown>(
       value?.fieldErrors && typeof value.fieldErrors === 'object' && !Array.isArray(value.fieldErrors)
         && Object.values(value.fieldErrors).every(item => typeof item === 'string') ? value.fieldErrors : undefined)
   }
-  const normalizedPath = path.startsWith('/api/') ? path.slice(4) : `/${path.replace(/^\//, '')}`
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && !normalizedPath.startsWith('/auth/')
       && !publishMutationResponse(mutationContext, path, value)) throw new MutationContextChangedError()
   return value as T

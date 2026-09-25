@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
+import { retryableLazy } from './LazyPage'
 import { CheckCheck, Download, Save, Sparkles } from 'lucide-react'
 import type { ReportAgentBinding, ReportAgentJob, ReportAssetSummary, ReportTemplate, UpdateReportTemplateInput } from '../../shared/report-agent'
 import type { DocxRegion } from '../../shared/report-docx'
@@ -6,7 +7,7 @@ import { api, json } from '../api'
 import { Badge, Field, Modal } from '../ui'
 import { useFormDraft } from '../use-form-draft'
 import { agentAssetUrl, agentBindingLabels, agentDatasetLabels, agentFieldLabels, agentLabel, agentRequestId } from './ReportAgentHelpers'
-const ReportAgentPreview = lazy(() => import('./ReportAgentPreview'))
+const ReportAgentPreview = retryableLazy(() => import('./ReportAgentPreview'))
 
 type TemplateDraft = Omit<UpdateReportTemplateInput, 'expectedVersion'>
 const templateDraft = (template: ReportTemplate): TemplateDraft => ({ name: template.name, bindings: template.bindings, rules: template.rules, rulesConfirmed: template.rulesConfirmed, exampleAssetIds: template.exampleAssetIds, effectiveWeek: template.effectiveWeek })
@@ -66,7 +67,7 @@ export default function ReportAgentTemplate({ initial, assets, accountId, aiConf
   }
   function renderBinding(binding: ReportAgentBinding) {
     const region = regions.find(item => item.id === binding.regionId)
-    return <BindingEditor key={binding.regionId} binding={binding} region={region} disabled={!editable || busy} onChange={changeBinding} />
+    return <BindingEditor monthly={saved.type === 'monthly'} key={binding.regionId} binding={binding} region={region} disabled={!editable || busy} onChange={changeBinding} />
   }
   return <section className="agent-template">
     <div className="agent-toolbar"><div><h3>{saved.name}</h3><p className="agent-note">逐项确认固定原文、需替换的历史内容和公司指标口径。公司预算、TOP 数量等指标没有可信口径时，保留为人工补充。</p></div><Badge tone={saved.status === 'active' ? 'green' : 'amber'}>{saved.status === 'active' ? '已启用 · 版本锁定' : saved.status === 'archived' ? '已停用' : dirty ? '有未保存修改' : '模板草案'}</Badge></div>
@@ -75,7 +76,7 @@ export default function ReportAgentTemplate({ initial, assets, accountId, aiConf
     <form ref={recovery.formRef} onInput={recovery.rememberDraft} onChange={recovery.rememberDraft} onSubmit={event => { event.preventDefault(); void save() }}>
       {recovery.notice && <p className="agent-note" role="status">{recovery.notice}</p>}
       <fieldset disabled={!editable || busy} className="agent-fieldset">
-        <div className="agent-form-grid"><Field label="模板名称"><input name="templateName" value={draft.name} maxLength={120} onChange={event => setDraft(value => ({ ...value, name: event.target.value }))} required /></Field><Field label="从哪一周开始适用" hint="请选择该周任意一天，保存后以周一为准。"><input name="effectiveWeek" type="date" value={draft.effectiveWeek} onChange={event => setDraft(value => ({ ...value, effectiveWeek: event.target.value }))} required /></Field></div>
+        <div className="agent-form-grid"><Field label="模板名称"><input name="templateName" value={draft.name} maxLength={120} onChange={event => setDraft(value => ({ ...value, name: event.target.value }))} required /></Field><Field label={saved.type === 'monthly' ? '从哪一月开始适用' : '从哪一周开始适用'} hint={saved.type === 'monthly' ? '使用 YYYY-MM 月份，与周模板独立生效。' : '请选择该周任意一天，保存后以周一为准。'}><input name="effectiveWeek" type={saved.type === 'monthly' ? 'month' : 'date'} value={draft.effectiveWeek} onChange={event => setDraft(value => ({ ...value, effectiveWeek: event.target.value }))} required /></Field></div>
         <h4>1 · 原文与填写区域</h4>
         {topRegions.map((region, index) => {
           const bindings = draft.bindings.filter(binding => binding.regionId === region.id || region.kind === 'table' && binding.regionId.startsWith(`${region.id}:`))
@@ -106,7 +107,7 @@ export default function ReportAgentTemplate({ initial, assets, accountId, aiConf
     })}>生成试填 Word</button>{saved.previewAssetId && <button className="button secondary" disabled={dirty} onClick={() => setPreview('trial')}>查看已保存试填</button>}</div>
       <ReportTemplateActivation busy={busy} dirty={dirty} layoutVerified={layoutVerified} layoutNote={layoutNote} hasPreview={!!saved.previewAssetId} rulesConfirmed={draft.rulesConfirmed} onLayoutVerified={setLayoutVerified} onLayoutNote={setLayoutNote} onActivate={() => void action(async () => {
         const template = await api<ReportTemplate>(`/report-agent/templates/${saved.id}/activate`, json({ expectedVersion: saved.version, layoutVerified, layoutNote }))
-        accept(template); notify('周报模板已启用，可以选择周次生成报告。')
+        accept(template); notify('报告模板已启用，可以选择对应周期生成报告。')
       })} />
     </section>}
     {saved.status === 'active' && <div className="agent-callout"><p>模板已锁定。修改内容或公司换版时，请上传文件建立新模板；历史报告保留原模板。</p><button className="button secondary" disabled={busy} onClick={() => void action(async () => { const result = await api<ReportTemplate>(`/report-agent/templates/${saved.id}/archive`, json({ expectedVersion: saved.version })); accept(result); notify('模板已停用，历史文件仍保留。') })}>停用此模板</button></div>}
@@ -121,7 +122,7 @@ export function ReportTemplateActivation({ busy, dirty, layoutVerified, layoutNo
 function OriginalRegion({ region }: { region: DocxRegion }) {
   return <div className="agent-original"><strong>上传文件原文</strong>{region.kind === 'table' ? <div className="agent-table-scroll"><table><tbody>{region.rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={cellIndex}><small>第 {rowIndex + 1} 行 · 第 {cellIndex + 1} 列</small>{cell || '（空白）'}</td>)}</tr>)}</tbody></table></div> : <p>{region.text || '（空白段落）'}</p>}</div>
 }
-function BindingEditor({ binding, region, disabled, onChange }: { binding: ReportAgentBinding; region?: DocxRegion; disabled: boolean; onChange: (value: ReportAgentBinding) => void }) {
+function BindingEditor({ monthly, binding, region, disabled, onChange }: { monthly: boolean; binding: ReportAgentBinding; region?: DocxRegion; disabled: boolean; onChange: (value: ReportAgentBinding) => void }) {
   const table = region?.kind === 'table' ? region : undefined
   function changeKind(kind: ReportAgentBinding['kind']) {
     const row = table?.rows[Math.max(table.headerRows, 1)] || table?.rows.at(-1) || []
@@ -133,9 +134,9 @@ function BindingEditor({ binding, region, disabled, onChange }: { binding: Repor
     {binding.kind === 'keep' && <><p className="agent-note">以下文字会保留到每期输出，请确认没有历史数字、日期、人名或成果。</p>{region?.kind !== 'table' && <Field label="固定文字（可清理旧标题中的示例数字）"><textarea disabled={disabled} value={binding.value ?? region?.text ?? ''} rows={2} onChange={event => onChange({ ...binding, value: event.target.value })} /></Field>}</>}
     {binding.kind === 'clear' && <p className="agent-note">输出时清除此区域的原文。</p>}
     {binding.kind === 'manual' && <p className="agent-callout">每期生成后填写，并注明来源及确认。系统不会用工作条数猜测公司指标。</p>}
-    {binding.kind === 'meta' && <Field label="日期或标题来源"><select disabled={disabled} value={binding.meta || 'period'} onChange={event => onChange({ ...binding, meta: event.target.value as ReportAgentBinding['meta'] })}><option value="period">本周开始日期</option><option value="week_range">本周起止日期</option><option value="author">汇报人</option><option value="department">部门名称</option><option value="week_end">本周结束日期</option><option value="captured_at">数据截至时间</option><option value="title">报告标题</option></select></Field>}
-    {binding.kind === 'section' && <Field label="段落内容"><select disabled={disabled} value={binding.section || 'outcomes'} onChange={event => onChange({ ...binding, section: event.target.value as ReportAgentBinding['section'] })}>{Object.entries(agentDatasetLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>}
-    {binding.kind === 'dataset' && <><Field label="表格内容来源"><select disabled={disabled} value={binding.dataset || 'outcomes'} onChange={event => onChange({ ...binding, dataset: event.target.value as ReportAgentBinding['dataset'] })}>{Object.entries(agentDatasetLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field><p className="agent-note">指定原文中需要替换的完整数据行，表头保留。结束行固定为原表格末行，避免旧范例留在新报告中。</p><div className="agent-form-grid"><Field label="开始替换行（从 1 起）"><input disabled={disabled} type="number" min={2} max={table?.rows.length} value={(binding.startRow ?? 1) + 1} onChange={event => onChange({ ...binding, startRow: Number(event.target.value) - 1 })} /></Field><Field label="结束替换行（包含）"><input readOnly type="number" min={(binding.startRow ?? 1) + 1} max={table?.rows.length} value={binding.endRow ?? table?.rows.length ?? 1} onChange={event => onChange({ ...binding, endRow: Number(event.target.value) })} /></Field></div>
+    {binding.kind === 'meta' && <Field label="日期或标题来源"><select disabled={disabled} value={binding.meta || 'period'} onChange={event => onChange({ ...binding, meta: event.target.value as ReportAgentBinding['meta'] })}><option value="period">{monthly ? '报告月份' : '本周开始日期'}</option><option value="week_range">{monthly ? '本月起止日期' : '本周起止日期'}</option><option value="author">汇报人</option><option value="department">部门名称</option><option value="week_end">{monthly ? '本月最后一天' : '本周结束日期'}</option><option value="captured_at">数据截至时间</option><option value="title">报告标题</option></select></Field>}
+    {binding.kind === 'section' && <Field label="段落内容"><select disabled={disabled} value={binding.section || 'outcomes'} onChange={event => onChange({ ...binding, section: event.target.value as ReportAgentBinding['section'] })}>{Object.entries(agentDatasetLabels).filter(([value]) => monthly ? value !== 'next_week' : value !== 'next_month').map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>}
+    {binding.kind === 'dataset' && <><Field label="表格内容来源"><select disabled={disabled} value={binding.dataset || 'outcomes'} onChange={event => onChange({ ...binding, dataset: event.target.value as ReportAgentBinding['dataset'] })}>{Object.entries(agentDatasetLabels).filter(([value]) => monthly ? value !== 'next_week' : value !== 'next_month').map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field><p className="agent-note">指定原文中需要替换的完整数据行，表头结构保留；月报会将周度固定标记转换为月度标记。结束行固定为原表格末行，避免旧范例留在新报告中。</p><div className="agent-form-grid"><Field label="开始替换行（从 1 起）"><input disabled={disabled} type="number" min={2} max={table?.rows.length} value={(binding.startRow ?? 1) + 1} onChange={event => onChange({ ...binding, startRow: Number(event.target.value) - 1 })} /></Field><Field label="结束替换行（包含）"><input readOnly type="number" min={(binding.startRow ?? 1) + 1} max={table?.rows.length} value={binding.endRow ?? table?.rows.length ?? 1} onChange={event => onChange({ ...binding, endRow: Number(event.target.value) })} /></Field></div>
       <div className="agent-column-mappings">{binding.columns?.map((column, index) => <div className="agent-column" key={index}><Field label={`第 ${index + 1} 列 · ${column.label}`}><select disabled={disabled} value={column.field} onChange={event => onChange({ ...binding, columns: binding.columns?.map((item, col) => col === index ? { ...item, field: event.target.value as typeof column.field } : item) })}>{Object.entries(agentFieldLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field><label className="agent-check"><input type="checkbox" disabled={disabled} checked={column.required} onChange={event => onChange({ ...binding, columns: binding.columns?.map((item, col) => col === index ? { ...item, required: event.target.checked } : item) })} />必填</label></div>)}</div></>}
   </div>
 }

@@ -1,5 +1,7 @@
 import { openTask } from '../navigation';
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import type { DepartmentOverviewResponse, OverviewDrill, OverviewRow } from "../../shared/overview-workspace";
+import { useWorkspaceQuery } from "../workspace-query";
 import {
   Users,
   List,
@@ -28,32 +30,20 @@ import {
   weekMonday,
 } from "../overview-data";
 import {
-  buildWorkspace,
-  filterWorkRows,
   summarizeWorkRows,
-  type WorkFilters,
-  type WorkRow,
 } from "../overview-workspace-data";
 import { Modal, type PageProps } from "../ui";
 import type { Navigate } from "../navigation";
-import WorkOriginLabel from "../components/WorkOriginLabel";
 import { TaskLegend } from "../components/TaskSignals";
-import { TaskCancellationAction, TaskCancellationModal } from "../components/TaskCancellation";
-import { createSubmissionRequestId, weeklyRecordState } from "../weekly-submission-flow";
-import { isEffectiveWeeklyRecord } from "../../shared/weekly-record-state";
+import { createSubmissionRequestId } from "../weekly-submission-flow";
 import {
   Board,
-  MemberTable,
-  NoRows,
-  ProjectView,
-  riskRows,
+  OverviewMemberTable,
+  OverviewProjectView,
   statusLabels,
   statusOrder,
-  StatusPill,
   TaskTable,
   Timeline,
-  WorkRowSignals,
-  workRowClass,
 } from "../components/overview/WorkspaceViews";
 import {
   columnLabels,
@@ -75,13 +65,9 @@ const viewIcons = {
   projects: FolderKanban,
   timeline: CalendarDays,
 };
-const compareName = (a: WorkRow, b: WorkRow) =>
-  a.ownerName.localeCompare(b.ownerName, "zh-CN") ||
-  a.title.localeCompare(b.title, "zh-CN");
 
 export default function DepartmentOverview({
   data,
-  refresh,
   navigate,
   notify,
 }: PageProps & { navigate: Navigate }) {
@@ -94,14 +80,10 @@ export default function DepartmentOverview({
   const [selectedView, setSelectedView] = useState("");
   const [saveName, setSaveName] = useState("");
   const [saving, setSaving] = useState(false);
-  const [detail, setDetail] = useState<WorkRow | null>(null);
-  const [cancellationTaskId, setCancellationTaskId] = useState<string | null>(null);
-  const cancellationTask = data.tasks.find(task => task.id === cancellationTaskId);
-  const [drill, setDrill] = useState<{ title: string; rows: WorkRow[] } | null>(
-    null,
-  );
+  const [cursors, setCursors] = useState<string[]>([""]);
   const today = shanghaiToday();
   function change(patch: Partial<WorkspacePreferences>) {
+    setCursors([""]);
     setConfig((previous) => ({
       ...previous,
       ...(patch.view && patch.view !== "members" && previous.sort === "tasks"
@@ -111,51 +93,16 @@ export default function DepartmentOverview({
     }));
     setSelectedView("");
   }
-  const workspace = useMemo(
-    () =>
-      buildWorkspace(data, { period: config.period, date: config.date, includeInactive: config.includeInactive }, today),
-    [data, config.period, config.date, config.includeInactive, today],
-  );
-  const rows = useMemo(() => {
-    const work = filterWorkRows(workspace.rows, {
-      ...config,
-      status: config.status as WorkFilters["status"],
-    });
-    return [...work].sort(
-      (a, b) =>
-        (config.sort === "due"
-          ? (a.dueDate || "9999").localeCompare(b.dueDate || "9999")
-          : config.sort === "risk"
-            ? Number(
-                b.overdue || b.status === "blocked" || b.status === "not_done",
-              ) -
-              Number(
-                a.overdue || a.status === "blocked" || a.status === "not_done",
-              )
-            : 0) || compareName(a, b),
-    );
-  }, [workspace.rows, config]);
-  const summary = summarizeWorkRows(rows);
-  const represented = new Set(rows.map((row) => row.ownerId));
-  const members = workspace.members.filter((member) => {
-    if (config.ownerId && member.id !== config.ownerId) return false;
-    if (config.projectId || config.status || config.riskOnly)
-      return represented.has(member.id);
-    return (
-      !config.query.trim() ||
-      represented.has(member.id) ||
-      member.name
-        .toLocaleLowerCase()
-        .includes(config.query.trim().toLocaleLowerCase())
-    );
-  });
-  const projectOptions = [
-    ...new Map(
-      workspace.rows
-        .filter((row) => row.projectId)
-        .map((row) => [row.projectId!, row.projectName]),
-    ).entries(),
-  ];
+  const parameters = new URLSearchParams({ period: config.period, date: config.date, includeInactive: String(!!config.includeInactive), ownerId: config.ownerId, projectId: config.projectId, status: config.status, q: config.query, riskOnly: String(config.riskOnly), sort: config.sort, limit: '50' });
+  if (cursors.at(-1)) parameters.set('cursor', cursors.at(-1)!);
+  const query = useWorkspaceQuery<DepartmentOverviewResponse>(`/workspace/overview/department?${parameters}`, `${data.user.id}:${data.operationEpoch}:${data.accessScopeVersion}`, undefined, { onCursorStale: () => { const first = new URLSearchParams(parameters); first.delete('cursor'); setCursors(['']); return `/workspace/overview/department?${first}` } });
+  const reloadFirst = () => { const first = new URLSearchParams(parameters); first.delete('cursor'); setCursors(['']); return query.reload(`/workspace/overview/department?${first}`) };
+  const empty = { ...summarizeWorkRows([]), risk: 0 };
+  const workspace = query.value;
+  const rows = workspace?.items || [], members = workspace?.members || [], summary = workspace?.summary || empty;
+  const memberOptions = workspace?.memberOptions || [], projectOptions = (workspace?.projectOptions || []).map(project => [project.id, project.name]);
+  const setDetail = (row: OverviewRow) => openTask({ taskId: row.taskId, section: 'overview' });
+  const onDrill = (patch: OverviewDrill) => change({ ...patch, ...(patch.status === 'all' ? { status: '' } : {}), view: 'tasks' });
   const hasFilters = Boolean(
     config.query ||
     config.ownerId ||
@@ -188,7 +135,7 @@ export default function DepartmentOverview({
           {
             key: "owner",
             label:
-              data.users.find((user) => user.id === config.ownerId)?.name ||
+              memberOptions.find((user) => user.id === config.ownerId)?.name ||
               "历史成员",
             clear: () => change({ ownerId: "" }),
           },
@@ -201,9 +148,7 @@ export default function DepartmentOverview({
             label:
               config.projectId === "__none__"
                 ? "未关联项目"
-                : data.projects.find(
-                    (project) => project.id === config.projectId,
-                  )?.name || "历史项目",
+                : workspace?.projectOptions.find((project) => project.id === config.projectId)?.name || "历史项目",
             clear: () => change({ projectId: "" }),
           },
         ]
@@ -215,7 +160,7 @@ export default function DepartmentOverview({
             label:
               config.status === "overdue"
                 ? "已逾期"
-                : statusLabels[config.status as WorkRow["status"]],
+                : config.status === "unplanned" ? "草稿 / 未排周" : statusLabels[config.status as OverviewRow["status"]],
             clear: () => change({ status: "" }),
           },
         ]
@@ -239,8 +184,6 @@ export default function DepartmentOverview({
       riskOnly: false,
       includeInactive: false,
     });
-  const onDrill = (title: string, work: WorkRow[]) =>
-    setDrill({ title, rows: work });
   function shiftPeriod(amount: number) {
     change({
       date:
@@ -284,26 +227,8 @@ export default function DepartmentOverview({
       notify("当前浏览器无法更新保存的视图。");
     }
   }
-  function openRecord(row: WorkRow) {
-    openTask({taskId:row.taskId,section:row.record?'weekly':'overview',weeklyRecordId:row.record?.id});
-  }
-
-  const periodLabel =
-    config.period === "all"
-      ? "全部周期"
-      : `${workspace.startDate} — ${workspace.endDate}`;
+  const periodLabel = config.period === "all" ? "全部周期" : workspace ? `${workspace.startDate} — ${workspace.endDate}` : config.date;
   const actionDate = config.period === "all" ? today : config.date;
-  function taskWeek(row: WorkRow) {
-    const plan = row.task?.monthlyPlanId
-      ? data.plans.find((plan) => plan.id === row.task!.monthlyPlanId)
-      : undefined;
-    // New work must intersect the task's current goal month, including after a historical relink.
-    const anchor =
-      plan && plan.month !== actionDate.slice(0, 7)
-        ? `${plan.month}-01`
-        : actionDate;
-    return weekMonday(anchor);
-  }
   const metrics = [
     {
       label: "团队成员",
@@ -323,7 +248,7 @@ export default function DepartmentOverview({
       unit: "项",
       note: "跨周任务已去重",
       active: config.view === "tasks" && !config.status && !config.riskOnly,
-      action: () => onDrill("当前筛选的全部任务", rows),
+      action: () => change({ view: "tasks" }),
     },
     {
       label: "推进中",
@@ -333,11 +258,7 @@ export default function DepartmentOverview({
       unit: "项",
       note: "本期最新执行状态",
       active: false,
-      action: () =>
-        onDrill(
-          "推进中的任务",
-          rows.filter((row) => row.status === "doing"),
-        ),
+      action: () => onDrill({ status: "doing" }),
     },
     {
       label: "自报完成",
@@ -347,21 +268,17 @@ export default function DepartmentOverview({
       unit: "项",
       note: "月度成果验收独立进行",
       active: false,
-      action: () =>
-        onDrill(
-          "自报完成的任务",
-          rows.filter((row) => row.status === "done"),
-        ),
+      action: () => onDrill({ status: "done" }),
     },
     {
       label: "需要关注",
       icon: AlertCircle,
       tone: "red",
-      value: riskRows(rows).length,
+      value: summary.risk,
       unit: "项",
       note: `${summary.blocked} 阻塞 · ${summary.notDone} 未完成 · ${summary.overdue} 逾期`,
       active: config.riskOnly,
-      action: () => onDrill("需要关注的任务（去重）", riskRows(rows)),
+      action: () => onDrill({ riskOnly: true }),
     },
     {
       label: "草稿·待审 / 未排周",
@@ -371,17 +288,13 @@ export default function DepartmentOverview({
       unit: "项",
       note: "待完善工作安排",
       active: false,
-      action: () =>
-        onDrill(
-          "草稿、待审核与未排周的任务",
-          rows.filter(
-            (row) => row.status === "draft" || row.status === "unscheduled",
-          ),
-        ),
+      action: () => change({ view: "tasks", status: "unplanned" }),
     },
   ];
   return (
     <div className="ow-page" data-density={config.density || "comfortable"}>
+      {query.loading && <p role="status">正在读取概览…</p>}
+      {query.error && <p role="alert">{query.error}<button onClick={() => { void reloadFirst().catch(() => {}) }}>重新加载</button></p>}
       <header className="ow-heading">
         <div className="ow-heading-title">
           <span className="ow-heading-icon" aria-hidden="true">
@@ -607,16 +520,16 @@ export default function DepartmentOverview({
               >
                 <option value="">全部成员</option>
                 {config.ownerId &&
-                  !workspace.members.some(
+                  !memberOptions.some(
                     (member) => member.id === config.ownerId,
                   ) && (
                     <option value={config.ownerId}>
-                      {data.users.find((member) => member.id === config.ownerId)
+                      {memberOptions.find((member) => member.id === config.ownerId)
                         ?.name || "历史成员"}
                       （本期无数据）
                     </option>
                   )}
-                {workspace.members.map((member) => (
+                {memberOptions.map((member) => (
                   <option key={member.id} value={member.id}>
                     {member.name}
                     {!member.active ? "（已停用）" : ""}
@@ -636,9 +549,7 @@ export default function DepartmentOverview({
                   config.projectId !== "__none__" &&
                   !projectOptions.some(([id]) => id === config.projectId) && (
                     <option value={config.projectId}>
-                      {data.projects.find(
-                        (project) => project.id === config.projectId,
-                      )?.name || "历史项目"}
+                      {workspace?.projectOptions.find((project) => project.id === config.projectId)?.name || "历史项目"}
                       （本期无数据）
                     </option>
                   )}
@@ -719,6 +630,7 @@ export default function DepartmentOverview({
                         (item) => item.id === event.target.value,
                       );
                       if (view) {
+                        setCursors(['']);
                         setConfig({
                           ...view.config,
                           columns: [...view.config.columns],
@@ -825,6 +737,7 @@ export default function DepartmentOverview({
             <button
               className="ow-button"
               onClick={() => {
+                setCursors(['']);
                 setConfig(defaultPreferences());
                 setSelectedView("");
               }}
@@ -838,7 +751,7 @@ export default function DepartmentOverview({
           <span>
             <strong>{members.length}</strong> 位成员
             <span className="ow-meta-divider"> / </span>
-            <strong>{rows.length}</strong> 项任务
+            <strong>{summary.total}</strong> 项任务
             {config.includeInactive ? " · 包含停用成员的历史工作" : " · 仅启用成员"}
             {config.view === "members" && !hasFilters
               ? " · 含暂无任务成员"
@@ -889,24 +802,22 @@ export default function DepartmentOverview({
           tabIndex={0}
         >
           {config.view === "members" ? (
-            <MemberTable
-              members={members}
-              rows={rows}
-              columns={config.columns}
-              sort={config.sort}
-              onOpen={setDetail}
-              onDrill={onDrill}
-            />
+            <OverviewMemberTable members={members} columns={config.columns} onOpen={setDetail} onDrill={onDrill} />
           ) : config.view === "tasks" ? (
             <TaskTable rows={rows} onOpen={setDetail} />
           ) : config.view === "board" ? (
-            <Board rows={rows} group={config.group} onOpen={setDetail} />
+            <Board rows={rows} group={config.group} onOpen={setDetail} totals={workspace?.groups[config.group]} onFilter={onDrill} />
           ) : config.view === "projects" ? (
-            <ProjectView rows={rows} onDrill={onDrill} />
+            <OverviewProjectView groups={workspace?.groups.project || []} onDrill={onDrill} />
           ) : (
             <Timeline rows={rows} onOpen={setDetail} />
           )}
         </div>
+        {['tasks', 'board', 'timeline'].includes(config.view) && <div className="ow-filter-note" aria-label="任务分页">
+          <span>第 {cursors.length} 页 · 本页 {rows.length} 项 / 共 {summary.total} 项</span>
+          <button disabled={cursors.length === 1 || query.loading} onClick={() => setCursors(previous => previous.slice(0, -1))}>上一页</button>
+          <button disabled={!workspace?.nextCursor || query.loading} onClick={() => setCursors(previous => [...previous, workspace!.nextCursor!])}>下一页</button>
+        </div>}
         <footer className="ow-footer">
           <span>
             {viewLabels[config.view]} · {periodLabel}
@@ -923,138 +834,6 @@ export default function DepartmentOverview({
           任务按编号去重，状态取所选周期最新周记录；草稿和待审计划单列，未排周表示该周期没有周记录。月度目标或截止日命中的任务也纳入月视图。逾期按当前截止日期与今天比较，历史周期不还原历史截止日期。单条周记录纳入统计不代表整份周提报已提交。
         </p>
       </details>
-      {drill && (
-        <Modal wide title={drill.title} onClose={() => setDrill(null)}>
-          <div className="ow-page">
-            <p className="ow-muted">
-              {drill.rows.length} 项任务 · {periodLabel}
-            </p>
-            {drill.rows.length ? (
-              <TaskTable
-                rows={drill.rows}
-                onOpen={(row) => {
-                  setDrill(null);
-                  setDetail(row);
-                }}
-              />
-            ) : (
-              <NoRows text="当前没有此类任务" />
-            )}
-          </div>
-        </Modal>
-      )}
-      {detail && !cancellationTask && (
-        <Modal wide title={detail.title} onClose={() => setDetail(null)}>
-          <div className={`ow-page ${workRowClass(detail)}`}>
-            <div className="ow-detail-meta">
-              <WorkRowSignals row={detail} />
-              <span>负责人：{detail.ownerName}</span>
-              <StatusPill row={detail} />
-              <span className={detail.overdue ? "ow-overdue" : ""}>
-                截止：{detail.dueDate || "未设置"}
-                {detail.overdue && " · 已逾期"}
-              </span>
-            </div>
-            <p>
-              {detail.projectName} / {detail.planTitle}
-            </p>
-            {(detail.record || detail.task) && (
-              <WorkOriginLabel
-                row={(detail.record || detail.task)!}
-                data={data}
-              />
-            )}
-            <p className="ow-muted">
-              {detail.task?.description || "暂无任务说明"}
-            </p>
-            <div className="ow-detail-list">
-              {detail.records.length ? (
-                detail.records.map((record) => (
-                  <article key={record.id}>
-                    <div className="ow-detail-meta">
-                      <strong>{record.weekStart} 当周</strong>
-                      <span
-                        className={`ow-pill status-${isEffectiveWeeklyRecord(record) ? record.status : "draft"}`}
-                      >
-                        {isEffectiveWeeklyRecord(record)
-                          ? statusLabels[record.status]
-                          : weeklyRecordState(record).label}
-                      </span>
-                    </div>
-                    <p>
-                      <strong>本周承诺：</strong>
-                      {record.commitment || "未填写"}
-                    </p>
-                    {record.actualOutcome && (
-                      <p>
-                        <strong>实际进展：</strong>
-                        {record.actualOutcome}
-                      </p>
-                    )}
-                    {record.blocker && (
-                      <p className="ow-overdue">
-                        <strong>阻塞 / 原因：</strong>
-                        {record.blocker}
-                      </p>
-                    )}
-                    {record.nextAction && (
-                      <p>
-                        <strong>下一步：</strong>
-                        {record.nextAction}
-                      </p>
-                    )}
-                    <button
-                      className="ow-title-button"
-                      onClick={() => openRecord({ ...detail, record })}
-                    >
-                      打开这条周记录
-                      <ArrowRight size={14} />
-                    </button>
-                  </article>
-                ))
-              ) : (
-                <NoRows text="该周期尚未安排周记录">
-                  <button
-                    className="ow-button is-primary"
-                    onClick={() =>
-                      navigate("weekly", {
-                        action: "create",
-                        id: detail.taskId,
-                        weekStart: taskWeek(detail),
-                      })
-                    }
-                  >
-                    为此任务安排周工作
-                  </button>
-                </NoRows>
-              )}
-            </div>
-            <TaskCancellationAction data={data} task={data.tasks.find(task => task.id === detail.taskId)} onCancel={task => setCancellationTaskId(task.id)} />
-            {detail.planId && (
-              <button
-                className="ow-button"
-                onClick={() =>
-                  navigate("monthly", {
-                    id: detail.planId!,
-                    month:
-                      data.plans.find((plan) => plan.id === detail.planId)
-                        ?.month || config.date.slice(0, 7),
-                  })
-                }
-              >
-                查看关联月度目标
-              </button>
-            )}
-          </div>
-        </Modal>
-      )}
-      {cancellationTask && <TaskCancellationModal data={data} task={cancellationTask} onClose={() => setCancellationTaskId(null)} onSaved={async () => {
-        await refresh();
-        setCancellationTaskId(null);
-        setDetail(null);
-        setDrill(null);
-        notify('任务已作废，已退出任务总数和待办，历史记录保留');
-      }} />}
       {saving && (
         <Modal title="保存常用视图" onClose={() => setSaving(false)}>
           <form

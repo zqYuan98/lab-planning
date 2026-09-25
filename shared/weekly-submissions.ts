@@ -3,18 +3,33 @@ import type { ProgressEvent } from './collaboration'
 
 export type SubmissionKind = 'results' | 'plan'
 export type SubmissionStatus = 'due' | 'on_time' | 'missing' | 'late' | 'exempt'
+export interface WeeklyDeadlinePolicy {
+  version: number
+  fromWeek: string
+  mode: 'friday' | 'last_workday'
+  calendarOverrides: Record<string, boolean>
+}
+/** Frozen calculation inputs: later calendar changes must not reinterpret a cycle. */
+export interface WeeklyDeadlineSnapshot {
+  policyVersion: number
+  mode: 'friday' | 'last_workday'
+  workingDays: string[]
+}
 export interface WeeklyRule extends Entity {
   enabled: boolean; effectiveWeek: string; timezone: 'Asia/Shanghai'
   windows: { fromWeek: string; toWeek: string | null }[]
   /** First submission cycle requiring review of the following week's member plans. */
   planReviewEffectiveWeek?: string
+  deadlinePolicies?: WeeklyDeadlinePolicy[]
 }
 export interface WeeklyCycle extends Entity {
-  week: string; deadlineAt: string; rosterIds: string[]; needsReview: boolean
+  week: string; deadlineAt: string | null; rosterIds: string[]; needsReview: boolean
   confirmedBy: string | null; confirmationReason: string; frozenAt: string
+  deadlinePolicy?: WeeklyDeadlineSnapshot
 }
 export interface WeeklyDuty extends Entity {
   ownerId: string; cycleWeek: string; kind: SubmissionKind; contentWeek: string; deadlineAt: string
+  deadlinePolicy?: WeeklyDeadlineSnapshot
 }
 export interface WeeklySubmission extends Entity {
   dutyId: string; ownerId: string; cycleWeek: string; kind: SubmissionKind
@@ -53,10 +68,28 @@ export interface WeeklyDutyView extends WeeklyDuty {
   latestPlanReview?: WeeklyPlanReview | null; planReviews?: WeeklyPlanReview[];
 }
 export interface WeeklySubmissionView {
-  rule: WeeklyRule; week: string; nextWeek: string; deadlineAt: string; serverNow: string
+  rule: WeeklyRule; week: string; nextWeek: string; deadlineAt: string | null; serverNow: string
   cycle: WeeklyCycle | null; duties: WeeklyDutyView[]
+  deadlinePolicy?: WeeklyDeadlineSnapshot
+  /** Calendar editing data is returned only to managers. */
+  workCalendar?: { version: number; overrides: Record<string, boolean> }
 }
 export interface WeeklyReportSubmission {
   ownerId: string; cycleWeek: string; kind: SubmissionKind; status: SubmissionStatus
   deadlineAt: string; firstSubmittedAt: string | null; missingAtDeadline: boolean; exemptionReason: string
+  deadlinePolicy?: WeeklyDeadlineSnapshot
+}
+
+export interface WeeklyDeadlineRepairPreview {
+  week: string
+  cycleVersion: number
+  previousDeadlineAt: string | null
+  deadlineAt: string | null
+  deadlinePolicy: WeeklyDeadlineSnapshot
+  dutyCount: number
+  eligible: boolean
+  unchanged: boolean
+  reasons: string[]
+  /** Bound to cycle, duties, calendar, actor and operation environment. */
+  token: string
 }

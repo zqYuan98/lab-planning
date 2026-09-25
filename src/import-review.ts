@@ -1,11 +1,13 @@
 import type { ImportBatch, ImportKind, ImportRow } from '../shared/import-types'
 import type { Task } from '../shared/types'
 
-export type ImportWorkFields = Pick<ImportRow, 'workSource' | 'assignedBy' | 'assignedOn'>
+export type ImportWorkFields = Pick<ImportRow, 'workSource' | 'assignedBy' | 'assignedOn' | 'remainingEffortDays'>
 
 export function importWorkFields(row: ImportWorkFields): ImportWorkFields {
   // Empty strings explicitly clear fields when the server sees a complete edited row.
-  return { workSource: (row.workSource || '') as ImportRow['workSource'], assignedBy: row.assignedBy || '', assignedOn: row.assignedOn || '' }
+  // Unknown effort is explicit null when changing a link: omission would preserve a
+  // previous candidate estimate in normalizeRow even though the control shows blank.
+  return { workSource: (row.workSource || '') as ImportRow['workSource'], assignedBy: row.assignedBy || '', assignedOn: row.assignedOn || '', remainingEffortDays: row.remainingEffortDays ?? null }
 }
 
 export function selectImportTask(row: ImportRow, task: Task | undefined, sourceBeforeLink?: ImportWorkFields): ImportRow {

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { Store } from '../server/store.ts'
-import { Domain } from '../server/domain.ts'
+import { TestDomain as Domain } from './fixtures/legacy-domain.ts'
 import { getOperationEpoch } from '../server/operation-context.ts'
 import type { Publication, WeeklyRecord } from '../shared/types.ts'
 

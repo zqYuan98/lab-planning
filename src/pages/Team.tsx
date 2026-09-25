@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Plus, Users, Search } from 'lucide-react'
-import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH, registrationApproved } from '../../shared/auth-policy'
+import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from '../../shared/auth-policy'
+import type { TeamPage } from '../../shared/directory-workspace'
+import { useWorkspaceQuery } from '../workspace-query'
+import DirectoryPagination, { firstDirectoryPage } from '../components/DirectoryPagination'
 import RegistrationRequests from '../components/RegistrationRequests'
 import AccountDeleteDialog from '../components/AccountDeleteDialog'
 import type { User } from '../../shared/types'
-import { api, json } from '../api'
+import { api, json, finishSaved } from '../api'
 import {
   Badge,
   Empty,
@@ -18,27 +21,27 @@ import '../team.css'
 
 type MemberStatus = 'active' | 'inactive' | 'all'
 
-export default function Team({ data, refresh, notify, intent }: PageProps) {
+export default function Team({ data, notify, intent }: PageProps) {
   const [search, setSearch] = useState(intent?.query || '')
-  const intendedMember = data.users.find(item => item.id === intent?.id)
-  const [status, setStatus] = useState<MemberStatus>(intendedMember?.active === false ? 'inactive' : 'active')
+  const [status, setStatus] = useState<MemberStatus>(intent?.id ? 'all' : 'active')
+  const [paging, setPaging] = useState(firstDirectoryPage)
   const [deleting, setDeleting] = useState<User | null>(null)
   const [saving, setSaving] = useState(false)
-  const approvedMembers = data.users.filter(registrationApproved)
-  const activeCount = approvedMembers.filter(item => item.active).length
-  const inactiveCount = approvedMembers.length - activeCount
-  const activeManagerCount = approvedMembers.filter(item => item.active && item.role === 'manager').length
-  const members = approvedMembers.filter(item => status === 'all' || item.active === (status === 'active')).filter((item) =>
-    `${item.name} ${item.email} ${item.position}`
-      .toLocaleLowerCase()
-      .includes(search.toLocaleLowerCase()),
-  )
+  const scope = `${data.user.id}:${data.user.role}:${data.operationEpoch}:${data.accessScopeVersion}`
+  const params = new URLSearchParams({ status, q: search, limit: '30' })
+  if (intent?.id) params.set('focusId', intent.id)
+  if (paging.cursor) params.set('cursor', paging.cursor)
+  const query = useWorkspaceQuery<TeamPage>(`/workspace/team?${params}`, scope, undefined, { onCursorStale: () => { const first = new URLSearchParams(params); first.delete('cursor'); setPaging(firstDirectoryPage()); return `/workspace/team?${first}` } })
+  const reloadFirst = async () => { const first = new URLSearchParams(params); first.delete('cursor'); setPaging(firstDirectoryPage()); await query.reload(`/workspace/team?${first}`) }
+  const activeCount = query.value?.counts.active ?? 0, inactiveCount = query.value?.counts.inactive ?? 0, activeManagerCount = query.value?.counts.activeManagers ?? 0
+  const members = query.value?.items ?? [], intendedMember = query.value?.focus
+  const refresh = reloadFirst
   const [editing, setEditing] = useState<User | 'new' | null>(null),
     user = editing && editing !== 'new' ? editing : null
   const protectedAccount = !!user && (user.id === data.user.id || (user.active && user.role === 'manager' && activeManagerCount <= 1))
   useEffect(() => {
-    if (intent?.id) setStatus(intendedMember?.active === false ? 'inactive' : 'active')
-  }, [intent?.id, intendedMember?.active])
+    setEditing(null); setDeleting(null); setPaging(firstDirectoryPage())
+  }, [scope])
   const closeEditor = () => { if (!saving) setEditing(null) }
   const openDeletion = (account: User) => {
     setEditing(null)
@@ -63,9 +66,9 @@ export default function Team({ data, refresh, notify, intent }: PageProps) {
           {([
             ['active', '启用', activeCount],
             ['inactive', '停用', inactiveCount],
-            ['all', '全部', approvedMembers.length],
+            ['all', '全部', query.value?.counts.all ?? 0],
           ] as const).map(([value, label, count]) => (
-            <button key={value} className={status === value ? 'is-selected' : ''} aria-pressed={status === value} onClick={() => setStatus(value)}>
+            <button key={value} className={status === value ? 'is-selected' : ''} aria-pressed={status === value} onClick={() => { setStatus(value); setPaging(firstDirectoryPage()) }}>
               {label}<span>{count}</span>
             </button>
           ))}
@@ -76,10 +79,14 @@ export default function Team({ data, refresh, notify, intent }: PageProps) {
             aria-label="搜索成员"
             placeholder="搜索姓名、岗位或邮箱"
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => { setSearch(event.target.value); setPaging(firstDirectoryPage()) }}
           />
         </label>
       </div>
+      {query.error && <p className="error" role="alert">{query.error}<button className="text-button" onClick={() => { setPaging(firstDirectoryPage()); void reloadFirst().catch(() => {}) }}>重新读取</button></p>}
+      {query.loading && !query.value && <p role="status">正在读取团队成员…</p>}
+      {intendedMember && !members.some(row => row.id === intendedMember.id) && <div className="panel navigation-highlight"><strong>{intendedMember.name}</strong><p>{intendedMember.position} · {intendedMember.active ? '启用' : '停用'}</p><button className="button secondary" onClick={() => setEditing(intendedMember)}>管理定位账号</button></div>}
+      {query.value && (paging.previous.length > 0 || Boolean(query.value.nextCursor)) && <DirectoryPagination total={query.value.total} nextCursor={query.value.nextCursor} paging={paging} setPaging={setPaging} loading={query.loading} />}
       <div className="team-intro">
         <Users size={22} />
         <span>
@@ -173,16 +180,16 @@ export default function Team({ data, refresh, notify, intent }: PageProps) {
               if (user && !values.password) delete body.password
               setSaving(true)
               try {
-                await api(
+                const saved = await api<User>(
                   user ? `/users/${user.id}` : '/users',
                   json(body, user ? 'PATCH' : 'POST'),
                 )
-                await refresh()
                 notify(
                   user
                     ? '账号设置已保存'
                     : '成员账号已创建，可使用邮箱和初始密码登录',
                 )
+                await finishSaved(async () => { await refresh(); setEditing(null) }, saved.version)
                 setEditing(null)
               } finally {
                 setSaving(false)

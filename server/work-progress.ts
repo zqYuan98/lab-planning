@@ -13,20 +13,32 @@ const time = (value: string | null | undefined) => value && Number.isFinite(Date
 const evidenceIdOrder = (a: string, b: string) => Buffer.compare(Buffer.from(a), Buffer.from(b))
 const order = (a: ExecutionProgress, b: ExecutionProgress) => (b.occurredAt || '').localeCompare(a.occurredAt || '') || (b.recordedAt || '').localeCompare(a.recordedAt || '') || evidenceIdOrder(a.sourceId, b.sourceId)
 
-/** One set of reads per response. updatedAt is never treated as evidence of progress. */
-export function workProgressProjector(store: Store, actor: User, now = new Date()) {
+export interface WorkProgressSources { records: WeeklyRecord[]; progressEvents: ProgressEvent[]; audits: AuditEvent[] }
+
+/** One set of reads and grouping per response. updatedAt is never evidence of progress. */
+export function workProgressProjector(store: Store, actor: User, now = new Date(), sources?: WorkProgressSources) {
   actor = assertBusinessActor(store, actor)
   const manager = actor.role === 'manager'
   const today = new Date(now.getTime() + 8 * 3600000).toISOString().slice(0, 10)
-  const records = store.list<WeeklyRecord>('weeklyRecords')
-  const progressEvents = store.list<ProgressEvent>('progressEvents')
-  const audits = store.list<AuditEvent>('events').filter(event => ['task', 'weeklyRecord'].includes(event.entityType))
+  const records = sources?.records ?? store.list<WeeklyRecord>('weeklyRecords')
+  const progressEvents = sources?.progressEvents ?? store.list<ProgressEvent>('progressEvents')
+  const audits = sources?.audits ?? store.entityTypeEvents(['task', 'weeklyRecord'])
+  const recordsByTask = new Map<string, WeeklyRecord[]>(), eventsByTask = new Map<string, ProgressEvent[]>(), auditsByTask = new Map<string, AuditEvent[]>()
+  const append = <T>(map: Map<string, T[]>, key: string, value: T) => { const rows = map.get(key); if (rows) rows.push(value); else map.set(key, [value]) }
+  const recordTasks = new Map<string, string>()
+  for (const record of records) { append(recordsByTask, record.taskId, record); recordTasks.set(record.id, record.taskId) }
+  for (const event of progressEvents) append(eventsByTask, event.taskId, event)
+  // Iterate the original audit order once so sorting ties never change evidence precedence.
+  for (const event of audits) {
+    const taskId = event.entityType === 'task' ? event.entityId : event.entityType === 'weeklyRecord' ? recordTasks.get(event.entityId) : undefined
+    if (taskId !== undefined) append(auditsByTask, taskId, event)
+  }
   return (task: Task): WorkProgress => {
     if (!manager && task.ownerId !== actor.id) throw new HttpError(404, '任务不存在或无权访问')
-    const visibleRecords = records.filter(row => row.taskId === task.id && (manager || row.ownerId === actor.id) && isActiveWeeklyRecord(row) && isEffectiveWeeklyRecord(row) && row.weekStart <= today)
+    const visibleRecords = (recordsByTask.get(task.id) ?? []).filter(row => (manager || row.ownerId === actor.id) && isActiveWeeklyRecord(row) && isEffectiveWeeklyRecord(row) && row.weekStart <= today)
     const recordMap = new Map(visibleRecords.map(row => [row.id, row]))
-    const taskAudits = audits.filter(event => (event.entityType === 'task' && event.entityId === task.id || event.entityType === 'weeklyRecord' && recordMap.has(event.entityId)) && (manager || (event.after as Task | WeeklyRecord | null)?.ownerId === actor.id))
-    const taskEvents = progressEvents.filter(event => event.taskId === task.id && (manager || event.ownerId === actor.id) && (!event.weeklyRecordId || recordMap.has(event.weeklyRecordId)))
+    const taskAudits = (auditsByTask.get(task.id) ?? []).filter(event => (event.entityType === 'task' || recordMap.has(event.entityId)) && (manager || (event.after as Task | WeeklyRecord | null)?.ownerId === actor.id))
+    const taskEvents = (eventsByTask.get(task.id) ?? []).filter(event => (manager || event.ownerId === actor.id) && (!event.weeklyRecordId || recordMap.has(event.weeklyRecordId)))
     const known: ExecutionProgress[] = [], unknown: ExecutionProgress[] = []
     const recordedAudits = new Set(taskEvents.flatMap(event => event.auditEventIds))
     const textFor = (changes: {field: string; after: string}[]) => clean(changes.find(change => ['weeklyRecord.actualOutcome', 'task.currentProgress', 'task.completionNote'].includes(change.field) && clean(change.after))?.after)

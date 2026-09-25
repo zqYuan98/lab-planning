@@ -1,3 +1,4 @@
+import { effortDays } from '../shared/effort.ts'
 import { assertBusinessActor } from './object-access.ts'
 import type { Entity, MonthlyPlan, Task, User, WeeklyRecord } from '../shared/types.ts'
 import { submittedWeeklyEvidence } from './carry-workflows-history.ts'
@@ -23,8 +24,13 @@ function progressInput(store: Store, input: Input, type: 'task' | 'weeklyRecord'
   return effective
 }
 
+function checkedEffort(value: unknown): number | null {
+  try { return effortDays(value) } catch (error) { throw new HttpError(400, (error as Error).message) }
+}
+
 function taskMetadata(input: Input): Partial<Task> {
   const fields: Partial<Task> = {}
+  if (input.remainingEffortDays !== undefined) fields.remainingEffortDays = checkedEffort(input.remainingEffortDays)
   if (input.workSource !== undefined) fields.workSource = choice(input.workSource, ['leader', 'self', 'coordination'], '工作来源')
   if (input.priority !== undefined) fields.priority = choice(input.priority, ['high', 'medium', 'low'], '优先级')
   if (input.assignedBy !== undefined) fields.assignedBy = text(input.assignedBy, '交办人', false, 100)
@@ -219,8 +225,10 @@ export class WorkService extends DomainBase {
       return task
     })
   }
-  private fields(input: Input, before?: WeeklyRecord): Pick<WeeklyRecord, 'commitment' | 'actualOutcome' | 'evidenceUrl' | 'blocker' | 'nextAction' | 'status' | 'submitted' | 'blockerImpact' | 'supportNeeded'> {
+  private fields(input: Input, before?: WeeklyRecord): Pick<WeeklyRecord, 'commitment' | 'actualOutcome' | 'evidenceUrl' | 'blocker' | 'nextAction' | 'status' | 'submitted' | 'blockerImpact' | 'supportNeeded' | 'plannedEffortDays' | 'actualEffortDays'> {
     const result = {
+      ...(input.plannedEffortDays !== undefined ? { plannedEffortDays: checkedEffort(input.plannedEffortDays) } : before?.plannedEffortDays !== undefined ? { plannedEffortDays: before.plannedEffortDays } : {}),
+      ...(input.actualEffortDays !== undefined ? { actualEffortDays: checkedEffort(input.actualEffortDays) } : before?.actualEffortDays !== undefined ? { actualEffortDays: before.actualEffortDays } : {}),
       commitment: text(input.commitment ?? before?.commitment, '本周承诺', !before?.importSource),
       actualOutcome: text(input.actualOutcome ?? before?.actualOutcome, '实际成果', false),
       evidenceUrl: text(input.evidenceUrl ?? before?.evidenceUrl, '证据链接', false, 2000),

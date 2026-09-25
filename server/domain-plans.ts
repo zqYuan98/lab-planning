@@ -1,7 +1,8 @@
 import { assertBusinessActor } from './object-access.ts'
 import { createHash } from 'node:crypto'
-import type { AuditEvent, Entity, MonthlyPlan, Publication, Task, User } from '../shared/types.ts'
+import type { AnnualGoal, AuditEvent, Entity, MonthlyPlan, Publication, Task, User } from '../shared/types.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
+import { isActiveTask } from '../shared/task-state.ts'
 import { projectPlan, visiblePlanHistory } from './plan-visibility.ts'
 import { notifyPublishedPlans } from './notification-events.ts'
 import { HttpError } from './store.ts'
@@ -13,6 +14,12 @@ interface MonthlyCarryReceipt extends Entity {
 }
 
 export class MonthlyService extends DomainBase {
+  private annualLink(value: unknown, period: string): string | null {
+    if (value === null || value === '') return null
+    const id = text(value, '年度目标', true, 200), goal = this.need<AnnualGoal>('annualGoals', id)
+    if (goal.year !== Number(period.slice(0, 4))) throw new HttpError(400, '月目标只能关联同年度的年度目标')
+    return id
+  }
   private collaborators(value: unknown, ownerId: string, existingParticipants: string[] = []): string[] {
     if (value === undefined) return []
     if (!Array.isArray(value) || value.length > 100 || value.some(item => typeof item !== 'string')) throw new HttpError(400, '协作者格式不正确')
@@ -60,6 +67,7 @@ export class MonthlyService extends DomainBase {
     if (input.assignedBy !== undefined) metadata.assignedBy = text(input.assignedBy, '交办人', false, 100)
     if (input.assignedOn !== undefined) metadata.assignedOn = input.assignedOn === '' ? '' : date(input.assignedOn, '交办日期')
     const plan = this.store.insert<MonthlyPlan>('plans', {
+      ...(input.annualGoalId !== undefined ? { annualGoalId: this.annualLink(input.annualGoalId, period) } : {}),
       month: period, title: text(input.title, '计划标题', true, 300), projectId,
       category: text(input.category, '工作类别', !projectId, 100), ownerId,
       collaboratorIds: this.collaborators(input.collaboratorIds, ownerId),
@@ -83,6 +91,7 @@ export class MonthlyService extends DomainBase {
       if (input.month !== undefined && input.month !== before.month) throw new HttpError(400, '所属月份不能直接修改，请使用跨月承接')
       if (input.isTemporary !== undefined && bool(input.isTemporary, '临时目标标记') !== !!before.isTemporary) throw new HttpError(400, '月度目标类型不能直接修改')
       const patch: Partial<MonthlyPlan> = {}
+      if (input.annualGoalId !== undefined) patch.annualGoalId = this.annualLink(input.annualGoalId, before.month)
       if (before.isTemporary && input.temporaryReason !== undefined) patch.temporaryReason = text(input.temporaryReason, '临时目标原因')
       if (input.title !== undefined) patch.title = text(input.title, '计划标题', true, 300)
       if (input.projectId !== undefined) {
@@ -106,7 +115,7 @@ export class MonthlyService extends DomainBase {
       if (input.priority !== undefined) patch.priority = choice(input.priority, ['high', 'medium', 'low'], '优先级')
       const next = { ...before, ...patch }
       if (!next.projectId && !next.category && !before.importSource) throw new HttpError(400, '没有所属项目时需要填写工作类别')
-      if (this.store.list<Task>('tasks').some(task => task.monthlyPlanId === id && !participates(next, task.ownerId))) throw new HttpError(400, '修改责任人前，请先处理仍关联此计划的个人任务，保留任务负责人为协作者')
+      if (this.store.list<Task>('tasks').some(task => isActiveTask(task) && task.monthlyPlanId === id && !participates(next, task.ownerId))) throw new HttpError(400, '修改责任人前，请先处理仍关联此计划的个人任务，保留任务负责人为协作者')
       const reason = before.status === 'published' ? text(input.reason, '发布后变更原因') : text(input.reason, '修改原因', false)
       if (before.status === 'published') {
         patch.publishedVersion = this.revision(before.month)
@@ -188,12 +197,15 @@ export class MonthlyService extends DomainBase {
       }
       if (first.projectId) this.activeProject(first.projectId)
       if (this.store.list<Task>('tasks').some(task => task.monthlyPlanId && ids.includes(task.monthlyPlanId))) throw new HttpError(400, '所选提报已有关联个人任务，不能直接合并')
+      const links = [...new Set(sources.map(source => source.annualGoalId ?? null))]
+      if (links.length > 1 && input.annualGoalId === undefined) throw new HttpError(400, '所选目标关联不同年度目标，请明确选择合并后的年度关联或清空')
+      const annualGoalId = input.annualGoalId !== undefined ? this.annualLink(input.annualGoalId, first.month) : links[0]
       const responsibilities = (field: 'expectedOutcome' | 'acceptanceCriteria') => sources.map(source => {
         const owner = this.need<User>('users', source.ownerId)
         return `${owner.name}（${source.title}）：${source[field]}`
       }).join('\n\n')
       const combined: Omit<MonthlyPlan, 'id' | 'version' | 'createdAt' | 'updatedAt'> = {
-        month: first.month, title, projectId: first.projectId, category: first.category, ownerId: first.ownerId,
+        annualGoalId, month: first.month, title, projectId: first.projectId, category: first.category, ownerId: first.ownerId,
         collaboratorIds: [...new Set(sources.flatMap(source => [source.ownerId, ...source.collaboratorIds]))].filter(id => id !== first.ownerId),
         expectedOutcome: responsibilities('expectedOutcome'), acceptanceCriteria: responsibilities('acceptanceCriteria'),
         dueDate: sources.map(source => source.dueDate).sort().at(-1)!, priority: sources.some(source => source.priority === 'high') ? 'high' : sources.some(source => source.priority === 'medium') ? 'medium' : 'low',
@@ -235,7 +247,7 @@ export class MonthlyService extends DomainBase {
   history(actor: User, id: string): AuditEvent[] {
     actor = assertBusinessActor(this.store, actor)
     this.visible(actor, this.need<MonthlyPlan>('plans', id))
-    return visiblePlanHistory(actor, id, this.store.list<AuditEvent>('events'), this.store)
+    return visiblePlanHistory(actor, id, this.store.entityEvents('plan', id), this.store)
   }
   carry(actor: User, id: string, input: Input): MonthlyPlan {
     actor = assertBusinessActor(this.store, actor)
@@ -266,6 +278,7 @@ export class MonthlyService extends DomainBase {
       if (payload.month <= source.month) throw new HttpError(400, '承接月份必须晚于来源月份')
       if (source.acceptanceStatus === 'accepted') throw new HttpError(400, '已验收成果不能作为未完成事项承接')
       const plan = this.createDraft(currentActor, {
+        ...(source.annualGoalId !== undefined ? { annualGoalId: payload.month.slice(0, 4) === source.month.slice(0, 4) ? source.annualGoalId : null } : {}),
         month: payload.month, dueDate: payload.dueDate, title: source.title, projectId: source.projectId, category: source.category,
         ownerId: source.ownerId, collaboratorIds: source.collaboratorIds, expectedOutcome: source.expectedOutcome,
         acceptanceCriteria: source.acceptanceCriteria, priority: source.priority, isTemporary: source.isTemporary,

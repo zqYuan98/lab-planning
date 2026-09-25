@@ -11,6 +11,7 @@
     "build": "tsc --noEmit && vite build",
     "start": "tsx server/index.ts",
     "test": "tsx --test tests/*.test.ts",
+    "perf": "tsx scripts/r2-performance.ts",
     "typecheck": "tsc --noEmit",
     "backup": "tsx scripts/backup.ts",
     "reset-operation-context": "tsx scripts/reset-operation-context.ts"
@@ -18,6 +19,7 @@
   "dependencies": {
     "@arco-design/web-react": "2.66.16",
     "@xmldom/xmldom": "0.9.12",
+    "compression": "^1.8.2",
     "dingtalk-jsapi": "^3.2.9",
     "dingtalk-stream": "2.1.5",
     "docx": "^9.5.1",
@@ -32,6 +34,7 @@
     "zod": "^4.1.0"
   },
   "devDependencies": {
+    "@types/compression": "^1.8.1",
     "@types/express": "^5.0.0",
     "@types/node": "^24.0.0",
     "@types/react": "^19.1.0",

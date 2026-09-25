@@ -211,8 +211,8 @@ test('observer HTTP fence denies legacy reads, exports, attachments and writes e
     assert.equal((await fetch(base + path, { headers: { cookie } })).status, 404, path)
   }
   assert.equal((await fetch(`${base}/tasks/${f.task.id}`, { method: 'PATCH', headers: { cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ version: 1, title: 'no' }) })).status, 403)
-  const bootstrap = await (await fetch(`${base}/bootstrap`, { headers: { cookie } })).json() as { projects: unknown[]; users: User[] }
-  assert.equal(bootstrap.users.length, 1); assert.equal(bootstrap.projects.length, 0)
+  const shell = await (await fetch(`${base}/workspace`, { headers: { cookie } })).json() as { user: User; capabilities: { business: boolean } }
+  assert.equal(shell.user.id, f.observer.id); assert.equal(shell.capabilities.business, false)
   assert.equal((await fetch(`${base}/authorized-work/${grant.id}`, { headers: { cookie } })).status, 200)
   f.grants.revoke(f.manager, grant.id, { requestId: 'http-revoke-command', version: grant.version, reason: 'remove' })
   assert.equal((await fetch(`${base}/authorized-work/${grant.id}`, { headers: { cookie } })).status, 404)

@@ -1024,7 +1024,11 @@
 .shell-light .registration-heading { padding:20px 24px 12px; }
 .shell-light .registration-heading h2 { display:flex; align-items:center; gap:12px; font-size:18px; margin:0 0 8px; }
 .shell-light .registration-heading p, .shell-light .registration-empty { font-size:14px; color: var(--text-body); line-height:1.7; }
-.shell-light .registration-empty { padding:0 24px 20px; margin:0; }
+.shell-light .registration-heading p { margin: 0; }
+.shell-light .registration-panel > .header-actions { padding: 0 24px 12px; }
+.shell-light .registration-panel > [role="status"] { margin: 0; padding: 0 24px 20px; }
+.shell-light .registration-empty { display:flex; align-items:center; gap:10px; padding:16px 24px 18px; border-top:1px solid var(--border); }
+.shell-light .registration-empty svg { flex:none; color:var(--primary); }
 
 /* Login is an entry to the product, with concrete guidance instead of a campaign. */
 .shell-light .auth-story { background: #f6f7f8; border-color: #e5e6eb; padding: 48px 64px; }

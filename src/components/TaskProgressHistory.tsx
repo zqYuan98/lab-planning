@@ -6,7 +6,7 @@ import { dateTime } from '../ui'
 
 export default function TaskProgressHistory({ taskId, scope }: { taskId: string; scope: string }) {
   const [cursors, setCursors] = useState<string[]>([])
-  const resource = useWorkspaceQuery<WorkspacePage<ProgressEvent>>(`/workspace/progress?taskId=${encodeURIComponent(taskId)}&limit=30${cursors.length ? `&cursor=${encodeURIComponent(cursors.at(-1)!)}` : ''}`, scope)
+  const resource = useWorkspaceQuery<WorkspacePage<ProgressEvent>>(`/workspace/progress?taskId=${encodeURIComponent(taskId)}&limit=30${cursors.length ? `&cursor=${encodeURIComponent(cursors.at(-1)!)}` : ''}`, scope, undefined, { onCursorStale: () => { setCursors([]); return `/workspace/progress?taskId=${encodeURIComponent(taskId)}&limit=30` } })
   return <section className="task-section"><h3>进展记录</h3>
     {resource.error&&<p role="alert" className="error">{resource.error}<button className="text-button" onClick={()=>{setCursors([]);void resource.reload().catch(()=>{})}}>刷新进展</button></p>}
     {resource.loading&&<p role="status">正在读取进展…</p>}

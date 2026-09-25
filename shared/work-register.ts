@@ -71,6 +71,7 @@ export interface WorkRegisterReportRow {
   readonly dueDate: string
   readonly priority: string
   readonly estimatedEffort: string
+  readonly remainingEffortDays: string
   readonly decisionNeeded: string
   readonly waitingForFeedback: string
   readonly schedule: string
@@ -241,7 +242,7 @@ export function createWorkRegisterSnapshot(
     overallProgress: row.progress || '未填写', latestExecution: '待建立个人任务',
     nextAction: row.plan.status === 'published' ? '建立个人任务后安排周工作' : '建立个人任务；目标发布前仅可保存周草稿',
     dueDate: isCalendarDay(row.dueDate) ? row.dueDate : '待确认', priority: row.priority ? workPriorityLabels[row.priority] : '未注明',
-    estimatedEffort: '待建立个人任务后填写', decisionNeeded: row.plan.status === 'published' ? '未填写' : `目标${row.displayStatus}，尚未发布`,
+    remainingEffortDays: '未填写', estimatedEffort: '待建立个人任务后填写', decisionNeeded: row.plan.status === 'published' ? '未填写' : `目标${row.displayStatus}，尚未发布`,
     waitingForFeedback: '未记录', schedule: '待建立个人任务',
   }) : Object.freeze({
     id: row.id,
@@ -263,6 +264,7 @@ export function createWorkRegisterSnapshot(
     dueDate: isCalendarDay(row.task.dueDate) ? row.task.dueDate : '待确认',
     priority: row.task.priority ? workPriorityLabels[row.task.priority] : '未注明',
     estimatedEffort: row.task.estimatedEffort || '未填写',
+    remainingEffortDays: row.task.remainingEffortDays == null ? '未填写' : `${row.task.remainingEffortDays} 人日`,
     decisionNeeded: [
       row.task.decisionNeeded || '',
       row.task.supportNeeded?.trim() ? `需要支持：${row.task.supportNeeded}` : '',

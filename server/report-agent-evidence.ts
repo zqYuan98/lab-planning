@@ -4,6 +4,7 @@ import type { ReportAgentBinding, ReportAgentBlock, ReportAgentCell, ReportAgent
 import { isEffectiveWeeklyRecord } from '../shared/weekly-record-state.ts'
 import { acceptanceLabels, reportMetrics, weeklyStatusLabel } from './report-metrics.ts'
 import { addDays } from './reports.ts'
+import { frozenSummaryFacts, monthEnd, monthlyDatasetIds, monthlyField, monthlyReportFacts, summaryDatasetIds } from './report-agent-monthly.ts'
 import { HttpError } from './store.ts'
 
 export function reportAgentHash(value: unknown): string {
@@ -11,6 +12,7 @@ export function reportAgentHash(value: unknown): string {
   return createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(canonical(value))).digest('hex')
 }
 export function buildReportFacts(snapshot: ReportSnapshot, period: string): ReportFact[] {
+  if (/^\d{4}-\d{2}$/.test(period)) return [...monthlyReportFacts(snapshot, period), ...frozenSummaryFacts(snapshot, period)]
   const facts: ReportFact[] = []
   const task = (id: string) => snapshot.tasks.find(t => t.id === id)
   const owner = (id: string) => snapshot.users.find(u => u.id === id)?.name || '负责人待核实'
@@ -33,7 +35,7 @@ export function buildReportFacts(snapshot: ReportSnapshot, period: string): Repo
   for (const [field, value] of Object.entries({ weekly_total: metrics.weekly.total, weekly_done: metrics.weekly.done, weekly_rate: metrics.weekly.rate, monthly_total: metrics.monthly.total, monthly_accepted: metrics.monthly.accepted })) {
     facts.push({ id: `metric:${field}`, sourceType: 'metric', sourceId: 'snapshot', sourceVersion: 1, subjectId: 'snapshot', subject: '全量冻结统计', field, value: value === null ? '不可计算' : String(value), unit: field.includes('rate') ? '%' : '项', period, status: 'computed' })
   }
-  return facts
+  return [...facts, ...frozenSummaryFacts(snapshot, period)]
 }
 function issue(code: string, location: string, message: string, severity: 'error' | 'warning' = 'error'): ReportAgentIssue {
   return { id: reportAgentHash(`${code}:${location}:${message}`).slice(0, 20), severity, code, location, message }
@@ -94,20 +96,23 @@ function recordsFor(snapshot: ReportSnapshot, dataset: ReportAgentDataset) {
 export function buildRuleBlocks(bindings: ReportAgentBinding[], snapshot: ReportSnapshot, facts: ReportFact[], period: string, capturedAt: string, title: string): ReportAgentBlock[] {
   return bindings.filter(b => !['keep', 'clear'].includes(b.kind)).map(binding => {
     const block: ReportAgentBlock = { id: binding.regionId, regionId: binding.regionId, label: binding.label, kind: binding.kind === 'dataset' ? 'table' : 'text', required: binding.required, content: factCell(), columns: binding.columns || [], rows: [] }
-    if (binding.kind === 'meta') block.content = { ...factCell(({ period, week_end: addDays(period, 6), week_range: `${period}—${addDays(period, 4)}`, captured_at: new Date(capturedAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }), title, author: '汇报人待确认', department: '人工智能实验室' })[binding.meta || 'period']), manual: true, confirmed: true, source: '系统冻结的报告元信息' }
+    if (binding.kind === 'meta') block.content = { ...factCell(({ period, week_end: period.length === 7 ? monthEnd(period) : addDays(period, 6), week_range: period.length === 7 ? `${period}-01—${monthEnd(period)}` : `${period}—${addDays(period, 4)}`, captured_at: new Date(capturedAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }), title, author: '汇报人待确认', department: '人工智能实验室' })[binding.meta || 'period']), manual: true, confirmed: true, source: '系统冻结的报告元信息' }
     else if (binding.kind === 'manual') block.content = factCell('', [], true)
     else {
-      const records = recordsFor(snapshot, binding.dataset || binding.section || 'outcomes')
+      const dataset = binding.dataset || binding.section || 'outcomes'
+      const summary = dataset === 'effort' || dataset === 'annual_goals'
+      const monthly = period.length === 7
+      const records = (summary ? summaryDatasetIds(facts, dataset) : monthly ? monthlyDatasetIds(snapshot, dataset, period) : recordsFor(snapshot, dataset).map(r => `weekly:${r.id}`)).map(id => ({ id }))
       const get = (id: string, field: ReportAgentField) => {
         if (field === 'manual') return factCell('', [], true)
-        const fact = facts.find(f => f.id === `weekly:${id}:${field}`)
+        const fact = facts.find(f => f.id === `${id}:${monthly && !summary ? monthlyField(field) : field}`)
         return factCell(fact?.value || '待补充', fact ? [fact.id] : [])
       }
       if (binding.kind === 'dataset') {
         block.rows = records.map((r, index) => block.columns.map(c => /序号/.test(c.label) ? { ...factCell(String(index + 1), [], true), confirmed: true, source: '系统按本表行顺序编号' } : get(r.id, c.field)))
         if (!block.rows.length) block.rows = [block.columns.map((column, i) => ({ ...factCell(i === 0 ? '本期无已生效记录' : '暂无', [], column.field === 'manual'), ...(column.field === 'manual' ? { confirmed: true, source: '冻结快照没有本类已生效记录，系统占位' } : {}) }))]
       } else {
-        const fields: ReportAgentField[] = binding.section === 'next_week' ? ['title', 'owner', 'commitment', 'status'] : binding.section === 'risks' ? ['title', 'blocker', 'next_action', 'status'] : ['title', 'outcome', 'status']
+        const fields: ReportAgentField[] = ['next_week', 'next_month'].includes(binding.section || '') ? ['title', 'owner', 'commitment', 'status'] : binding.section === 'risks' ? ['title', 'blocker', 'next_action', 'status'] : summary ? ['title', 'commitment', 'outcome', 'status'] : ['title', 'outcome', 'status']
         const cells = records.map(r => fields.map(field => get(r.id, field)))
         block.content = factCell(cells.map(row => row.map(c => c.text).join('；')).join('\n') || '本期无已生效记录', [...new Set(cells.flat(2).flatMap(c => c.factIds))])
       }

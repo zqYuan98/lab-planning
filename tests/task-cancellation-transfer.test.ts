@@ -1,6 +1,6 @@
 import test, { type TestContext } from 'node:test'
 import assert from 'node:assert/strict'
-import { Domain } from '../server/domain.ts'
+import { TestDomain as Domain } from './fixtures/legacy-domain.ts'
 import { Store } from '../server/store.ts'
 import { CollaborationService } from '../server/collaboration-service.ts'
 import { evaluateWorkRisks } from '../server/collaboration-rules.ts'

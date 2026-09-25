@@ -53,6 +53,8 @@ export const requireAuth = (store: Store): RequestHandler => (req, _res, next) =
   const user = session ? store.get<StoredUser>('users', session.userId) : undefined
   const expiry = session ? Date.parse(session.expiresAt) : NaN
   if (!session || session.revoked !== false || !Number.isFinite(expiry) || expiry <= Date.now() || !user || !canUseAccount(user) || !Number.isInteger(session.credentialVersion) || session.credentialVersion < 1 || user.credentialVersion !== session.credentialVersion) return next(new HttpError(401, '请先登录'))
+  const expectedActor = req.get('X-Lab-Actor-Id')
+  if (expectedActor && expectedActor !== user.id) return next(new HttpError(409, '浏览器登录账号已变化，请重新载入当前账号。', 'SESSION_IDENTITY_CHANGED'))
   req.user = safeUser(user)
   next()
 }

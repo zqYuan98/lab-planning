@@ -141,7 +141,7 @@ test('cookie API and scoped agent API enforce independent authentication, safe s
     await call('/auth/setup', { name: '管理员', email: 'api@example.test', password: 'Example-password-2026!' })
     const settings = await call('/ai/settings', { baseUrl: 'https://example.test/v1', model: 'test', apiKey: 'unique-fixture-secret' }, { method: 'PUT' })
     assert.equal(settings.hasApiKey, true)
-    assert.equal(JSON.stringify(await call('/bootstrap')).includes('unique-fixture-secret'), false)
+    assert.equal(JSON.stringify(await call('/workspace')).includes('unique-fixture-secret'), false)
     const token = await call('/integration-tokens', { name: '只写草稿', scopes: ['imports:read', 'imports:write'], expiresInDays: 1 })
     assert.equal(JSON.stringify(await call('/integration-tokens')).includes(token.token), false)
     assert.equal(JSON.stringify(store.list('events')).includes('unique-fixture-secret'), false)

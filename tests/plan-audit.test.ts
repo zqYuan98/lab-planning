@@ -1,13 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { Store } from '../server/store.ts'
-import { Domain } from '../server/domain.ts'
+import { TestDomain as Domain } from './fixtures/legacy-domain.ts'
 import { getOperationEpoch } from '../server/operation-context.ts'
 import type { MonthlyPlan, User, WeeklyRecord } from '../shared/types.ts'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import Monthly from '../src/pages/Monthly.tsx'
-import Weekly from '../src/pages/Weekly.tsx'
+import { MonthlyBody as Monthly } from '../src/pages/Monthly.tsx'
+import { WeeklyBody as Weekly } from '../src/pages/Weekly.tsx'
 
 function fixture() {
   const store = new Store(':memory:')

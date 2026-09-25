@@ -42,7 +42,7 @@ test('authenticated personal capture can schedule the same task without granting
     assert.equal(scheduled.status, 201)
     const record = scheduled.data.record as WeeklyRecord
     assert.equal(record.taskId, tasks[0].id)
-    const data = (await request('/bootstrap')).data as Bootstrap
+    const data = { tasks: (await request('/workspace/tasks')).data.items as Task[], weeklyRecords: (await request('/workspace/weekly-records')).data.items as WeeklyRecord[] }
     assert.equal(data.tasks.length, 2)
     assert.equal(data.weeklyRecords.length, 1)
     assert.equal(data.tasks.find(row => row.id === record.taskId)?.assignedBy, '示例领导')
@@ -52,7 +52,7 @@ test('authenticated personal capture can schedule the same task without granting
     assert.equal(createdMember.status, 201)
     await request('/auth/logout', {})
     await request('/auth/login', { email: 'register-member@example.test', password: 'Preview-only-2026!' })
-    assert.equal(((await request('/bootstrap')).data as Bootstrap).tasks.length, 0)
+    assert.equal((await request('/workspace/tasks')).data.items.length, 0)
     assert.equal((await request(`/tasks/${tasks[0].id}`, { version: tasks[0].version, currentProgress: '越权修改' }, 'PATCH')).status, 403)
     assert.equal((await request('/work-register/capture', { ...input, requestId: 'invalid_capture_owner_2026', ownerId: tasks[0].ownerId })).status, 403)
   } finally {

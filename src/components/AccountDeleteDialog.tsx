@@ -26,10 +26,8 @@ export default function AccountDeleteDialog({ user, data, refresh, notify, onClo
   const [attempt, setAttempt] = useState(0)
   const pendingRef = useRef(false)
   const account = preview?.user || user
-  const activeManagers = data.users.filter(item => registrationApproved(item) && item.active && item.role === 'manager').length
   const canDeactivate = !!preview && !preview.canDelete && account.active &&
     registrationApproved(account) && account.id !== data.user.id &&
-    !(account.role === 'manager' && activeManagers <= 1) &&
     !preview.blockers.some(item => item.key === 'self' || item.key === 'lastManager')
 
   useEffect(() => {

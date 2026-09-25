@@ -4,7 +4,7 @@ import { once } from 'node:events'
 import type { AddressInfo } from 'node:net'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { Domain } from '../server/domain.ts'
+import { TestDomain as Domain } from './fixtures/legacy-domain.ts'
 import { getOperationEpoch } from '../server/operation-context.ts'
 import { Store } from '../server/store.ts'
 import { createApp } from '../server/app.ts'
@@ -12,7 +12,7 @@ import { createSession, type StoredUser } from '../server/auth.ts'
 import { exportBusinessData, previewRestore, restoreBusinessData } from '../server/data-transfer.ts'
 import { schemas } from '../server/data-transfer-schema.ts'
 import type { MonthlyPlan, User } from '../shared/types.ts'
-import Monthly from '../src/pages/Monthly.tsx'
+import { MonthlyBody as Monthly } from '../src/pages/Monthly.tsx'
 
 function fixture(t: TestContext) {
   const store = new Store(':memory:'), domain = new Domain(store)

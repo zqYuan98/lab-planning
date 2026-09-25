@@ -1,7 +1,7 @@
 import test, { type TestContext } from 'node:test'
 import assert from 'node:assert/strict'
 import { Store } from '../server/store.ts'
-import { Domain } from '../server/domain.ts'
+import { TestDomain as Domain } from './fixtures/legacy-domain.ts'
 import { generateReport } from '../server/reports.ts'
 import { reportMetrics } from '../server/report-metrics.ts'
 import { WeeklySubmissionService } from '../server/weekly-submissions.ts'

@@ -3,6 +3,7 @@ import { api, ApiError, finishSaved, json } from './api'
 import { LatestRead } from './latest-read'
 import { captureMutationContext, subscribeMutationResponses } from './mutation-response'
 import { assignmentAttempt, type SubmissionAttempt } from './notification-navigation'
+import { queryAffected } from './query-invalidation'
 
 /** Abort superseded reads and drop all cached content immediately when access is lost. */
 export function useBusinessResource<T>(path:string, scope:string) {
@@ -14,7 +15,7 @@ export function useBusinessResource<T>(path:string, scope:string) {
   const refresh=()=>read.current!.read()
   useEffect(()=>{
     attempts.current={};setValue(null);setError('');setLoading(true);void refresh().catch(()=>{})
-    const unsub=subscribeMutationResponses(event=>{if(event.context!==captureMutationContext())return;read.current!.invalidate();void refresh().catch(()=>{})},()=>{read.current!.reset();setValue(null)})
+    const unsub=subscribeMutationResponses(event=>{if(event.context!==captureMutationContext()||!queryAffected(pathRef.current,event.path))return;read.current!.invalidate();void refresh().catch(()=>{})},()=>{read.current!.reset();setValue(null)})
     const focus=()=>{read.current!.invalidate();void refresh().catch(()=>{})};window.addEventListener('focus',focus)
     return()=>{unsub();window.removeEventListener('focus',focus);read.current!.reset()}
   },[path,scope])

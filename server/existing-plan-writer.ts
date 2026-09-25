@@ -1,4 +1,5 @@
-import type { AuditEvent, ImportProvenance, MonthlyPlan, Project, Publication, Task, User, WeeklyRecord } from '../shared/types.ts'
+import type { AnnualGoal, AuditEvent, ImportProvenance, MonthlyPlan, Project, Publication, Task, User, WeeklyRecord } from '../shared/types.ts'
+import { effortDays } from '../shared/effort.ts'
 import type { ImportRow } from '../shared/import-types.ts'
 import { importedMonthlyResult, importedWeeklyStatus } from '../shared/import-status.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
@@ -24,6 +25,13 @@ export function importWorkMetadata(row: ImportRow): Pick<Task, 'workSource' | 'a
 export function importMetadataIssues(store: Store, row: ImportRow): string[] {
   const issues: string[] = []
   const check = (operation: () => unknown) => { try { operation() } catch (error) { issues.push(error instanceof Error ? error.message : '导入来源字段无效') } }
+  if (row.annualGoalId !== undefined && row.kind !== 'monthly') issues.push('年度目标关联仅用于月目标')
+  if (row.annualGoalId) { const goal = store.get<AnnualGoal>('annualGoals', row.annualGoalId); if (!goal || goal.year !== Number(row.month.slice(0, 4))) issues.push('请选择同年度的有效年度目标') }
+  for (const field of ['remainingEffortDays', 'plannedEffortDays', 'actualEffortDays'] as const) if (row[field] !== undefined) {
+    check(() => effortDays(row[field]))
+    if (row.kind !== 'weekly') issues.push('投入人日请填写在周任务行')
+  }
+  if (row.taskId && row.remainingEffortDays !== undefined) { const task = store.get<Task>('tasks', row.taskId); if (task && row.remainingEffortDays !== (task.remainingEffortDays ?? null)) issues.push('导入不改变已有任务的剩余投入，请在原任务中修改') }
   if (row.workSource !== undefined) check(() => choice(row.workSource, ['leader', 'self', 'coordination'], '工作来源'))
   if (row.assignedBy !== undefined) check(() => text(row.assignedBy, '交办人', false, 100))
   if (row.assignedOn) check(() => date(row.assignedOn, '交办日期'))
@@ -168,6 +176,7 @@ export class ExistingPlanWriter {
       const period = month(row.month)
       const revision = this.revisions.get(period) ?? this.store.list<Publication>('publications').filter(item => item.month === period).reduce((max, item) => Math.max(max, item.revision), 0) + 1
       const fields: Omit<MonthlyPlan, keyof import('../shared/types.ts').Entity> = {
+        ...(row.annualGoalId !== undefined ? { annualGoalId: row.annualGoalId } : {}),
         month: period, title: text(row.title, '计划标题', true, 300), projectId: text(row.projectId, '项目', false, 200) || null,
         category: text(row.category, '工作类别', false, 100), ownerId: row.ownerId, collaboratorIds: row.collaboratorIds ?? before?.collaboratorIds ?? [], ...importWorkMetadata(row),
         expectedOutcome: text(row.expectedOutcome, '预期成果', false), acceptanceCriteria: text(row.acceptanceCriteria, '验收标准', false), dueDate: optionalDate(row.dueDate, '截止日期'),
@@ -198,15 +207,15 @@ export class ExistingPlanWriter {
       // A same-source draft is our own activation, not a request to finish an unrelated task.
       this.validate({ ...checkedRow, ...(before && !row.taskId ? { taskCompleted: false } : {}) })
       const weekStart = monday(row.weekStart), status = importedWeeklyStatus(row), importSource = this.provenance(row)
-      if (task?.importSource?.mode === 'draft' && task.importSource.sourceId === this.batch.sourceId && task.importSource.rowId === row.id) task = this.store.update<Task>('tasks', task.id, task.version, { importSource, ...importWorkMetadata(row), ...(row.taskCompleted ? { status: 'done', completionNote: row.completionNote } : {}) })
+      if (task?.importSource?.mode === 'draft' && task.importSource.sourceId === this.batch.sourceId && task.importSource.rowId === row.id) task = this.store.update<Task>('tasks', task.id, task.version, { importSource, ...importWorkMetadata(row), ...(row.remainingEffortDays !== undefined ? { remainingEffortDays: row.remainingEffortDays } : {}), ...(row.taskCompleted ? { status: 'done', completionNote: row.completionNote } : {}) })
       if (task && this.store.list<WeeklyRecord>('weeklyRecords').some(record => isActiveWeeklyRecord(record) && record.id !== before?.id && record.taskId === task!.id && record.weekStart === weekStart)) throw new HttpError(409, '此任务本周已有记录，请核对后修改原记录')
       if (!task) {
         const taskStatus = { planned: 'todo', doing: 'doing', blocked: 'blocked', done: 'doing', not_done: 'todo' } as const
-        task = this.store.insert<Task>('tasks', { title: text(row.title, '任务标题', true, 300), monthlyPlanId: planId || null, ownerId: row.ownerId,
+        task = this.store.insert<Task>('tasks', { ...(row.remainingEffortDays !== undefined ? { remainingEffortDays: row.remainingEffortDays } : {}), title: text(row.title, '任务标题', true, 300), monthlyPlanId: planId || null, ownerId: row.ownerId,
           description: text(row.sourceText, '来源原文', false, 20000), dueDate: optionalDate(row.dueDate, '任务截止日期'), status: row.taskCompleted ? 'done' : taskStatus[status], isTemporary: row.isTemporary === true, temporaryReason: row.isTemporary === true ? text(row.temporaryReason, '临时事项原因') : '', importSource, ...importWorkMetadata(row), ...(row.taskCompleted ? { completionNote: text(row.completionNote, '整体完成说明') } : {}) })
         this.audit('task', task.id, null, task)
       }
-      const fields: Omit<WeeklyRecord, keyof import('../shared/types.ts').Entity> = { taskId: task.id, monthlyPlanId: planId || null, ownerId: row.ownerId, weekStart,
+      const fields: Omit<WeeklyRecord, keyof import('../shared/types.ts').Entity> = { ...(row.plannedEffortDays !== undefined ? { plannedEffortDays: row.plannedEffortDays } : {}), ...(row.actualEffortDays !== undefined ? { actualEffortDays: row.actualEffortDays } : {}), taskId: task.id, monthlyPlanId: planId || null, ownerId: row.ownerId, weekStart,
         commitment: text(row.expectedOutcome, '本周承诺', false), actualOutcome: text(row.actualOutcome, '实际成果', false), evidenceUrl: before?.evidenceUrl ?? '',
         blocker: text(row.blocker, '阻塞原因', false), nextAction: text(row.nextAction, '下一步', false), status, submitted: true, importSource }
       const result = before ? this.store.update<WeeklyRecord>('weeklyRecords', before.id, before.version, fields) : this.store.insert<WeeklyRecord>('weeklyRecords', fields)

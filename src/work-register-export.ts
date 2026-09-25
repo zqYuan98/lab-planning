@@ -7,7 +7,7 @@ export const workRegisterReportColumns: readonly { key: keyof WorkRegisterReport
   { key: 'overallProgress', label: '总体说明' }, { key: 'latestExecution', label: '最新执行' }, { key: 'nextAction', label: '下一步' },
   { key: 'progress', label: '完成、阻塞与历史补充' },
   { key: 'dueDate', label: '截止日期' }, { key: 'priority', label: '优先级' },
-  { key: 'estimatedEffort', label: '预计剩余投入' }, { key: 'decisionNeeded', label: '需领导决策' },
+  { key: 'remainingEffortDays', label: '预计剩余投入（人日）' }, { key: 'estimatedEffort', label: '投入备注' }, { key: 'decisionNeeded', label: '需领导决策' },
   { key: 'waitingForFeedback', label: '待反馈' }, { key: 'schedule', label: '周安排' },
   { key: 'itemType', label: '事项类型' },
 ]
@@ -22,7 +22,7 @@ function cell(value: string | number): string {
 /** CSV is generated exclusively from the snapshot currently shown in the preview. */
 export function workRegisterReportCsv(snapshot: WorkRegisterReportSnapshot): string {
   const rows: (string | number)[][] = [
-    ['我的工作清单汇报'], ['本人', snapshot.owner.name], ['生成时间', snapshot.generatedAt],
+    ['我的工作清单汇报（非正式报告）'], ['本人', snapshot.owner.name], ['生成时间', snapshot.generatedAt],
     ['筛选范围', snapshot.rangeLabel], ['事项数', snapshot.totalCount],
     ['截止待确认数', snapshot.unknownDueDateCount], ['需要协调数', snapshot.coordinationCount], [],
     workRegisterReportColumns.map(column => column.label),

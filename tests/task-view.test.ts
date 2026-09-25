@@ -20,6 +20,22 @@ function fixture(t: TestContext) {
   return { store, domain, view, grants, manager, member, other, observer, task, grant, weekly, epoch }
 }
 
+test('task detail reads only its own records when unrelated work history grows', t => {
+  const f = fixture(t), weekly = f.weekly('2026-09-21')
+  f.store.resetReadMetrics()
+  const before = f.view.view(f.member, f.task.id), baseline = f.store.getReadMetrics()
+  for (let index = 0; index < 400; index++) {
+    f.store.restoreEntity<Task>('tasks', { ...f.task, id: `unrelated-${index}`, ownerId: f.other.id, description: 'private'.repeat(1000) })
+    f.store.restoreEntity<WeeklyRecord>('weeklyRecords', { ...weekly, id: `unrelated-week-${index}`, taskId: `unrelated-${index}`, ownerId: f.other.id, actualOutcome: 'other work'.repeat(1000) })
+  }
+  f.store.resetReadMetrics()
+  const after = f.view.view(f.member, f.task.id), measured = f.store.getReadMetrics()
+  assert.deepEqual(after.weeklyRecords, before.weeklyRecords)
+  assert.deepEqual(after.progress, before.progress)
+  assert.equal(measured.parsedRows, baseline.parsedRows)
+  assert.equal(measured.parsedBytes, baseline.parsedBytes)
+})
+
 test('task detail works with collaboration disabled, retains independent task and weekly status, and validates navigation targets', t => {
   const f = fixture(t), week = f.weekly('2026-09-21')
   const finished = f.domain.updateWeeklyRecord(f.member, week.id, { version: week.version, status: 'done', actualOutcome: '本周阶段完成' })

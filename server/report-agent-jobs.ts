@@ -184,7 +184,7 @@ export function startReportAgentWorker(store: Store): () => Promise<void> {
   let stopped = false, active: Promise<void> | undefined
   const tick = () => {
     if (stopped || active) return
-    try { runReportAgentSchedule(store) } catch (error) { console.error('周报智能体调度未完成：', error instanceof Error ? error.name : '未知错误') }
+    try { runReportAgentSchedule(store); runReportAgentSchedule(store, new Date(), 'monthly') } catch (error) { console.error('周报智能体调度未完成：', error instanceof Error ? error.name : '未知错误') }
     active = runReportAgentWorker(store, { shouldStop: () => stopped }).catch(error => { console.error('周报智能体作业未完成：', error instanceof Error ? error.name : '未知错误') }).finally(() => { active = undefined })
   }
   const interval = setInterval(tick, 5000); interval.unref(); tick()

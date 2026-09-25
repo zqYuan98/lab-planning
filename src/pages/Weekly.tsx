@@ -1,6 +1,12 @@
+import { effortInput, summarizeEffort } from '../../shared/effort'
 import WeeklyProgressForm from '../components/WeeklyProgressForm'
 import { openTask } from '../navigation'
 import { useEffect, useRef, useState } from 'react'
+import type { WeeklyWorkspace } from '../../shared/period-workspace'
+import { useWorkspaceQuery } from '../workspace-query'
+import { captureMutationContext } from '../mutation-response'
+import { mergePeriod, periodScope, PeriodPager, PeriodEditorDirectory, usePeriodCandidates } from '../period-workspace'
+import DirectoryAccountPicker from '../components/DirectoryAccountPicker'
 import {
   ArrowLeft,
   ArrowRight,
@@ -12,6 +18,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import type { Task, WeeklyRecord } from '../../shared/types'
+import type { WeeklySubmissionView } from '../../shared/weekly-submissions'
 import { isActiveWeeklyRecord, isEffectiveWeeklyRecord } from '../../shared/weekly-record-state'
 import type { Navigate } from '../navigation'
 import { canUseAccount, registrationApproved } from '../../shared/auth-policy'
@@ -54,7 +61,20 @@ const statusTone: Record<string, string> = {
   done: 'green',
   not_done: 'red',
 }
-export default function Weekly({ data, refresh, notify, intent, navigate }: PageProps & { navigate?: Navigate }) {
+type WeeklyProps = PageProps & { navigate?: Navigate }
+interface WeeklyControls { value: WeeklyWorkspace | null; setQuery: (query: string) => void }
+export default function Weekly(props: WeeklyProps) {
+  const initial = new URLSearchParams({ weekStart: props.intent?.weekStart || monday(), ownerId: props.intent?.ownerId || (props.data.user.role === 'manager' ? '' : props.data.user.id) }); if (props.intent?.id) initial.set('id', props.intent.id)
+  const [query, setQuery] = useState(initial.toString()), [cursors, setCursors] = useState<string[]>([])
+  const firstPath = `/workspace/weekly?${query}`, resource = useWorkspaceQuery<WeeklyWorkspace>(firstPath + (cursors.length ? `&cursor=${encodeURIComponent(cursors.at(-1)!)}` : ''), periodScope(props.data), undefined, { onCursorStale: () => { setCursors([]); return firstPath } })
+  const [initialized, setInitialized] = useState(!props.intent?.id)
+  useEffect(() => { if (resource.value) setInitialized(true) }, [resource.value])
+  const data = { ...props.data, users: resource.value?.references.users ?? [props.data.user], projects: resource.value?.references.projects ?? [], plans: resource.value?.references.plans ?? [], tasks: resource.value?.references.tasks ?? [], weeklyRecords: resource.value?.items ?? [], publications: [] }
+  const reload = async () => { setCursors([]); await resource.reload(firstPath) }
+  if (!initialized) return resource.error ? <div className="error" role="alert">{resource.error}<button onClick={() => void reload().catch(() => {})}>重新读取指定任务</button></div> : <p role="status">正在读取指定任务…</p>
+  return <>{resource.error && <div className="error" role="alert">{resource.error}<button onClick={() => void reload().catch(() => {})}>重新读取本周</button></div>}{resource.loading && <p role="status">正在读取周工作…</p>}<WeeklyBody {...props} data={data} refresh={reload} period={{ value: resource.value, setQuery: next => setQuery(old => { if (old !== next) setCursors([]); return next }) }} /><PeriodPager total={resource.value?.total ?? 0} next={!!resource.value?.nextCursor} previous={!!cursors.length} loading={resource.loading} onNext={() => setCursors(old => [...old, resource.value!.nextCursor!])} onPrevious={() => setCursors(old => old.slice(0, -1))} /></>
+}
+export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: WeeklyProps & { period?: WeeklyControls }) {
   const manager = data.user.role === 'manager'
   const initialWeek = intent?.weekStart || monday()
   const initialRecord = data.weeklyRecords.find(
@@ -77,12 +97,22 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
     [filter, setFilter] = useState(intent?.status || 'all'),
     [search, setSearch] = useState(intent?.query || '')
   const [sourceFilter, setSourceFilter] = useState('all')
+  const handledIntent = useRef(false)
+  const detailSequence = useRef(0)
+  useEffect(() => () => { detailSequence.current++ }, [])
+  useEffect(() => {
+    if (!period) return
+    const params = new URLSearchParams({ weekStart: week, ownerId: owner, status: filter, q: search, source: sourceFilter, includeInactive: String(includeInactive) }); if (intent?.id && !handledIntent.current) params.set('id', intent.id)
+    period.setQuery(params.toString())
+  }, [week, owner, filter, search, sourceFilter, includeInactive])
   const [cycleWeek, setCycleWeek] = useState(intent?.cycleWeek || initialWeek)
+  const [submissionView, setSubmissionView] = useState<WeeklySubmissionView | null>(null)
+  const noSubmissionDuty = submissionView?.week === cycleWeek && submissionView.deadlineAt === null
   const [workContext, setWorkContext] = useState<WorkTarget | null>(null)
   const [reviewRequest, setReviewRequest] = useState<ReviewRequest | null>(() => intent?.kind ? {
     cycleWeek: intent.cycleWeek || initialWeek,
     contentWeek: intent.kind === 'plan' ? advanceWeek(intent.cycleWeek || initialWeek, 7) : intent.cycleWeek || initialWeek,
-    ownerId: manager && data.users.some(user=>user.id===intent.ownerId) ? intent.ownerId! : data.user.id, kind: intent.kind, token: 1,
+    ownerId: manager && intent.ownerId ? intent.ownerId : data.user.id, kind: intent.kind, token: 1,
   } : null)
   const reviewSequence = useRef(1)
   const submissionSection = useRef<HTMLDivElement>(null)
@@ -93,17 +123,24 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
     return () => cancelAnimationFrame(frame)
   }, [initialRecord?.id])
   function selectRecordWeek(value: string) {
+    detailSequence.current++
     setWeek(value); setCycleWeek(value); setWorkContext(null); setReviewRequest(null)
     setFilter('all'); setSearch(''); setSourceFilter('all')
   }
-  function selectWork(target: WorkTarget) {
+  async function selectWork(target: WorkTarget) {
+    const sequence = ++detailSequence.current, context = captureMutationContext()
     setWorkContext(target); setWeek(target.contentWeek); showOwner(target.ownerId); setFilter('all'); setSearch(''); setSourceFilter('all')
     const record = target.recordId ? data.weeklyRecords.find(row => isActiveWeeklyRecord(row) && row.id === target.recordId && row.ownerId === target.ownerId && row.weekStart === target.contentWeek) : undefined
     if (record) { openTask({taskId:record.taskId,section:'weekly',weeklyRecordId:record.id}) }
+    else if (target.recordId && period) {
+      try { const result = await api<{ record: WeeklyRecord; references: import('../../shared/period-workspace').PeriodReferences }>(`/workspace/weekly/records/${encodeURIComponent(target.recordId)}`); if (sequence !== detailSequence.current || context !== captureMutationContext()) return; if (result.references.users.some(user => user.id === target.ownerId && !user.active)) setIncludeInactive(true); openTask({ taskId: result.record.taskId, section: 'weekly', weeklyRecordId: result.record.id }) }
+      catch (failure) { if (sequence === detailSequence.current) notify(failure instanceof Error ? failure.message : '记录读取失败') }
+    }
     else if (target.create) openCreate(false)
     else requestAnimationFrame(() => { recordSection.current?.scrollIntoView({block:'start'}); recordSection.current?.focus({preventScroll:true}) })
   }
   function reviewWork(target: WorkTarget) {
+    detailSequence.current++
     setCycleWeek(target.cycleWeek)
     setReviewRequest({...target, token:++reviewSequence.current})
     requestAnimationFrame(() => { submissionSection.current?.scrollIntoView({block:'start'}); submissionSection.current?.focus({preventScroll:true}) })
@@ -119,6 +156,18 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
   )
   const [progressStatus, setProgressStatus] = useState<WeeklyRecord['status']>('planned')
   const [completeTask, setCompleteTask] = useState(false)
+  useEffect(() => {
+    const detail = period?.value?.detail
+    if (!detail || handledIntent.current) return
+    handledIntent.current = true
+    const detailOwner = detail.record?.ownerId || detail.task?.ownerId
+    if (detailOwner) { setOwner(detailOwner); if (data.users.some(user => user.id === detailOwner && !user.active)) setIncludeInactive(true) }
+    if (intent?.action === 'create' && detail.task) { setCreationTask(detail.task); setModal(detail.task.isTemporary ? 'temporary' : 'create') }
+    else if (detail.record) {
+      if (!period?.value?.items.some(row => row.id === detail.record!.id)) openTask({ taskId: detail.record.taskId, section: 'weekly', weeklyRecordId: detail.record.id })
+      else requestAnimationFrame(() => document.getElementById(`weekly-record-${detail.record!.id}`)?.scrollIntoView({ block: 'center' }))
+    }
+  }, [period?.value?.detail])
   const [progressSubmitted, setProgressSubmitted] = useState(false)
   const progressStatusRef = useRef<HTMLSelectElement>(null)
   const progressSubmittedRef = useRef<HTMLInputElement>(null)
@@ -132,6 +181,7 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
     return () => cancelAnimationFrame(frame)
   }, [modal, selected?.id, selected?.version])
   function openCreate(temporary: boolean, task?: Task) {
+    detailSequence.current++
     setCreationTask(task)
     setModal(temporary ? 'temporary' : 'create')
   }
@@ -154,7 +204,15 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
     )
   const official = weekRecords.filter(isEffectiveWeeklyRecord)
   const pending = weekRecords.filter(record => record.submitted && !isEffectiveWeeklyRecord(record))
+  const effort = period?.value?.effortSummary ?? summarizeEffort(weekRecords, data.plans, data.projects)
+  const summary = period?.value?.summary ?? { official: official.length, pending: pending.length, done: official.filter(record => record.status === 'done').length, blocked: official.filter(record => record.status === 'blocked').length }
+  async function openRecord(type: string, record: WeeklyRecord) {
+    if (!period) { setSelected(record); setModal(type); return }
+    const sequence = ++detailSequence.current, context = captureMutationContext()
+    try { const result = await api<{ record: WeeklyRecord }>(`/workspace/weekly/records/${encodeURIComponent(record.id)}`); if (sequence !== detailSequence.current || context !== captureMutationContext()) return; setSelected(result.record); setModal(type) } catch (failure) { if (sequence === detailSequence.current) notify(failure instanceof Error ? failure.message : '记录读取失败') }
+  }
   const close = () => {
+    detailSequence.current++
     setCompleteTask(false)
     setModal('')
     setSelected(null)
@@ -197,20 +255,16 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
         }
       />
       <div ref={submissionSection} tabIndex={-1}>
-        <WeeklySubmissionPanel data={data} refresh={refresh} notify={notify} week={cycleWeek} onChangeCycle={selectRecordWeek} onSelectWork={selectWork} reviewRequest={reviewRequest} />
+        <WeeklySubmissionPanel data={data} refresh={refresh} notify={notify} week={cycleWeek} onChangeCycle={selectRecordWeek} onSelectWork={selectWork} reviewRequest={reviewRequest} onViewChange={setSubmissionView} />
       </div>
       <div ref={recordSection} tabIndex={-1} className="weekly-record-context">
         <h2>周工作记录 · {week} ～ {advanceWeek(week,6)}</h2>
-        <p>完成记录后，请核对并提交整份提报。</p>
-        <ContextHelp title="周记录与整份提报有什么区别">
-          <p>保存单条记录用于更新工作；适用审核的计划通过后纳入周统计。完成填写后，请核对并提交整份提报。</p>
-          <p>同一任务可以持续跨周，每周承诺、实际结果和证据分别保存。</p>
-        </ContextHelp>
-        {workContext && <div className="navigation-context"><span>正在处理{nameOf(data,workContext.ownerId)}的{workContext.kind === 'results' ? '完成情况' : '下周计划'}（记录周 {workContext.contentWeek}，提报周期 {workContext.cycleWeek}）。</span><button className="button primary" onClick={() => reviewWork(workContext)}>返回核对并提交整份提报</button></div>}
+        <WeeklyRecordSubmissionGuidance noSubmissionDuty={noSubmissionDuty} />
+        {workContext && <div className="navigation-context"><span>正在处理{nameOf(data,workContext.ownerId)}的{workContext.kind === 'results' ? '完成情况' : '下周计划'}（记录周 {workContext.contentWeek}，提报周期 {workContext.cycleWeek}）。</span>{!(noSubmissionDuty && workContext.cycleWeek === cycleWeek) && <button className="button primary" onClick={() => reviewWork(workContext)}>返回核对并提交整份提报</button>}</div>}
       </div>
-      {deletedRecord && <DeletedWeeklyRecordNotice data={data} record={deletedRecord} onRelink={() => { setSelected(deletedRecord); setModal('relink') }} onRecreate={task => {
+      {deletedRecord && <DeletedWeeklyRecordNotice data={data} record={deletedRecord} onRelink={() => { detailSequence.current++; setSelected(deletedRecord); setModal('relink') }} onRecreate={task => {
         setWeek(deletedRecord.weekStart); showOwner(deletedRecord.ownerId); setWorkContext(recordTarget(deletedRecord, cycleWeek)); setFilter('all'); setSearch(''); setSourceFilter('all'); setDeletedRecord(null); openCreate(task.isTemporary, task)
-      }} onCancelTask={task => setCancellationTaskId(task.id)} onDismiss={() => setDeletedRecord(null)} />}
+      }} onCancelTask={task => { detailSequence.current++; setCancellationTaskId(task.id) }} onDismiss={() => setDeletedRecord(null)} />}
       <div className="toolbar">
         <div className="week-switcher">
           <button
@@ -244,12 +298,13 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
             本周
           </button>
         </div>
-        {manager && (
+        {manager && period && <DirectoryAccountPicker key={owner} name="weekly-owner-filter" purpose="diagnostics" role="business" scope={periodScope(data)} defaultSelectedIds={owner ? [owner] : []} allowEmpty label="筛选负责人" onChange={ids => { detailSequence.current++; setOwner(ids[0] || ''); setWorkContext(null) }} />}
+        {manager && !period && (
           <label className="inline-field">
             负责人
             <select
               value={owner}
-              onChange={(event) => { setOwner(event.target.value); setWorkContext(null) }}
+              onChange={(event) => { detailSequence.current++; setOwner(event.target.value); setWorkContext(null) }}
             >
               <option value="">{includeInactive ? '所有成员（含停用）' : '在用成员'}</option>
               {visibleOwners.map((user) => (
@@ -262,6 +317,7 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
         )}
         <label className="checkbox-label">
           <input type="checkbox" checked={includeInactive} onChange={event => {
+            detailSequence.current++
             setIncludeInactive(event.target.checked)
             if (!event.target.checked && owner && !availableOwner(owner)) { setOwner(manager ? '' : data.user.id); setWorkContext(null) }
           }} />
@@ -279,6 +335,7 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
           <button
             className="text-button"
             onClick={() => {
+              detailSequence.current++
               setOwner(data.user.id)
               setSearch('')
               setFilter('all')
@@ -288,30 +345,31 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
           </button>
         </div>
       )}
+      <section className="context-box" aria-label="本周投入汇总"><p>本周投入：预计 {effort.plannedEffortDays} 人日 · 实际 {effort.actualEffortDays} 人日 · 未填预计 {effort.missingPlannedCount} 项 / 实际 {effort.missingActualCount} 项</p>{effort.byOwnerWeek.filter(item => item.overCapacity).map(item => <p key={`${item.ownerId}:${item.weekStart}`} role="status">容量提示：{nameOf(data, item.ownerId)}本周预计或实际投入超过 5 人日，请核对安排。</p>)}<details><summary>按项目查看投入</summary>{effort.byProject.map(item => <p key={item.projectId ?? 'none'}>{item.projectName}：预计 {item.plannedEffortDays} / 实际 {item.actualEffortDays} 人日（未填 {item.missingPlannedCount} / {item.missingActualCount} 项）</p>)}</details><small>覆盖当前成员筛选的全部有效周记录，不受列表分页、关键词和状态筛选影响。</small></section>
       <div className="weekly-summary">
         <span>
-          已纳入周统计 <strong>{official.length}</strong> 项
+          已纳入周统计 <strong>{summary.official}</strong> 项
         </span>
-        {pending.length > 0 && <span>待审核生效 <strong>{pending.length}</strong> 项</span>}
+        {summary.pending > 0 && <span>待审核生效 <strong>{summary.pending}</strong> 项</span>}
         <span>
           成员自报完成{' '}
           <strong>
-            {official.filter((record) => record.status === 'done').length}
+            {summary.done}
           </strong>{' '}
           项
         </span>
         <span>
           阻塞{' '}
           <strong>
-            {official.filter((record) => record.status === 'blocked').length}
+            {summary.blocked}
           </strong>{' '}
           项
         </span>
         <span>
           完成率{' '}
           <strong>
-            {official.length
-              ? `${Math.round((official.filter((record) => record.status === 'done').length / official.length) * 100)}%`
+            {summary.official
+              ? `${Math.round((summary.done / summary.official) * 100)}%`
               : '—'}
           </strong>
         </span>
@@ -327,21 +385,21 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
           <button
             key={value}
             className={filter === value ? 'selected' : ''}
-            onClick={() => setFilter(value)}
+            onClick={() => { detailSequence.current++; setFilter(value) }}
           >
             {label}
           </button>
         ))}
       </div>
       <div className="toolbar">
-        <label className="inline-field">计划来源<select value={sourceFilter} onChange={event => setSourceFilter(event.target.value)}><option value="all">全部来源</option><option value="assigned">管理员下发</option><option value="self">自行安排</option><option value="proxy">管理员代录</option><option value="imported">已有计划导入</option><option value="unknown">来源未记录</option></select></label>
+        <label className="inline-field">计划来源<select value={sourceFilter} onChange={event => { detailSequence.current++; setSourceFilter(event.target.value) }}><option value="all">全部来源</option><option value="assigned">管理员下发</option><option value="self">自行安排</option><option value="proxy">管理员代录</option><option value="imported">已有计划导入</option><option value="unknown">来源未记录</option></select></label>
         <label className="search-input">
           <Search size={17} />
           <input
             aria-label="搜索周任务"
             placeholder="搜索任务、承诺或负责人"
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => { detailSequence.current++; setSearch(event.target.value) }}
           />
         </label>
       </div>
@@ -534,8 +592,7 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
                           disabled={!availableOwner(record.ownerId)}
                           title={!availableOwner(record.ownerId) ? '责任人账号已停用，无法新安排任务' : undefined}
                           onClick={() => {
-                            setSelected(record)
-                            setModal('carry')
+                            void openRecord('carry', record)
                           }}
                         >
                           顺延一周
@@ -545,14 +602,13 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
                     {manager && task && (
                       <button
                         onClick={() => {
-                          setSelected(record)
-                          setModal('relink')
+                          void openRecord('relink', record)
                         }}
                       >
                         调整月度关联
                       </button>
                     )}
-                    {manager && <button className="weekly-delete-action" onClick={() => { setSelected(record); setModal('delete') }}><Trash2 size={14} />删除周安排</button>}
+                    {manager && <button className="weekly-delete-action" onClick={() => void openRecord('delete', record)}><Trash2 size={14} />删除周安排</button>}
                   </div>
                 </footer>
               </article>
@@ -594,7 +650,7 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
         }}><Field label="删除原因" hint="例如：早期录入未关联月度临时计划，现需调整后重建。"><textarea name="reason" required rows={3} maxLength={12000} /></Field></Form>
       </Modal>}
       {(modal === 'create' || modal === 'temporary') && (
-        <WeeklyCreate
+        period ? <PeriodEditorDirectory data={data} onCancel={close}>{editorData => <WeeklyCreate data={editorData} week={week} temporary={modal === 'temporary'} initialOwnerId={workContext?.ownerId || owner || (manager ? '' : data.user.id)} initialTask={creationTask} onClose={close} onSaved={saved} live />}</PeriodEditorDirectory> : <WeeklyCreate
           data={data}
           week={week}
           temporary={modal === 'temporary'}
@@ -665,7 +721,8 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
           </Form>
         </Modal>
       )}
-      {modal === 'relink' && selectedTask && (
+      {modal === 'relink' && selectedTask && period && <WeeklyRelink data={data} task={selectedTask} onClose={close} onSaved={saved} />}
+      {modal === 'relink' && selectedTask && !period && (
         <Modal title="调整任务的月度归属" onClose={close}>
           <p className="modal-intro">
             任务编号保持不变；曾纳入周统计的记录保留原月度归属，从未提交且覆盖目标月份的草稿会同步调整，新周记录采用新的关联。
@@ -722,6 +779,16 @@ export default function Weekly({ data, refresh, notify, intent, navigate }: Page
     </>
   )
 }
+export function WeeklyRecordSubmissionGuidance({ noSubmissionDuty }: { noSubmissionDuty: boolean }) {
+  return <>
+    <p>{noSubmissionDuty ? '本提报周期整周休息，无须提交整份提报；仍可保存周工作记录。' : '完成记录后，请核对并提交整份提报。'}</p>
+    <ContextHelp title="周记录与整份提报有什么区别">
+      <p>{noSubmissionDuty ? '保存单条记录用于更新工作。本提报周期整周休息，无须正式提报，也不计缺交。' : '保存单条记录用于更新工作；适用审核的计划通过后纳入周统计。完成填写后，请核对并提交整份提报。'}</p>
+      <p>同一任务可以持续跨周，每周承诺、实际结果和证据分别保存。</p>
+    </ContextHelp>
+  </>
+}
+
 export function DeletedWeeklyRecordNotice({ data, record, onRelink, onRecreate, onCancelTask, onDismiss }: {
   data: PageProps['data']; record: WeeklyRecord; onRelink: () => void; onRecreate: (task: Task) => void; onCancelTask?: (task: Task) => void; onDismiss: () => void
 }) {
@@ -736,14 +803,22 @@ export function DeletedWeeklyRecordNotice({ data, record, onRelink, onRecreate, 
     <button className="text-button" aria-label="关闭删除结果提示" onClick={onDismiss}>关闭</button>
   </div>
 }
+function WeeklyRelink({ data, task, onClose, onSaved }: { data: PageProps['data']; task: Task; onClose: () => void; onSaved: (message: string) => Promise<void> }) {
+  const candidates = usePeriodCandidates(data, task.ownerId, 'relink')
+  return <Modal title="调整任务的月度归属" onClose={onClose}>
+    <p className="modal-intro">任务编号保持不变；已纳入周统计的记录保留原月度归属，符合条件的草稿同步调整。</p>
+    {candidates.error ? <div className="error" role="alert">{candidates.error}<button onClick={candidates.retry}>重新读取目标</button></div> : !candidates.value ? <p role="status">正在读取责任人参与的已发布目标…</p> : <Form onCancel={onClose} onSubmit={async event => { await api(`/tasks/${task.id}/relink`, json({ ...Object.fromEntries(new FormData(event.currentTarget)), version: task.version })); await onSaved('任务月度关联已调整') }}><Field label="关联已发布月度目标"><select name="monthlyPlanId" required defaultValue={task.monthlyPlanId || ''}><option value="" disabled>请选择目标</option>{candidates.value.plans.map(plan => <option key={plan.id} value={plan.id}>{plan.month} · {plan.title}</option>)}</select></Field><Field label="调整原因"><textarea name="reason" rows={3} required /></Field></Form>}
+  </Modal>
+}
 function WeeklyCreate({
-  data,
+  data: initialData,
   week,
   temporary,
   initialTask,
   initialOwnerId,
   onClose,
   onSaved,
+  live = false,
 }: {
   data: PageProps['data']
   week: string
@@ -752,7 +827,9 @@ function WeeklyCreate({
   initialOwnerId: string
   onClose: () => void
   onSaved: (message: string, record?: WeeklyRecord) => Promise<void>
+  live?: boolean
 }) {
+  let data = initialData
   const accessibleTask =
     initialTask &&
     initialTask.isTemporary === temporary &&
@@ -765,6 +842,8 @@ function WeeklyCreate({
     [ownerId, setOwnerId] = useState(accessibleTask?.ownerId || (data.users.some(user => user.id === initialOwnerId && canUseAccount(user)) ? initialOwnerId : ''))
   const attempt = useRef<SubmissionAttempt | null>(null)
   const [arrangement, setArrangement] = useState('assigned')
+  const candidates = usePeriodCandidates(initialData, ownerId || initialData.user.id, 'weekly')
+  if (live) data = candidates.value ?? { ...initialData, plans: [], tasks: [] }
   const creationKind = ownerId === data.user.id ? 'self' : arrangement
   const assigning = creationKind === 'assigned' && !!ownerId
   const plans = data.plans.filter(
@@ -794,6 +873,8 @@ function WeeklyCreate({
       onClose={onClose}
       wide
     >
+      {live && candidates.error && <div className="error" role="alert">{candidates.error}<button onClick={candidates.retry}>重新读取候选</button></div>}
+      {live && !candidates.value && !candidates.error && <p role="status">正在读取责任人的目标与任务…</p>}
       <Form
         onCancel={onClose}
         submitLabel={assigning ? includeInStatistics ? '下发给责任人' : '保存周草稿' : creationKind === 'proxy' ? '保存代录记录' : '保存周工作记录'}
@@ -802,14 +883,16 @@ function WeeklyCreate({
         onDraftRestore={values => {
           const requestedOwner = draftText(values, '__ownerId')
           const restoredOwner = data.user.role === 'manager' ? data.users.some(user => user.id === requestedOwner && canUseAccount(user)) ? requestedOwner : '' : data.user.id
-          const restoredTask = data.tasks.find(task => task.id === draftText(values, '__taskId') && task.ownerId === restoredOwner && !!task.isTemporary === temporary)
-          const requestedPlan = restoredTask?.monthlyPlanId || draftText(values, '__planId')
-          const restoredPlan = data.plans.find(plan => plan.id === requestedPlan && !plan.visibility && (plan.ownerId === restoredOwner || plan.collaboratorIds.includes(restoredOwner)) && plan.status !== 'merged')
-          setOwnerId(restoredOwner); setTaskId(restoredTask?.id || ''); setPlanId(restoredPlan?.id || '')
+          // Candidate reads follow the restored owner asynchronously. Keep the saved
+          // identifiers until that read completes; never turn an existing-task draft into a new task.
+          setOwnerId(restoredOwner); setTaskId(draftText(values, '__taskId')); setPlanId(draftText(values, '__planId'))
           setArrangement(draftText(values, '__arrangement') === 'proxy' ? 'proxy' : 'assigned')
           setIncludeInStatistics(draftText(values, '__submitted') === 'yes' || draftChecked(values, 'submitted'))
         }}
         onSubmit={async (event) => {
+          if (live && !candidates.value) throw new Error('请等待责任人候选读取完成')
+          if (taskId && !existing.some(task => task.id === taskId)) throw new Error('草稿中关联的任务当前不可选，请重新选择任务；尚未建立新任务。')
+          if (!taskId && !temporary && !plans.some(plan => plan.id === planId)) throw new Error('请重新选择当前可访问的月度目标')
           const form = new FormData(event.currentTarget),
             values = Object.fromEntries(form)
           const origin = { creationKind, creationReason: values.creationReason || '' }
@@ -819,7 +902,7 @@ function WeeklyCreate({
               ownerId, description: values.description || '', dueDate: values.dueDate,
               isTemporary: temporary, temporaryReason: values.temporaryReason || '',
             } }),
-            record: { ...origin, weekStart: values.weekStart, commitment: values.commitment,
+            record: { ...origin, weekStart: values.weekStart, commitment: values.commitment, plannedEffortDays: effortInput(form.get('plannedEffortDays')), actualEffortDays: null,
               status: 'planned', submitted: form.has('submitted') },
           }
           attempt.current = assignmentAttempt(attempt.current, payload)
@@ -849,6 +932,7 @@ function WeeklyCreate({
               disabled={data.user.role !== 'manager'}
             >
               <option value="" disabled>请选择责任人</option>
+              {ownerId && !data.users.some(user => user.id === ownerId && canUseAccount(user)) && <option value={ownerId} disabled>草稿责任人暂不可选，请重新核对</option>}
               {data.users
                 .filter(canUseAccount)
                 .map((user) => (
@@ -864,6 +948,7 @@ function WeeklyCreate({
           {creationKind === 'proxy' && <Field label="代录原因"><textarea name="creationReason" required rows={2} maxLength={12000} /></Field>}
           <p className="form-hint">{assigning ? '纳入周统计后才正式下发；草稿不发送下发通知。下发后成员可直接更新。' : '保留管理员代录来源及原因。'}此操作不会生成成员的整份提报回执。</p>
         </>}
+        <Field label="本周预计投入（人日）" hint="以 0.5 人日填写；留空表示尚未估算。任务剩余投入不会自动计入本周。"><input name="plannedEffortDays" type="number" min="0" step="0.5" /></Field>
         <Field label="关联个人任务">
           <select
             value={taskId}
@@ -874,6 +959,7 @@ function WeeklyCreate({
             }}
           >
             <option value="">创建新的个人任务</option>
+            {taskId && !existing.some(task => task.id === taskId) && <option value={taskId} disabled>{candidates.value ? '草稿关联任务暂不可选，请重新核对' : '正在读取草稿关联任务…'}</option>}
             {existing.map((task) => (
               <option key={task.id} value={task.id}>
                 沿用任务 · {task.title}
@@ -897,6 +983,7 @@ function WeeklyCreate({
                   required
                 >
                   <option value="">选择责任人负责或参与的月度目标</option>
+                  {planId && !plans.some(plan => plan.id === planId) && <option value={planId} disabled>{candidates.value ? '草稿关联目标暂不可选，请重新核对' : '正在读取草稿关联目标…'}</option>}
                   {plans
                     .sort((a, b) => b.month.localeCompare(a.month))
                     .map((item) => (

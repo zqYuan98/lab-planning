@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express'
 import type { User } from '../shared/types.ts'
 import type { ReportAgentDownload } from '../shared/report-agent.ts'
 import { HttpError, type Store } from './store.ts'
+import { reportTypeManaged } from './report-agent-policy.ts'
 import { requireReportManager } from './reports.ts'
 import {
   activateReportTemplate, archiveReportTemplate, createReportTemplate, downloadAgentReport, downloadReportAsset,
@@ -16,7 +17,7 @@ function sendDocument(res: Response, result: ReportAgentDownload) {
   const name = result.filename.replace(/[\r\n]/g, '').slice(0, 240)
   res.set({
     'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'Content-Disposition': `attachment; filename="weekly-report.docx"; filename*=UTF-8''${encodeURIComponent(name)}`,
+    'Content-Disposition': `attachment; filename="report.docx"; filename*=UTF-8''${encodeURIComponent(name)}`,
     'X-Content-SHA256': result.sha256,
     'Cache-Control': 'no-store',
   })
@@ -30,6 +31,7 @@ export function createReportAgentRouter(store: Store) {
     try { requireReportManager(store, actor(req)); next() } catch (error) { next(error) }
   })
   router.get('/report-agent', (req, res) => res.json(getReportAgentBootstrap(store, actor(req))))
+  router.get('/report-agent/policy', (_req, res) => res.json({ managedTypes: ['weekly', 'monthly'].filter(type => reportTypeManaged(store, type as 'weekly' | 'monthly')) }))
   router.post('/report-agent/assets', async (req, res) => res.status(201).json(await uploadReportAsset(store, actor(req), req.body)))
   router.get('/report-agent/assets/:id/download', async (req, res) => sendDocument(res, await downloadReportAsset(store, actor(req), String(req.params.id))))
   router.post('/report-agent/templates', (req, res) => res.status(201).json(createReportTemplate(store, actor(req), req.body)))
@@ -53,5 +55,7 @@ export function createReportAgentRouter(store: Store) {
   })
   router.get('/report-agent/schedule', (_req, res) => res.json(getReportAgentSchedule(store)))
   router.put('/report-agent/schedule', (req, res) => res.json(updateReportAgentSchedule(store, actor(req), req.body)))
+  router.get('/report-agent/monthly-schedule', (_req, res) => res.json(getReportAgentSchedule(store, 'monthly')))
+  router.put('/report-agent/monthly-schedule', (req, res) => res.json(updateReportAgentSchedule(store, actor(req), { ...req.body, type: 'monthly' })))
   return router
 }

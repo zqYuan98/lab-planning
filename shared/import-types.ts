@@ -1,6 +1,10 @@
 export type ImportKind = 'monthly' | 'weekly'
 export type ImportMode = 'history' | 'draft' | 'existing'
 export interface ImportRow {
+  annualGoalId?: string | null
+  remainingEffortDays?: number | null
+  plannedEffortDays?: number | null
+  actualEffortDays?: number | null
   id: string
   kind: ImportKind
   selected: boolean

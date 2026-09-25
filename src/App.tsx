@@ -1,6 +1,5 @@
-import WorkTaskPanel from './components/WorkTaskPanel'
-import AuthorizedWork from './pages/AuthorizedWork'
-import { MinimalSupportPanel } from './components/TaskSupport'
+import { PageReloadContext, retryableLazy } from './components/LazyPage'
+import { Modal } from './ui'
 import { validTaskIntent, type OpenTaskIntent } from './navigation'
 import { setDraftSession } from './draft-v3'
 import './delivery-management.css'
@@ -14,38 +13,50 @@ import type { Navigate, NavigationIntent, PageId } from './navigation'
 import { api, ApiError } from './api'
 import { LatestRead, StaleReadError } from './latest-read'
 import { advanceMutationContext, captureMutationContext, MutationContextChangedError, readInMutationContext, subscribeMutationResponses } from './mutation-response'
-import { applyBootstrapMutation, confirmMutation, reconcileBootstrap, type ConfirmedMutations } from './workspace-response'
+import { bindSessionActor, subscribeSessionIdentityChanges } from './session-identity'
+import { mutationEntities } from './workspace-response'
+import { shellAffected } from './query-invalidation'
 import ArcoModal from '@arco-design/web-react/es/Modal'
 import AuthAccess from './components/AuthAccess'
 import AuthLanding from './components/AuthLanding'
 import WorkspaceShell from './components/WorkspaceShell'
 import Brand from './components/WorkspaceBrand'
-import Overview from './pages/Overview'
-import Monthly from './pages/Monthly'
-import Weekly from './pages/Weekly'
-import Projects from './pages/Projects'
-import Goals from './pages/Goals'
-import Team from './pages/Team'
-import Reports from './pages/Reports'
-import Imports from './pages/Imports'
-import Messages from './pages/Messages'
-import NotificationSettings from './pages/NotificationSettings'
-import WorkFollowups from './pages/WorkFollowups'
-import WorkRegister from './pages/WorkRegister'
-import PeriodReviews from './pages/PeriodReviews'
 import type { WorkspaceShellData } from '../shared/workspace-query'
 import { shellBootstrap } from './workspace-query'
-import Feedback from './pages/Feedback'
-import FeedbackComposer from './components/FeedbackComposer'
 import PageErrorBoundary from './components/PageErrorBoundary'
 import type { FeedbackContext } from '../shared/feedback'
 import { allowDraftLeave } from './draft-recovery'
 import { appVersion, latestClientError, clearClientError, safeFeedbackPath } from './error-context'
+import { useUsageAnalytics } from './usage-analytics'
 import { entryLocation, navigationUrl } from './notification-navigation'
 import { entryAppLink, exchangeDingTalk, identityThenWorkspace, isDingTalk } from './dingtalk-access'
 import './shell.css'
 import './notifications.css'
 
+const Overview = retryableLazy(() => import('./pages/Overview'))
+const Monthly = retryableLazy(() => import('./pages/Monthly'))
+const Weekly = retryableLazy(() => import('./pages/Weekly'))
+const Projects = retryableLazy(() => import('./pages/Projects'))
+const Goals = retryableLazy(() => import('./pages/Goals'))
+const Team = retryableLazy(() => import('./pages/Team'))
+const Reports = retryableLazy(() => import('./pages/Reports'))
+const Imports = retryableLazy(() => import('./pages/Imports'))
+const Messages = retryableLazy(() => import('./pages/Messages'))
+const NotificationSettings = retryableLazy(() => import('./pages/NotificationSettings'))
+const WorkFollowups = retryableLazy(() => import('./pages/WorkFollowups'))
+const WorkRegister = retryableLazy(() => import('./pages/WorkRegister'))
+const PeriodReviews = retryableLazy(() => import('./pages/PeriodReviews'))
+const AuthorizedWork = retryableLazy(() => import('./pages/AuthorizedWork'))
+const Feedback = retryableLazy(() => import('./pages/Feedback'))
+const WorkTaskPanel = retryableLazy(() => import('./components/WorkTaskPanel'), {
+  fallback: (children, props) => <Modal title="任务详情" onClose={props.onClose}>{children}</Modal>,
+})
+const FeedbackComposer = retryableLazy(() => import('./components/FeedbackComposer'), {
+  fallback: (children, props) => <Modal title="反馈问题" onClose={props.onClose}>{children}</Modal>,
+})
+const MinimalSupportPanel = retryableLazy(async () => ({ default: (await import('./components/TaskSupport')).MinimalSupportPanel }), {
+  fallback: (children, props) => <Modal title="支持事项" onClose={props.onClose}>{children}</Modal>,
+})
 const managerPages = new Set<PageId>(['reports', 'team', 'notification-settings'])
 
 export default function App() {
@@ -55,6 +66,7 @@ export default function App() {
   const [page, setPage] = useState<PageId>(() => entryLocation(window.location).page),
     [intent, setIntent] = useState<NavigationIntent | undefined>(() => entryLocation(window.location).intent),
     [navigationKey, setNavigationKey] = useState(0)
+  useUsageAnalytics(data?.user, page)
   const [taskIntent,setTaskIntent] = useState<OpenTaskIntent|null>(null)
   const [supportIntent,setSupportIntent] = useState<string|null>(null)
   const [toast, setToast] = useState(''),
@@ -72,63 +84,38 @@ export default function App() {
   const identitySequence = useRef(0)
   const mounted = useRef(true)
   const currentData = useRef<Bootstrap | null>(null)
-  const confirmedMutations = useRef<ConfirmedMutations>({})
-  const currentPage = useRef(page); currentPage.current = page
-  const [legacyPage, setLegacyPage] = useState<PageId | null>(null)
-  const [legacyError, setLegacyError] = useState('')
-  const usesLegacy = (target: PageId) => !['work-register', 'reports', 'authorized-work', 'period-reviews'].includes(target)
-  const legacyRead = useRef<LatestRead<Bootstrap> | null>(null)
-  if (!legacyRead.current) legacyRead.current = new LatestRead({
-    load: signal => api<Bootstrap>('/bootstrap', { signal }),
-    accept: next => {
-      const previous = currentData.current
-      if (!previous || previous.user.id !== next.user.id || previous.user.role !== next.user.role || previous.operationEpoch !== next.operationEpoch || previous.accessScopeVersion !== next.accessScopeVersion) throw new MutationContextChangedError()
-      const result = reconcileBootstrap(previous, next, confirmedMutations.current)
-      currentData.current = result.value; setData(result.value); setLegacyPage(currentPage.current)
-      if (result.stale) throw new StaleReadError()
-    },
-    error: error => {
-      if (error instanceof MutationContextChangedError || error instanceof ApiError && [401,403,404].includes(error.status)) {
-        setLegacyPage(null); setTaskIntent(null); setSupportIntent(null)
-        void workspaceRead.current?.read().catch(()=>{})
-      }
-      setLegacyError(error instanceof Error ? error.message : '')
-    },
-  })
   const workspaceRead = useRef<LatestRead<Bootstrap> | null>(null)
   if (!workspaceRead.current) workspaceRead.current = new LatestRead({
     load: async signal => shellBootstrap(await api<WorkspaceShellData>('/workspace', { signal }), currentData.current),
     accept: next => {
       const previous = currentData.current
       const scopeChanged = previous && (previous.user.id !== next.user.id || previous.user.role !== next.user.role || previous.operationEpoch !== next.operationEpoch || previous.accessScopeVersion !== next.accessScopeVersion)
-      if (scopeChanged) { advanceMutationContext(); confirmedMutations.current = {}; legacyRead.current!.reset(); setLegacyPage(null) }
-      const result = reconcileBootstrap(scopeChanged ? null : previous, next, confirmedMutations.current)
-      setDraftSession({userId:result.value.user.id,operationEpoch:result.value.operationEpoch||''})
-      currentData.current = result.value; setData(result.value)
-      if (result.stale) throw new StaleReadError()
+      if (scopeChanged) { advanceMutationContext(); setTaskIntent(null); setSupportIntent(null) }
+      if (!scopeChanged && previous && next.user.version < previous.user.version) throw new StaleReadError()
+      setDraftSession({userId:next.user.id,operationEpoch:next.operationEpoch||''})
+      bindSessionActor(next.user.id)
+      currentData.current = next; setData(next)
     },
     error: error => {
       if (error instanceof ApiError && [401,403].includes(error.status)) {
-        identitySequence.current++; advanceMutationContext(); workspaceRead.current!.reset(); legacyRead.current!.reset(); setLegacyPage(null)
-        currentData.current = null; confirmedMutations.current = {}; setDraftSession(null); setTaskIntent(null); setSupportIntent(null); setData(null); setLoading(false)
+        identitySequence.current++; advanceMutationContext(); workspaceRead.current!.reset()
+        currentData.current = null; bindSessionActor(null); setDraftSession(null); setTaskIntent(null); setSupportIntent(null); setData(null); setLoading(false)
         setDingTalkNotice('登录已过期或账号不可用，请重新登录。已暂存的草稿仍保留。')
       } else if (error) setToast(error instanceof Error ? error.message : '工作空间刷新失败，请重试。')
     },
   })
   const [pendingLeave, setPendingLeave] = useState<
-    { page: PageId; intent?: NavigationIntent } | 'logout' | null
+    { page: PageId; intent?: NavigationIntent } | 'logout' | 'reload' | null
   >(null)
   const refresh = useCallback(async () => {
     if (!mounted.current) throw new MutationContextChangedError()
     await readInMutationContext(() => workspaceRead.current!.read())
-    if (usesLegacy(currentPage.current) && currentData.current?.user.role !== 'observer') await readInMutationContext(() => legacyRead.current!.read())
     if (!mounted.current) throw new MutationContextChangedError()
   }, [])
   const changeIdentity = useCallback(() => {
     if (currentData.current) setIntent(value=>value?.targetType==='task'?undefined:value)
     identitySequence.current++; advanceMutationContext(); workspaceRead.current!.reset()
-    legacyRead.current!.reset(); setLegacyPage(null)
-    currentData.current = null; confirmedMutations.current = {}; setDraftSession(null); setTaskIntent(null); setSupportIntent(null)
+    currentData.current = null; bindSessionActor(null); setDraftSession(null); setTaskIntent(null); setSupportIntent(null)
     if (mounted.current) setData(null)
     return identitySequence.current
   }, [])
@@ -148,6 +135,7 @@ export default function App() {
       else throw error
     }
   }, [refresh, changeIdentity])
+  useEffect(() => subscribeSessionIdentityChanges(() => { void sessionChanged().catch(error => setToast(error instanceof Error ? error.message : '账号状态更新失败，请重新登录。')) }), [sessionChanged])
   function applyNavigation(next: PageId, nextIntent?: NavigationIntent, writeHistory = true) {
     // Reset before rendering so destination-specific anchors can still scroll into view.
     if (next !== page) window.scrollTo({ top: 0, behavior: 'instant' })
@@ -159,7 +147,6 @@ export default function App() {
   const navigate: Navigate = (next, nextIntent) => {
     if(data?.user.role==='observer' && next!=='authorized-work') {setToast('观察者仅可查看明确授权的工作。');return}
     if(nextIntent?.targetType==='task'&&nextIntent.id) {showTask({taskId:nextIntent.id,section:nextIntent.section,weeklyRecordId:nextIntent.weeklyRecordId});return}
-    if(next==='weekly'&&nextIntent?.id&&!nextIntent.action){const record=data?.weeklyRecords.find(row=>row.id===nextIntent.id);const task=data?.tasks.find(row=>row.id===(record?.taskId||nextIntent.id));if(task){showTask({taskId:task.id,section:record?'weekly':'overview',weeklyRecordId:record?.id});return}}
     if (data?.user.role !== 'manager' && managerPages.has(next)) {
       setToast('当前账号没有访问此页面的权限。')
       return
@@ -252,6 +239,7 @@ export default function App() {
     const target = pendingLeave
     setPendingLeave(null)
     if (target === 'logout') await logout()
+    else if (target === 'reload') window.location.reload()
     else if (target) {
       setReportDirty(false)
       applyNavigation(target.page, target.intent)
@@ -289,24 +277,17 @@ export default function App() {
     void start()
     let live = true
     void entryAppLink(window.location).then(link => { if (live) setAppLink(link) }).catch(() => {})
-    return () => { live = false; mounted.current = false; identitySequence.current++; advanceMutationContext(); workspaceRead.current!.reset(); legacyRead.current!.reset() }
+    return () => { live = false; mounted.current = false; identitySequence.current++; advanceMutationContext(); workspaceRead.current!.reset() }
   }, [])
-  useEffect(() => {
-    legacyRead.current!.reset(); setLegacyPage(null)
-    if (!data || data.user.role === 'observer' || !usesLegacy(page)) return
-    void legacyRead.current!.read().catch(() => {})
-    return () => legacyRead.current!.reset()
-  }, [page, data?.user.id, data?.user.role, data?.operationEpoch, data?.accessScopeVersion])
   useEffect(() => subscribeMutationResponses(event => {
     if (!mounted.current || !currentData.current || event.context !== captureMutationContext()) return
+    if (!shellAffected(event.path)) return
     workspaceRead.current!.invalidate()
-    const next = applyBootstrapMutation(currentData.current, event.value)
-    if (next.user.role !== currentData.current.user.role || next.user.active !== currentData.current.user.active) changeIdentity()
-    else {
-      confirmedMutations.current = confirmMutation(confirmedMutations.current, event.value)
-      currentData.current = next; setData(next)
+    const self = mutationEntities(event.value).users?.find(row => row.id === currentData.current!.user.id) as Bootstrap['user'] | undefined
+    if (self && self.version >= currentData.current.user.version) {
+      if (self.role !== currentData.current.user.role || self.active !== currentData.current.user.active) changeIdentity()
+      else { const next = { ...currentData.current, user: self, users: [self] }; currentData.current = next; setData(next) }
     }
-    // Callers may also refresh after saving; LatestRead makes both await the effective latest read.
     void refresh().catch(() => {})
   }), [refresh, changeIdentity])
   useEffect(() => {
@@ -417,6 +398,11 @@ export default function App() {
       </AuthLanding>
     )
   const manager = data.user.role === 'manager'
+  const reloadPage = () => {
+    if (!allowDraftLeave()) return
+    if (reportDirty) setPendingLeave('reload')
+    else window.location.reload()
+  }
   const props = { data, refresh, notify: setToast, intent }
   const route = {
     'authorized-work': <AuthorizedWork {...props} />,
@@ -438,7 +424,7 @@ export default function App() {
     team: manager ? <Team {...props} /> : null,
   }[page] || <Overview {...props} navigate={navigate} />
   return (
-    <>
+    <PageReloadContext.Provider value={reloadPage}>
       <div inert={!!feedbackContext || undefined}>
       <WorkspaceShell data={data} page={page} navigate={navigate} unreadCount={unreadCount} onFeedback={openFeedback} leaveConfirmationOpen={!!pendingLeave} onLogout={() => {
         if (!allowDraftLeave()) return
@@ -446,7 +432,7 @@ export default function App() {
         else void logout()
       }}>
         {ordinaryLogin && isDingTalk() && <div className="dingtalk-auth-notice" role="status">普通账号登录，当前钉钉身份尚未核验。<button className="button secondary" disabled={dingTalkBusy} onClick={() => void dingTalkLogin()}>验证当前钉钉身份</button></div>}
-        <PageErrorBoundary key={`${data.user.id}:${page}-${navigationKey}`}>{data.user.role==='observer'?<AuthorizedWork {...props}/>:usesLegacy(page)&&legacyPage!==page?<div role="status"><p>{legacyError || '正在读取此页面数据…'}</p>{legacyError&&<button className="button secondary" onClick={()=>void refresh().catch(()=>{})}>重试读取</button>}</div>:route}</PageErrorBoundary>
+        <PageErrorBoundary key={`${data.user.id}:${data.operationEpoch}:${data.accessScopeVersion}:${page}-${navigationKey}`}>{data.user.role==='observer'?<AuthorizedWork {...props}/>:route}</PageErrorBoundary>
       </WorkspaceShell>
       </div>
       {taskIntent&&<WorkTaskPanel key={`${data.user.id}:${taskIntent.taskId}:${taskIntent.section}:${taskIntent.weeklyRecordId||''}:${data.operationEpoch}`} {...props} taskId={taskIntent.taskId} section={taskIntent.section} weeklyRecordId={taskIntent.weeklyRecordId} onClose={closeTask} onChanged={async()=>{}}/>}
@@ -465,6 +451,6 @@ export default function App() {
           {toast}
         </div>
       )}
-    </>
+    </PageReloadContext.Provider>
   )
 }

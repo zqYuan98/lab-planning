@@ -1,3 +1,4 @@
+import { collaborationDashboard } from './collaboration-query.ts'
 import { Router } from 'express'
 import type { DeadlineChangeRequest, FollowupRequest, TaskTracking } from '../shared/collaboration.ts'
 import type { CollaborationPreference, DigestItem, NotificationDigest } from '../shared/collaboration-notifications.ts'
@@ -18,20 +19,7 @@ import { TaskSupportService } from './task-support.ts'
 
 export function collaborationRouter(store: Store) {
   const router = Router(), service = new CollaborationService(store)
-  router.get('/collaboration', (req, res) => {
-    const settings = readCollaborationSettings(store)
-    const tasks = store.list<Task>('tasks').filter(isActiveTask).filter(task => req.user.role === 'manager' || task.ownerId === req.user.id)
-    const followups = store.list<FollowupRequest>('followupRequests')
-    const now = new Date(), weeklyByTask = new Map<string, WeeklyRecord[]>()
-    for (const record of store.list<WeeklyRecord>('weeklyRecords')) {
-      const records = weeklyByTask.get(record.taskId) ?? []
-      records.push(record); weeklyByTask.set(record.taskId, records)
-    }
-    res.json({ settings, preference: store.get<CollaborationPreference>('collaborationPreferences', req.user.id) ?? { version: 0, memberActionsEnabled: true }, tasks: tasks.map(task => ({ task, tracking: store.get<TaskTracking>('taskTrackings', task.id) ?? null,
-      openFollowup: followups.find(row => row.taskId === task.id && row.status === 'open') ?? null,
-      ...summarizeCollaborationTask(task, weeklyByTask.get(task.id) ?? [], req.user, now) })), risks: risksForActor(store, req.user),
-      digests: store.list<NotificationDigest>('notificationDigests').filter(row => row.recipientId === req.user.id).slice(-50).reverse() })
-  })
+  router.get('/collaboration', (req, res) => res.json(collaborationDashboard(store, req.user, req.query)))
   router.put('/collaboration/preferences', (req, res) => res.json(collaborationCommand(store, req.user, 'preferences', req.body, new Date(), () => {
     const old = store.get<CollaborationPreference>('collaborationPreferences', req.user.id)
     if (req.body.version !== (old?.version ?? 0)) throw new HttpError(409, '偏好已更新，请刷新')

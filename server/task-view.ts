@@ -6,12 +6,11 @@ import { isActiveWeeklyRecord } from '../shared/weekly-record-state.ts'
 import { CollaborationService } from './collaboration-service.ts'
 import { ObjectAccessService, activeGrant, canReadObject, assertBusinessActor, liveObjectActor, readScopeVersion } from './object-access.ts'
 import { HttpError, type Store } from './store.ts'
-import { workProgressProjector } from './work-progress.ts'
 import { getOperationEpoch } from './operation-context.ts'
 import { planReference, visiblePlan } from './plan-visibility.ts'
 
-const taskFields = ['title', 'description', 'dueDate', 'status', 'completionNote', 'evidenceUrl', 'blockerReason', 'blockerImpact', 'supportNeeded', 'nextAction', 'workSource', 'assignedBy', 'assignedOn', 'requestedOutcome', 'priority', 'estimatedEffort', 'currentProgress', 'decisionNeeded', 'waitingForFeedback']
-const weeklyFields = ['commitment', 'actualOutcome', 'evidenceUrl', 'blocker', 'nextAction', 'status', 'submitted', 'blockerImpact', 'supportNeeded']
+const taskFields = ['title', 'description', 'dueDate', 'status', 'completionNote', 'evidenceUrl', 'blockerReason', 'blockerImpact', 'supportNeeded', 'nextAction', 'workSource', 'assignedBy', 'assignedOn', 'requestedOutcome', 'priority', 'estimatedEffort', 'remainingEffortDays', 'currentProgress', 'decisionNeeded', 'waitingForFeedback']
+const weeklyFields = ['plannedEffortDays', 'actualEffortDays', 'commitment', 'actualOutcome', 'evidenceUrl', 'blocker', 'nextAction', 'status', 'submitted', 'blockerImpact', 'supportNeeded']
 const pick = (row: object, fields: string[]) => Object.fromEntries(fields.filter(field => field in row).map(field => [field, (row as Record<string, unknown>)[field]]))
 
 export class TaskViewService {
@@ -39,12 +38,12 @@ export class TaskViewService {
         taskHistory: this.history(actor, id) }
     }
     const task = this.task(actor, id), view = new CollaborationService(this.store).taskView(actor, id, { includeProgress: false })
-    const weeklyRecords = this.store.list<WeeklyRecord>('weeklyRecords').filter(row => row.taskId === id && (actor.role === 'manager' || row.ownerId === actor.id))
+    const weeklyRecords = this.store.selectJson<WeeklyRecord>(`SELECT data FROM entities WHERE collection='weeklyRecords' AND json_extract(data,'$.taskId')=? AND (?=1 OR json_extract(data,'$.ownerId')=?) ORDER BY rowid`, [id, actor.role === 'manager' ? 1 : 0, actor.id])
     if (input.weeklyRecordId && !weeklyRecords.some(row => row.id === input.weeklyRecordId)) throw new HttpError(404, '周记录不存在或不属于当前任务')
     const rawPlan = task.monthlyPlanId ? this.store.get<MonthlyPlan>('plans', task.monthlyPlanId) : null
     const plan = rawPlan ? visiblePlan(this.store, actor, rawPlan) ?? planReference(rawPlan) : null
     return { ...view, task, ownerName: this.store.get<User>('users', task.ownerId)?.name || '成员', weeklyRecords: weeklyRecords.sort((a, b) => b.weekStart.localeCompare(a.weekStart) || a.id.localeCompare(b.id)),
-      monthlyPlan: plan ? { id: plan.id, title: plan.title, month: plan.month } : null, progress: workProgressProjector(this.store, actor)(task),
+      monthlyPlan: plan ? { id: plan.id, title: plan.title, month: plan.month } : null, progress: this.store.workspaceTaskProgress([task], actor.id, actor.role === 'manager', new Date(Date.now() + 8 * 3_600_000).toISOString().slice(0, 10))[task.id],
       allowedActions: isActiveTask(task) ? ['edit_task', 'update_weekly', 'submit_delivery', ...(actor.role === 'manager' ? ['manage_support', 'manage_grants'] : [])] : [],
       readOnlyReason: isActiveTask(task) ? null : '任务已作废，历史内容保留且不可继续编辑', taskHistory: this.history(actor, id) }
   }

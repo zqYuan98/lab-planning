@@ -4,12 +4,12 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { MonthlyPlan, Task, User, WeeklyRecord } from '../shared/types.ts'
 import { buildWorkRegister, createWorkRegisterSnapshot, workRegisterTaskSource } from '../shared/work-register.ts'
-import { Domain } from '../server/domain.ts'
+import { TestDomain as Domain } from './fixtures/legacy-domain.ts'
 import { Store } from '../server/store.ts'
 import { ImportService } from '../server/import-service.ts'
 import { workRegisterReportCsv } from '../src/work-register-export.ts'
 import { entryLocation, navigationUrl } from '../src/notification-navigation.ts'
-import Monthly from '../src/pages/Monthly.tsx'
+import { MonthlyBody as Monthly } from '../src/pages/Monthly.tsx'
 
 function fixture(t: TestContext) {
   const store = new Store(':memory:'), domain = new Domain(store), imports = new ImportService(store)

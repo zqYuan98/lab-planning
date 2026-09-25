@@ -6,6 +6,9 @@ import { markdownToWord } from './report-word.ts'
 import { canUseAccount, registrationApproved } from '../shared/auth-policy.ts'
 import { callAiJson, readAiSettings, resolveAiSettings } from './ai-service.ts'
 import { buildReportFacts, validateFactText } from './report-agent-evidence.ts'
+import { annualGoalProgress } from '../shared/annual-goals.ts'
+import { summarizeEffort } from '../shared/effort.ts'
+import { reportTypeManaged } from './report-agent-policy.ts'
 import type { ReportFact } from '../shared/report-agent.ts'
 import { WeeklySubmissionService } from './weekly-submissions.ts'
 import { readCollaborationSettings } from './collaboration-policy.ts'
@@ -66,8 +69,12 @@ export function buildReportSnapshot(store: Store, type: Report['type'], period: 
   const relevantPlanIds = new Set(plans.map(p => p.id))
   const publications = store.list<Publication>('publications').filter(p => p.month >= firstMonth && p.month <= lastMonth).sort((a, b) => a.revision - b.revision)
   const changes = store.list<AuditEvent>('events').filter(e => ['plan', 'plans', 'monthlyPlan'].includes(e.entityType) && relevantPlanIds.has(e.entityId)).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-  return structuredClone({ plans, contextPlans, weeklyRecords, tasks, projects: store.list<Project>('projects'),
-    users: store.list<User>('users').filter(registrationApproved).map(publicUser), annualGoals: store.list<AnnualGoal>('annualGoals').filter(g => g.year === Number(period.slice(0, 4))),
+  const annualGoals = store.list<AnnualGoal>('annualGoals').filter(g => g.year === Number(period.slice(0, 4)))
+  const effortRecords = type === 'monthly' ? weeklyRecords.filter(r => r.weekStart.startsWith(period)) : weeklyRecords
+  const effortSummary = { ...summarizeEffort(effortRecords, allPlans, store.list<Project>('projects')), basis: type === 'monthly' ? '按周一所属月份归集有效周记录；跨月周只计一次，空值不当作零，任务剩余人日不累计' : '按本周有效周记录归集；空值不当作零，任务剩余人日不累计' }
+  const annualGoalSummaries = annualGoals.map(goal => ({ goalId: goal.id, ...annualGoalProgress(goal, allPlans) }))
+  return structuredClone({ effortSummary, annualGoalSummaries, plans, contextPlans, weeklyRecords, tasks, projects: store.list<Project>('projects'),
+    users: store.list<User>('users').filter(registrationApproved).map(publicUser), annualGoals,
     nextPlans, nextWeeklyRecords, publications, changes,
     weeklySubmissions: new WeeklySubmissionService(store).reportSummary(type, period) })
 }
@@ -116,6 +123,7 @@ export function generateReport(store: Store, type: Report['type'], rawPeriod: st
   requireReportManager(store, actorId)
   const period = normalizeReportPeriod(type, rawPeriod)
   return store.transaction(() => {
+    if (reportTypeManaged(store, type)) fail('此类型已由正式 Word 模板接管，请使用报告模板与生成入口；历史报告仍可读取和下载。', 409)
     const snapshot = buildReportSnapshot(store, type, period)
     const revision = Math.max(0, ...store.list<Report>('reports').filter(r => r.type === type && r.period === period).map(r => r.revision)) + 1
     return store.insert<Report>('reports', { type, period, title: `人工智能实验室${type === 'weekly' ? '周报' : '月报'} · ${period}`,
@@ -127,6 +135,7 @@ function editableReport(store: Store, id: string, version: number, actorId: stri
   requireReportManager(store, actorId)
   const report = store.get<Report>('reports', id)
   if (!report) fail('报告不存在。', 404)
+  if (reportTypeManaged(store, report.type)) fail('此类型已由正式 Word 模板接管，旧报告为只读归档。', 409)
   if (report.agent) fail('模板报告请使用报告智能体的章节编辑、校验和定稿入口。', 409)
   if (!Number.isInteger(version) || report.version !== version) fail('报告已更新，请重新加载后再操作。', 409)
   if (report.status === 'finalized') fail('报告已定稿；请生成新版本。', 409)
@@ -167,9 +176,17 @@ export function exportMarkdown(report: Report): string {
     `月度统计：已发布月计划 ${metrics.monthly.total} 项，管理者已验收 ${metrics.monthly.accepted} 项，待验收 ${metrics.monthly.awaitingReview} 项，验收完成率 ${rateLabel(metrics.monthly.rate)}。`,
     `周度统计：已提交周记录 ${metrics.weekly.total} 条，成员自报完成 ${metrics.weekly.done} 条，阻塞或未完成 ${metrics.weekly.blocked} 条，自报完成率 ${rateLabel(metrics.weekly.rate)}；另有未提交草稿 ${metrics.weekly.drafts} 条。`,
     `月计划范围：${[...new Set(s.plans.map(p => p.month))].sort().join('、') || '暂无月计划'}；周记录范围：${[...new Set(s.weeklyRecords.map(r => r.weekStart))].sort().join('、') || '暂无周记录'}（各日期为周一）。`,
-    '统计覆盖快照内全量正式记录，重点选取和正文编辑不改变分母；周自报完成不等于月度验收。月报中的跨月周记录按日期相交列为上下文，不累计为月度成果。', '', '## 年度目标（独立进展）']
-  if (s.annualGoals.length) lines.push(table(['年度目标', '目标值 / 验收方向', '确认进展', '负责人'], s.annualGoals.map(g => [g.title, g.target, `${g.progress}%`, name(s, g.ownerId)])))
+    '统计覆盖快照内全量正式记录，重点选取和正文编辑不改变分母；周自报完成不等于月度验收。月报中的跨月周记录按日期相交列为上下文，不累计为月度成果。', '', '## 年度目标（冻结进度）']
+  if (s.annualGoals.length) lines.push(table(['年度目标', '目标值 / 验收方向', '冻结进展', '负责人'], s.annualGoals.map(g => {
+    const frozen = s.annualGoalSummaries?.find(summary => summary.goalId === g.id)
+    const progress = frozen ? `${frozen.autoProgress === null ? '暂无关联' : `自动 ${frozen.autoProgress}%（验收 ${frozen.acceptedChainCount}/${frozen.chainCount} 链）`}；${frozen.manualOverride ? `人工覆盖 ${frozen.effectiveProgress}%` : '采用自动值'}` : `${g.progress}%（历史手工记录）`
+    return [g.title, g.target, progress, name(s, g.ownerId)]
+  })))
   else lines.push('本年度尚未记录目标；不从月计划数量推算年度进度。')
+  if (s.effortSummary) {
+    const effort = s.effortSummary
+    lines.push('', '## 冻结人日投入', effort.basis, `预计已填合计 ${effort.plannedEffortDays} 人日，未填 ${effort.missingPlannedCount} 条；实际已填合计 ${effort.actualEffortDays} 人日，未填 ${effort.missingActualCount} 条。`, table(['项目', '预计已填人日', '实际已填人日', '预计 / 实际未填条数'], effort.byProject.map(row => [row.projectName, String(row.plannedEffortDays), String(row.actualEffortDays), `${row.missingPlannedCount} / ${row.missingActualCount}`])))
+  }
   lines.push('', '## 计划版本、原承诺与调整')
   if (!s.publications.length) lines.push('本期尚无发布版本。')
   for (const p of s.publications) lines.push(`- ${p.month} 部门月计划第 ${p.revision} 版；发布于 ${reportDate(p.createdAt)}；原因：${fallback(p.reason)}。`)
@@ -191,7 +208,8 @@ export function exportMarkdown(report: Report): string {
     ])))
   }
   if (s.weeklySubmissions?.length) {
-    lines.push('', '## 周五提报状态明细', '以下状态固定于报告生成时，与工作成果完成率分开记录。', table(['成员', '截止周期', '应交项', '状态', '首次提交', '截止时间', '记录说明'], s.weeklySubmissions.map(row => [name(s, row.ownerId), row.cycleWeek, row.kind === 'results' ? '本周完成情况' : '下周计划', submissionLabels[row.status], row.firstSubmittedAt ? reportDate(row.firstSubmittedAt) : '尚未提交', reportDate(row.deadlineAt), [row.missingAtDeadline ? '截止时未提交' : '', row.exemptionReason].filter(Boolean).join('；') || '—'])))
+    const submissionHeading = s.weeklySubmissions.some(row => row.deadlinePolicy) ? '## 周提报状态明细' : '## 周五提报状态明细'
+    lines.push('', submissionHeading, '以下状态固定于报告生成时，与工作成果完成率分开记录。', table(['成员', '截止周期', '应交项', '状态', '首次提交', '截止时间', '记录说明'], s.weeklySubmissions.map(row => [name(s, row.ownerId), row.cycleWeek, row.kind === 'results' ? '本周完成情况' : '下周计划', submissionLabels[row.status], row.firstSubmittedAt ? reportDate(row.firstSubmittedAt) : '尚未提交', reportDate(row.deadlineAt), [row.missingAtDeadline ? '截止时未提交' : '', row.exemptionReason].filter(Boolean).join('；') || '—'])))
   }
   lines.push('', '## 待补充与待确认')
   const warnings = snapshotWarnings(report)

@@ -5,7 +5,9 @@ import { canUseAccount } from '../shared/auth-policy.ts'
 import { DomainBase, manager, own, text, bool, type Input } from './domain-common.ts'
 import { WorkService } from './domain-work.ts'
 import { Store, HttpError } from './store.ts'
-import { addWeekDays, cycleWeek, shanghaiWeek, mondayInstant, fridayDeadline } from './weekly-submission-clock.ts'
+import { addWeekDays, cycleWeek, shanghaiWeek, mondayInstant } from './weekly-submission-clock.ts'
+import { resolveWeeklyDeadline } from '../shared/work-calendar.ts'
+import { readWorkCalendar } from './work-calendar.ts'
 import { projectWeeklyDuty, submissionProgressEvents, weeklyDutyHistory } from './weekly-duty-view.ts'
 import type { ProgressEvent } from '../shared/collaboration.ts'
 import { notifyFormalSubmission } from './collaboration-notifications.ts'
@@ -91,9 +93,12 @@ export class WeeklySubmissionService extends DomainBase {
     return { rosterIds: rosterIds.sort(), needsReview }
   }
 
-  private ensureDuty(ownerId: string, week: string, kind: 'results' | 'plan'): WeeklyDuty {
+  private ensureDuty(ownerId: string, cycle: WeeklyCycle, kind: 'results' | 'plan'): WeeklyDuty {
+    const week = cycle.week
+    if (!cycle.deadlineAt) throw new HttpError(409, '该周期无提报义务')
     const existing = this.rows<WeeklyDuty>('weeklyDuties').find(d => d.ownerId === ownerId && d.cycleWeek === week && d.kind === kind)
-    return existing ?? this.insert<WeeklyDuty>('weeklyDuties', { ownerId, cycleWeek: week, kind, contentWeek: kind === 'results' ? week : addWeekDays(week, 7), deadlineAt: fridayDeadline(week) })
+    return existing ?? this.insert<WeeklyDuty>('weeklyDuties', { ownerId, cycleWeek: week, kind, contentWeek: kind === 'results' ? week : addWeekDays(week, 7), deadlineAt: cycle.deadlineAt,
+      ...(cycle.deadlinePolicy ? { deadlinePolicy: structuredClone(cycle.deadlinePolicy) } : {}) })
   }
 
   reconcile(): void {
@@ -102,10 +107,10 @@ export class WeeklySubmissionService extends DomainBase {
       for (let week = rule.effectiveWeek; week <= current; week = addWeekDays(week, 7)) {
         if (!this.activeWeek(rule, week)) continue
         let cycle = this.store.get<WeeklyCycle>('weeklyCycles', week)
-        if (!cycle) cycle = this.insert<WeeklyCycle>('weeklyCycles', { id: week, week, deadlineAt: fridayDeadline(week), ...this.rosterAt(week), confirmedBy: null, confirmationReason: '', frozenAt: now })
-        if (cycle.needsReview) continue
+        if (!cycle) cycle = this.insert<WeeklyCycle>('weeklyCycles', { id: week, week, ...resolveWeeklyDeadline(rule, week), ...this.rosterAt(week), confirmedBy: null, confirmationReason: '', frozenAt: now })
+        if (cycle.needsReview || !cycle.deadlineAt) continue
         for (const ownerId of cycle.rosterIds) for (const kind of ['results', 'plan'] as const) {
-          const duty = this.ensureDuty(ownerId, week, kind)
+          const duty = this.ensureDuty(ownerId, cycle, kind)
           this.recordMissing(duty, now)
         }
       }
@@ -148,7 +153,8 @@ export class WeeklySubmissionService extends DomainBase {
     const rule = this.getRule(), cycle = this.store.get<WeeklyCycle>('weeklyCycles', week) ?? null
     // Never include the departmental roster in member responses.
     const safeCycle = cycle && actor.role !== 'manager' ? { ...cycle, rosterIds: cycle.rosterIds.filter(id => id === actor.id), confirmationReason: '', confirmedBy: null } : cycle
-    return { rule, week, nextWeek: addWeekDays(week, 7), deadlineAt: fridayDeadline(week), serverNow: this.clock().toISOString(), cycle: safeCycle,
+    return { rule, week, nextWeek: addWeekDays(week, 7), ...this.deadlineView(rule, week, cycle), serverNow: this.clock().toISOString(), cycle: safeCycle,
+      ...(actor.role === 'manager' ? { workCalendar: readWorkCalendar(this.store) } : {}),
       duties: this.rows<WeeklyDuty>('weeklyDuties').filter(d => d.cycleWeek === week && (actor.role === 'manager' || d.ownerId === actor.id)).map(d => this.dutyView(d)) }
     })
   }
@@ -161,9 +167,15 @@ export class WeeklySubmissionService extends DomainBase {
       if (!rule) return
       const week = cycleWeek(requestedWeek), cycle = this.store.get<WeeklyCycle>('weeklyCycles', week) ?? null
       const safeCycle = cycle && actor.role !== 'manager' ? { ...cycle, rosterIds: cycle.rosterIds.filter(id => id === actor.id), confirmationReason: '', confirmedBy: null } : cycle
-      return { rule, week, nextWeek: addWeekDays(week, 7), deadlineAt: fridayDeadline(week), serverNow: this.clock().toISOString(), cycle: safeCycle,
+      return { rule, week, nextWeek: addWeekDays(week, 7), ...this.deadlineView(rule, week, cycle), serverNow: this.clock().toISOString(), cycle: safeCycle,
+        ...(actor.role === 'manager' ? { workCalendar: readWorkCalendar(this.store) } : {}),
         duties: this.rows<WeeklyDuty>('weeklyDuties').filter(duty => duty.cycleWeek === week && (actor.role === 'manager' || duty.ownerId === actor.id)).map(duty => this.dutyView(duty)) }
     })
+  }
+
+  private deadlineView(rule: WeeklyRule, week: string, cycle: WeeklyCycle | null) {
+    return cycle ? { deadlineAt: cycle.deadlineAt, ...(cycle.deadlinePolicy ? { deadlinePolicy: cycle.deadlinePolicy } : {}) }
+      : resolveWeeklyDeadline(rule, week)
   }
 
   submit(actor: User, input: Input): WeeklySubmission {
@@ -181,7 +193,7 @@ export class WeeklySubmissionService extends DomainBase {
       this.current<WeeklyDuty>('weeklyDuties', duty.id, input)
       const rule = this.getRule(), week = duty.cycleWeek
       const cycle = this.need<WeeklyCycle>('weeklyCycles', week)
-      if (week > shanghaiWeek(this.clock()) || !this.activeWeek(rule, week) || cycle.needsReview || !cycle.rosterIds.includes(duty.ownerId)) throw new HttpError(400, '该周期尚未开始、生效或应交名单待核对')
+      if (week > shanghaiWeek(this.clock()) || !this.activeWeek(rule, week) || cycle.needsReview || !cycle.deadlineAt || !cycle.rosterIds.includes(duty.ownerId)) throw new HttpError(400, '该周期尚未开始、生效、无提报义务或应交名单待核对')
       const rows = this.records(duty)
       if (!Array.isArray(input.manifest) || !equal(input.manifest, manifest(rows))) throw new HttpError(409, '周记录已变化，请刷新核对后重新提交')
       const currentProgressIds = submissionProgressEvents(duty, rows, this.store.list<ProgressEvent>('progressEvents')).map(event => event.id).sort()
@@ -220,7 +232,6 @@ export class WeeklySubmissionService extends DomainBase {
 
   review(actor: User, input: Input): WeeklyPlanReview {
     actor = assertBusinessActor(this.store, actor)
-    manager(actor)
     this.reconcile()
     return new WeeklyPlanReviewService(this.store, this.clock).review(actor, input)
   }
@@ -277,9 +288,10 @@ export class WeeklySubmissionService extends DomainBase {
   reportSummary(type: 'weekly' | 'monthly', period: string): WeeklyReportSubmission[] {
     return this.snapshot(() => {
     this.reconcile()
-    return this.rows<WeeklyDuty>('weeklyDuties').filter(d => type === 'weekly' ? d.cycleWeek === period : addWeekDays(d.cycleWeek, 4).startsWith(period)).map(duty => {
+    return this.rows<WeeklyDuty>('weeklyDuties').filter(d => type === 'weekly' ? d.cycleWeek === period : d.deadlineAt.startsWith(period)).map(duty => {
       const row = this.dutyView(duty)
-      return { ownerId: row.ownerId, cycleWeek: row.cycleWeek, kind: row.kind, status: row.status, deadlineAt: row.deadlineAt, firstSubmittedAt: row.firstSubmittedAt, missingAtDeadline: row.missingAtDeadline, exemptionReason: row.exemptionReason }
+      return { ownerId: row.ownerId, cycleWeek: row.cycleWeek, kind: row.kind, status: row.status, deadlineAt: row.deadlineAt, firstSubmittedAt: row.firstSubmittedAt, missingAtDeadline: row.missingAtDeadline, exemptionReason: row.exemptionReason,
+        ...(row.deadlinePolicy ? { deadlinePolicy: row.deadlinePolicy } : {}) }
     })
     })
   }

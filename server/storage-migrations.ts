@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite'
 
-export const STORAGE_VERSION = 3
+export const STORAGE_VERSION = 5
 /** Version 1 records the existing JSON entity format without rewriting any business record.
  * Future data transformations must be explicit ordered migrations with backup/restore tests.
  */
@@ -29,6 +29,17 @@ export function applyMigrations(db: DatabaseSync) {
         CREATE INDEX progress_task_created ON entities(json_extract(data,'$.taskId'),json_extract(data,'$.createdAt') DESC,id DESC) WHERE collection='progressEvents';
         CREATE INDEX report_period_created ON entities(json_extract(data,'$.type'),json_extract(data,'$.period'),json_extract(data,'$.createdAt') DESC,id DESC) WHERE collection='reports';`)
       db.prepare('INSERT INTO schema_migrations(version,name,applied_at) VALUES(?,?,?)').run(3, 'workspace-bounded-query-indexes', new Date().toISOString())
+    }
+    if (latest < 4) {
+      // Compatibility fence: old binaries assume every cycle has a Friday deadline.
+      // No existing business row is rewritten by this migration.
+      db.prepare('INSERT INTO schema_migrations(version,name,applied_at) VALUES(?,?,?)').run(4, 'weekly-calendar-deadline-compatibility', new Date().toISOString())
+    }
+    if (latest < 5) {
+      // Goal-owner reads and scope derivation formerly scanned the complete tasks collection.
+      // This index contains current links only and never changes business or frozen snapshot rows.
+      db.exec(`CREATE INDEX task_active_goal_id ON entities(json_extract(data,'$.monthlyPlanId'),id) WHERE collection='tasks' AND json_extract(data,'$.cancellation') IS NULL`)
+      db.prepare('INSERT INTO schema_migrations(version,name,applied_at) VALUES(?,?,?)').run(5, 'goal-owner-current-task-index', new Date().toISOString())
     }
     db.exec('COMMIT')
   } catch (error) { db.exec('ROLLBACK'); throw error }

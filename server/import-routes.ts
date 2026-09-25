@@ -1,13 +1,11 @@
 import { Router } from 'express'
 import { Store, HttpError } from './store.ts'
-import { Domain } from './domain.ts'
+import { readImportContext } from './import-context.ts'
 import { ImportService } from './import-service.ts'
 import { requireManager } from './auth.ts'
 import { readAiSettings, updateAiSettings, testAiConnection } from './ai-service.ts'
 import { listIntegrationTokens, createIntegrationToken, revokeIntegrationToken, assertIntegrationTokenActive } from './integration-auth.ts'
 import type { ImportBatch } from '../shared/import-types.ts'
-import type { MonthlyPlan } from '../shared/types.ts'
-import { participates } from './plan-visibility.ts'
 const services = new WeakMap<Store, ImportService>()
 export function closeImportServices(store: Store) { services.get(store)?.close() }
 
@@ -43,15 +41,7 @@ export function createImportRouter(store: Store) {
     res.set({ 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(source.fileName)}` }).send(Buffer.from(source.base64, 'base64'))
   })
   router.get('/schema', (_req, res) => res.json({ formatVersion: 1, structuredEndpoint: '/api/v1/imports/structured', required: ['sourceKey', 'rows'], kinds: ['monthly', 'weekly'], modes: ['history', 'draft', 'existing'], rowFields: ['kind', 'sourceRow', 'sourceSheet', 'sourceText', 'title', 'ownerName', 'ownerId', 'projectName', 'projectId', 'category', 'month', 'weekStart', 'dueDate', 'expectedOutcome', 'acceptanceCriteria', 'actualOutcome', 'blocker', 'nextAction', 'sourceStatus', 'monthlyPlanId', 'taskId', 'linkedRowId', 'monthlyResult', 'weeklyStatus', 'isTemporary', 'temporaryReason', 'selected', 'exclusionReason', 'exclusionKind', 'collaboratorNames', 'collaboratorIds', 'workSource', 'assignedBy', 'assignedOn', 'taskCompleted', 'completionNote'], workflow: 'structured/upload -> analyze (files only) -> edit -> commit; 文件通过source-preview核对原文，edit可追加id以new:开头且带原文的补录行，并提交completionReview:{confirmed:true,sourceItemCount}。原文数量包括未选任务，不含有理由排除的duplicate/not_task；文件提交前须有效核对，结构化来源兼容原API。未选行需exclusionReason。kind为monthly/weekly，临时属性由isTemporary与temporaryReason独立表达；history仅归档，可保留原因缺项；临时事项纳入draft/existing计划时必须填写原因，临时周任务不能同时关联月目标。draft遵循新增计划规则，成员可创建本人临时月目标草稿；existing仍由管理者确认直接生效，其他原表缺项可空。成员可request-confirmation请求管理员接续核对；同来源草稿转生效复用原ID，提交可安全重试。协作人用于月目标；workSource独立于临时性质；周完成不代表整个任务结束，taskCompleted需人工确认和completionNote' }))
-  router.get('/context', (req, res) => {
-    const { users, projects, plans, tasks } = new Domain(store).bootstrap(req.user)
-    const eligiblePlans = req.user.role === 'manager' ? plans : plans.filter(plan => {
-      const current = store.get<MonthlyPlan>('plans', plan.id)
-      return current && current.visibility !== 'reference' && participates(current, req.user.id) && current.status !== 'merged'
-        && (!current.projectId || projects.some(project => project.id === current.projectId && project.status === 'active'))
-    })
-    res.json({ users, projects, plans: eligiblePlans, tasks })
-  })
+  router.get('/context', (req, res) => res.json(readImportContext(store, req.user)))
   return router
 }
 export function createAiSettingsRouter(store: Store) {

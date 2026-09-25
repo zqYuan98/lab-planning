@@ -32,11 +32,11 @@ async function populated(t: TestContext) {
   return { ...result, template, report, asset, job }
 }
 
-test('v4 migration preserves template and exact final DOCX bytes after account mapping', async t => {
+test('v8 migration preserves template and exact final DOCX bytes after account mapping', async t => {
   const source = await populated(t), target = accounts(t)
   const before = await downloadAgentReport(source.store, source.manager.id, source.report.id)
   const packet = exportBusinessData(source.store, source.manager)
-  assert.equal(packet.formatVersion, 4)
+  assert.equal(packet.formatVersion, 8)
   assert.equal(packet.collections.reportTemplates.length, 1)
   assert.equal(packet.collections.reportAssets.length, 3)
   assert.equal(JSON.stringify(packet).includes('leaseToken'), false)
@@ -76,7 +76,7 @@ test('migration rejects tampered source fingerprints before account remapping an
   const missing = structuredClone(original)
   missing.collections.reportAssets = missing.collections.reportAssets.filter(asset => asset.id !== source.report.agent!.finalAssetId)
   assert.equal(previewRestore(target.store, target.manager, missing).canRestore, false)
-  assert.throws(() => previewRestore(target.store, target.manager, { ...original, formatVersion: 3 }), /格式/)
+  assert.throws(() => previewRestore(target.store, target.manager, { ...original, formatVersion: 3 }), /格式|版本/)
   const mapping = structuredClone(original)
   mapping.collections.reportTemplates[0].bindings[0].regionId = 'p:999'
   const badMapping = previewRestore(target.store, target.manager, mapping)

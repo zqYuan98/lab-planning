@@ -16,6 +16,14 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - run: npm run perf
+      - name: Preserve performance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r2-performance
+          path: output/r2-performance/results.json
+          if-no-files-found: ignore
       - run: bash -n scripts/backup-intranet.sh
   container:
     runs-on: ubuntu-latest

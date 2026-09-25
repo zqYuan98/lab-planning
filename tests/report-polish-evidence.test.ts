@@ -118,7 +118,7 @@ test('agent reports cannot be edited, finalized or polished through legacy mutat
 test('legacy docx download returns the exact archived agent bytes', async () => {
   const f = setup(), bytes = await docxFixture(), sha256 = createHash('sha256').update(bytes).digest('hex')
   const asset = f.store.insert<ReportAsset>('reportAssets', { filename: '已定稿原版式.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size: bytes.length, sha256, contentBase64: bytes.toString('base64'), purpose: 'final', uploadedBy: f.actor.id, inspection: null })
-  const report = f.store.update<Report>('reports', f.report.id, f.report.version, { status: 'finalized', agent: { finalAssetId: asset.id, finalHash: sha256 } as NonNullable<Report['agent']> })
+  const report = f.store.update<Report>('reports', f.report.id, f.report.version, { status: 'finalized', agent: { schemaVersion: 'weekly-v1', template: { type: 'weekly' }, finalAssetId: asset.id, finalHash: sha256 } as NonNullable<Report['agent']> })
   const app = express()
   app.use((req, _res, next) => { (req as Request & { user: User }).user = f.actor; next() })
   app.use(createReportRouter(f.store))

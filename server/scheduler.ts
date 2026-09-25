@@ -1,6 +1,7 @@
 import type { Entity, ReportSchedule, User } from '../shared/types.ts'
 import type { Store } from './store.ts'
 import { generateReport, normalizeReportPeriod, shiftMonth } from './reports.ts'
+import { reportTypeManaged } from './report-agent-policy.ts'
 import { WeeklySubmissionService } from './weekly-submissions.ts'
 import { runNotificationReminders } from './notification-reminders.ts'
 import { beginRuntimeRun } from './runtime-health.ts'
@@ -37,11 +38,10 @@ export function runScheduledReports(store: Store, now = new Date()): string[] {
   const actor = store.list<User>('users').find(u => u.active && u.role === 'manager')
   if (!actor) return []
   const due: { type: 'weekly' | 'monthly'; period: string }[] = []
-  // Enabling the reviewed Word-template schedule explicitly takes over weekly generation.
-  // Keep the old monthly schedule and all historical scheduleRuns untouched.
-  const agentWeekly = store.get<{ enabled: boolean }>('settings', 'report-agent-schedule')?.enabled === true
+  // A reviewed template owns its type even while its scheduler is paused.
+  const agentWeekly = reportTypeManaged(store, 'weekly')
   if (!agentWeekly && dayOfWeek === schedule.weeklyDay && time >= schedule.weeklyTime) due.push({ type: 'weekly', period: normalizeReportPeriod('weekly', date) })
-  if (Number(part('day')) === (schedule.monthlyDay || lastDay.getUTCDate()) && time >= schedule.monthlyTime) {
+  if (!reportTypeManaged(store, 'monthly') && Number(part('day')) === (schedule.monthlyDay || lastDay.getUTCDate()) && time >= schedule.monthlyTime) {
     due.push({ type: 'monthly', period: schedule.monthlyDay === 0 ? date.slice(0, 7) : shiftMonth(date.slice(0, 7), -1) })
   }
   const reportIds: string[] = []

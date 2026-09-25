@@ -1,7 +1,7 @@
 import type { Report, User } from '../shared/types.ts'
 import type { DocxEdit, DocxInspection } from '../shared/report-docx.ts'
 import type { CreateReportTemplateInput, EditReportAgentInput, EnqueueReportAgentInput, FinalizeReportAgentInput, LearnReportTemplateInput, ReportAgentBinding, ReportAgentBlock, ReportAgentBootstrap, ReportAgentDownload, ReportAgentJob, ReportAgentPayload, ReportAsset, ReportAssetSummary, ReportTemplate, ReportTemplateReviewInput, RewriteReportAgentInput, UpdateReportTemplateInput, UploadReportAssetInput } from '../shared/report-agent.ts'
-import { REPORT_AGENT_VERSION } from '../shared/report-agent.ts'
+import { MONTHLY_REPORT_AGENT_VERSION, REPORT_AGENT_VERSION } from '../shared/report-agent.ts'
 import { HttpError, Store } from './store.ts'
 import { inspectDocx, renderDocx } from './report-docx.ts'
 import { aiConfigured, buildReportSnapshot, normalizeReportPeriod, requireReportManager } from './reports.ts'
@@ -9,6 +9,8 @@ import { buildReportFacts, buildRuleBlocks, reportAgentHash, reportBlocksNarrati
 import { createReportTemplateSchema, editReportAgentSchema, enqueueReportAgentSchema, finalizeReportAgentSchema, learnReportTemplateSchema, parseAgentInput, reportTemplateReviewSchema, rewriteReportAgentSchema, updateReportTemplateSchema, uploadReportAssetSchema } from './report-agent-schemas.ts'
 import { getReportAgentSchedule, reportAgentMissedPeriods } from './report-agent-schedule.ts'
 import { recordLifecycleEvent, publishCollaborationEvents } from './collaboration-notifications.ts'
+import { monthlyBindings, monthlyHeaderEdits } from './report-agent-monthly.ts'
+import { reportTypeManaged } from './report-agent-policy.ts'
 import { readCollaborationSettings } from './collaboration-policy.ts'
 
 const MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -121,7 +123,7 @@ export function validateTemplateBindings(inspection: DocxInspection, bindings: R
 }
 export function createReportTemplate(store: Store, actorId: string, raw: CreateReportTemplateInput): ReportTemplate {
   requireReportManager(store, actorId)
-  const input = parseAgentInput(createReportTemplateSchema, raw), effectiveWeek = normalizeReportPeriod('weekly', input.effectiveWeek)
+  const input = parseAgentInput(createReportTemplateSchema, raw), effectiveWeek = normalizeReportPeriod(input.type || 'weekly', input.effectiveWeek)
   return store.transaction(() => {
     const source = reportAgentAsset(store, input.sourceAssetId)
     if (!source.inspection || !['template', 'example'].includes(source.purpose)) throw new HttpError(400, '请选择已检查的模板文件。')
@@ -129,11 +131,11 @@ export function createReportTemplate(store: Store, actorId: string, raw: CreateR
     const id = input.requestId ? `template-${reportAgentHash(`${actorId}:${input.requestId}`).slice(0, 40)}` : undefined
     const existing = id && store.get<ReportTemplate>('reportTemplates', id)
     if (existing) {
-      if (existing.sourceAssetId !== input.sourceAssetId || existing.name !== input.name || existing.effectiveWeek !== effectiveWeek || JSON.stringify(existing.exampleAssetIds) !== JSON.stringify(input.exampleAssetIds || [])) throw new HttpError(409, '相同请求编号已用于另一份模板。')
+      if ((existing.type || 'weekly') !== (input.type || 'weekly') || existing.sourceAssetId !== input.sourceAssetId || existing.name !== input.name || existing.effectiveWeek !== effectiveWeek || JSON.stringify(existing.exampleAssetIds) !== JSON.stringify(input.exampleAssetIds || [])) throw new HttpError(409, '相同请求编号已用于另一份模板。')
       return existing
     }
-    return store.insert<ReportTemplate>('reportTemplates', { ...(id ? { id } : {}), name: input.name, type: 'weekly', status: 'draft', sourceAssetId: source.id, sourceHash: source.sha256, exampleAssetIds: input.exampleAssetIds || [],
-      bindings: suggestReportBindings(source.inspection), rules: ['只使用本期冻结事实，先说明成果，再说明问题与下一步。', '周阶段自报完成与任务整体完成、月目标验收分开表述。'], rulesConfirmed: false,
+    return store.insert<ReportTemplate>('reportTemplates', { ...(id ? { id } : {}), name: input.name, type: input.type || 'weekly', status: 'draft', sourceAssetId: source.id, sourceHash: source.sha256, exampleAssetIds: input.exampleAssetIds || [],
+      bindings: input.type === 'monthly' ? monthlyBindings(suggestReportBindings(source.inspection), source.inspection) : suggestReportBindings(source.inspection), rules: ['只使用本期冻结事实，先说明成果，再说明问题与下一步。', input.type === 'monthly' ? '月完成只按已发布月目标的验收结论；下月安排来自下月目标。投入按周一所属月份归集，空值不当作零。' : '周阶段自报完成与任务整体完成、月目标验收分开表述。'], rulesConfirmed: false,
       learningCandidates: [], learningNotes: [], confirmedBy: null, layoutVerified: false, layoutNote: '', previewAssetId: null, previewFingerprint: null, effectiveWeek, activatedAt: null, createdBy: actorId })
   })
 }
@@ -143,10 +145,10 @@ export function updateReportTemplate(store: Store, actorId: string, id: string, 
     const current = template(store, actorId, id, input.expectedVersion, true), asset = reportAgentAsset(store, current.sourceAssetId)
     validateTemplateBindings(asset.inspection!, input.bindings); validateExamples(store, input.exampleAssetIds)
     return store.update<ReportTemplate>('reportTemplates', id, current.version, { name: input.name, bindings: input.bindings, rules: input.rules, rulesConfirmed: input.rulesConfirmed,
-      exampleAssetIds: input.exampleAssetIds, effectiveWeek: normalizeReportPeriod('weekly', input.effectiveWeek), layoutVerified: false, layoutNote: '', previewAssetId: null, previewFingerprint: null })
+      exampleAssetIds: input.exampleAssetIds, effectiveWeek: normalizeReportPeriod(current.type || 'weekly', input.effectiveWeek), layoutVerified: false, layoutNote: '', previewAssetId: null, previewFingerprint: null })
   })
 }
-export function templateFingerprint(row: ReportTemplate) { return reportAgentHash({ sourceHash: row.sourceHash, bindings: row.bindings, rules: row.rules, rulesConfirmed: row.rulesConfirmed, effectiveWeek: row.effectiveWeek }) }
+export function templateFingerprint(row: ReportTemplate) { return reportAgentHash({ ...(row.type === 'monthly' ? { type: 'monthly' } : {}), sourceHash: row.sourceHash, bindings: row.bindings, rules: row.rules, rulesConfirmed: row.rulesConfirmed, effectiveWeek: row.effectiveWeek }) }
 function materialize(row: ReportTemplate, blocks: ReportAgentBlock[]): DocxEdit[] {
   return row.bindings.map(binding => {
     if (binding.kind === 'keep') return binding.value === undefined ? { kind: 'keep', regionId: binding.regionId } : { kind: 'text', regionId: binding.regionId, text: binding.value }
@@ -159,7 +161,7 @@ function materialize(row: ReportTemplate, blocks: ReportAgentBlock[]): DocxEdit[
 }
 async function renderAgent(store: Store, row: ReportTemplate, blocks: ReportAgentBlock[]) {
   const source = reportAgentAsset(store, row.sourceAssetId)
-  return renderDocx(Buffer.from(source.contentBase64, 'base64'), materialize(row, blocks), { expectedSha256: row.sourceHash })
+  return renderDocx(Buffer.from(source.contentBase64, 'base64'), [...materialize(row, blocks), ...monthlyHeaderEdits(row, source.inspection!)], { expectedSha256: row.sourceHash })
 }
 function ruleBlocks(store: Store, actorId: string, row: ReportTemplate, report: Pick<Report, 'snapshot' | 'period' | 'title'>, capturedAt: string) {
   const facts = buildReportFacts(report.snapshot, report.period), blocks = buildRuleBlocks(row.bindings, report.snapshot, facts, report.period, capturedAt, report.title)
@@ -172,8 +174,8 @@ function ruleBlocks(store: Store, actorId: string, row: ReportTemplate, report: 
 export async function previewReportTemplate(store: Store, actorId: string, id: string, expectedVersion: number): Promise<ReportTemplate> {
   const row = template(store, actorId, id, expectedVersion, true), source = reportAgentAsset(store, row.sourceAssetId)
   validateTemplateBindings(source.inspection!, row.bindings)
-  const snapshot = buildReportSnapshot(store, 'weekly', row.effectiveWeek)
-  const { blocks } = ruleBlocks(store, actorId, row, { snapshot, period: row.effectiveWeek, title: '周报版式试填' }, new Date().toISOString())
+  const snapshot = buildReportSnapshot(store, row.type || 'weekly', row.effectiveWeek)
+  const { blocks } = ruleBlocks(store, actorId, row, { snapshot, period: row.effectiveWeek, title: row.type === 'monthly' ? '月报版式试填' : '周报版式试填' }, new Date().toISOString())
   for (const block of blocks) for (const cell of block.kind === 'text' ? [block.content] : block.rows.flat()) if (cell.manual && !cell.text) cell.text = '【需人工补充，请核对本区域版式】'
   const bytes = await renderAgent(store, row, blocks)
   return store.transaction(() => {
@@ -220,26 +222,28 @@ export function enqueueTemplateLearning(store: Store, actorId: string, id: strin
   })
 }
 export function enqueueReportAgent(store: Store, actorId: string, raw: EnqueueReportAgentInput): ReportAgentJob {
-  const input = parseAgentInput(enqueueReportAgentSchema, raw), period = normalizeReportPeriod('weekly', input.period)
+  const input = parseAgentInput(enqueueReportAgentSchema, raw)
+  const selectedTemplate = template(store, actorId, input.templateId), type = selectedTemplate.type || 'weekly', period = normalizeReportPeriod(type, input.period)
   return store.transaction(() => {
     requireReportManager(store, actorId)
     const key = existingJob(store, actorId, input.requestId, { kind: 'generate', ...input, period }); if (key.existing) return key.existing
     const row = template(store, actorId, input.templateId)
-    if (row.status !== 'active' || !row.layoutVerified || row.effectiveWeek > period) throw new HttpError(409, '所选模板尚未启用或不适用于此周。')
+    if (row.status !== 'active' || !row.layoutVerified || row.effectiveWeek > period) throw new HttpError(409, '所选模板尚未启用或不适用于此周期。')
     reportAgentAsset(store, row.sourceAssetId)
     const original = input.sourceReportId ? getAgentReport(store, actorId, input.sourceReportId) : undefined
-    if (original && original.period !== period) throw new HttpError(400, '沿用快照时报告周期必须一致。')
+    if (original && (original.period !== period || original.type !== type)) throw new HttpError(400, '沿用快照时报告周期必须一致。')
     const running = store.list<ReportAgentJob>('reportAgentJobs').find(j => ['queued', 'running'].includes(j.status) && j.kind === 'generate' && j.inputHash === key.inputHash && j.actorId === actorId)
     if (running) return running
     const capturedAt = original && !input.refreshSnapshot ? original.agent!.capturedAt : new Date().toISOString()
-    const snapshot = original && !input.refreshSnapshot ? original.snapshot : buildReportSnapshot(store, 'weekly', period)
-    const revision = Math.max(0, ...store.list<Report>('reports').filter(r => r.type === 'weekly' && r.period === period).map(r => r.revision)) + 1
-    const title = `人工智能实验室周报 · ${period}`, { facts, blocks } = ruleBlocks(store, actorId, row, { snapshot, period, title }, capturedAt)
-    const agent: ReportAgentPayload = { schemaVersion: REPORT_AGENT_VERSION, capturedAt, snapshotHash: reportAgentHash(snapshot), template: structuredClone(row), templateHash: templateFingerprint(row), facts, blocks,
-      issues: validateReportBlocks(blocks, facts), coverage: snapshot.weeklyRecords.map(r => ({ sourceId: r.id, disposition: blocks.some(b => JSON.stringify(b).includes(`weekly:${r.id}:`)) ? 'included' : 'not_displayed', reason: blocks.some(b => JSON.stringify(b).includes(`weekly:${r.id}:`)) ? '' : '未生效记录或模板未配置本类明细；保留于冻结快照' })),
-      ruleBlocks: structuredClone(blocks), modelCandidates: [], promptVersion: REPORT_AGENT_VERSION, validatorVersion: REPORT_AGENT_VERSION, rendererVersion: reportAgentAsset(store, row.sourceAssetId).inspection!.rendererVersion,
+    const snapshot = original && !input.refreshSnapshot ? original.snapshot : buildReportSnapshot(store, type, period)
+    const revision = Math.max(0, ...store.list<Report>('reports').filter(r => r.type === type && r.period === period).map(r => r.revision)) + 1
+    const schemaVersion = type === 'monthly' ? MONTHLY_REPORT_AGENT_VERSION : REPORT_AGENT_VERSION
+    const title = `人工智能实验室${type === 'monthly' ? '月报' : '周报'} · ${period}`, { facts, blocks } = ruleBlocks(store, actorId, row, { snapshot, period, title }, capturedAt)
+    const agent: ReportAgentPayload = { schemaVersion, capturedAt, snapshotHash: reportAgentHash(snapshot), template: structuredClone(row), templateHash: templateFingerprint(row), facts, blocks,
+      issues: validateReportBlocks(blocks, facts), coverage: (type === 'monthly' ? [...snapshot.plans.filter(p => p.status === 'published'), ...snapshot.nextPlans] : snapshot.weeklyRecords).map(r => ({ sourceId: r.id, disposition: blocks.some(b => JSON.stringify(b).includes(`${type === 'monthly' ? 'plan' : 'weekly'}:${r.id}:`)) ? 'included' : 'not_displayed', reason: blocks.some(b => JSON.stringify(b).includes(`${type === 'monthly' ? 'plan' : 'weekly'}:${r.id}:`)) ? '' : '未生效记录或模板未配置本类明细；保留于冻结快照' })),
+      ruleBlocks: structuredClone(blocks), modelCandidates: [], promptVersion: schemaVersion, validatorVersion: schemaVersion, rendererVersion: reportAgentAsset(store, row.sourceAssetId).inspection!.rendererVersion,
       modelIdentifier: null, finalAssetId: null, finalHash: null, reviewNote: '' }
-    const report = store.insert<Report>('reports', { type: 'weekly', period, title, status: 'draft', revision, narrative: reportBlocksNarrative(blocks), snapshot, authorId: actorId, finalizedAt: null, agent })
+    const report = store.insert<Report>('reports', { type, period, title, status: 'draft', revision, narrative: reportBlocksNarrative(blocks), snapshot, authorId: actorId, finalizedAt: null, agent })
     return insertJob(store, actorId, { ...key, requestId: input.requestId, kind: 'generate', row, report, useAi: input.useAi })
   })
 }
@@ -247,6 +251,7 @@ export function getAgentReport(store: Store, actorId: string, id: string): Repor
   requireReportManager(store, actorId)
   const report = store.get<Report>('reports', id)
   if (!report?.agent) throw new HttpError(404, '周报智能体报告不存在。')
+  if ((report.agent.template?.type || 'weekly') !== report.type || report.agent.schemaVersion !== (report.type === 'monthly' ? MONTHLY_REPORT_AGENT_VERSION : REPORT_AGENT_VERSION) || normalizeReportPeriod(report.type, report.period) !== report.period) throw new HttpError(409, '报告类型、模板与冻结周期不一致。')
   return report
 }
 export function editableAgentReport(store: Store, actorId: string, id: string, expectedVersion: number): Report {
@@ -330,5 +335,5 @@ export async function downloadAgentReport(store: Store, actorId: string, id: str
 export function getReportAgentBootstrap(store: Store, actorId: string): ReportAgentBootstrap {
   requireReportManager(store, actorId)
   return { assets: store.list<ReportAsset>('reportAssets').map(reportAssetSummary), templates: store.list<ReportTemplate>('reportTemplates'), jobs: store.list<ReportAgentJob>('reportAgentJobs').sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 100),
-    reports: store.list<Report>('reports').filter(r => r.agent).sort((a, b) => b.createdAt.localeCompare(a.createdAt)), schedule: getReportAgentSchedule(store), missedPeriods: reportAgentMissedPeriods(store), aiConfigured: aiConfigured(store) }
+    reports: store.list<Report>('reports').filter(r => r.agent).sort((a, b) => b.createdAt.localeCompare(a.createdAt)), schedule: getReportAgentSchedule(store), missedPeriods: reportAgentMissedPeriods(store), monthlySchedule: getReportAgentSchedule(store, 'monthly'), monthlyMissedPeriods: reportAgentMissedPeriods(store, new Date(), 'monthly'), managedTypes: (['weekly', 'monthly'] as const).filter(type => reportTypeManaged(store, type)), aiConfigured: aiConfigured(store) }
 }

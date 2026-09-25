@@ -12,6 +12,10 @@ import { exportBusinessData, previewRestore, restoreBusinessData } from '../serv
 import { parsePacket } from '../server/data-transfer-schema.ts'
 import { getOperationEpoch } from '../server/operation-context.ts'
 
+const futureTaskDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+const futureResponseDueAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+const laterResponseDueAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString()
+
 function accounts(t: TestContext, prefix: string) {
   const store = new Store(':memory:'); t.after(() => store.close())
   const user = (id: string, role: User['role']) => store.insert<User>('users', { id: prefix + id, name: id, email: `${id}@delivery-transfer.test`, role, active: true, position: '' })
@@ -19,15 +23,15 @@ function accounts(t: TestContext, prefix: string) {
 }
 function populated(t: TestContext) {
   const f = accounts(t, 'source-'), work = new WorkService(f.store), deliveries = new TaskDeliveryService(f.store), support = new TaskSupportService(f.store)
-  const task = work.createTask(f.member, { title: '有交付和协调记录的任务', dueDate: '2026-09-30', isTemporary: true, temporaryReason: '专项' })
+  const task = work.createTask(f.member, { title: '有交付和协调记录的任务', dueDate: futureTaskDate, isTemporary: true, temporaryReason: '专项' })
   const submitted = deliveries.submit(f.member, task.id, { requestId: 'first-submission', taskVersion: task.version, previousRevision: 0, actualOutcome: '冻结第一版结果', evidenceRefs: Array.from({ length: 30 }, (_, i) => `证据 ${i}`), acceptanceCriteria: '完成实验', reviewerId: f.manager.id })
   const returned = deliveries.decide(f.manager, submitted.delivery.id, { requestId: 'first-returned', seriesVersion: submitted.series.version, action: 'review', conclusion: 'returned', note: '补齐数据' })
   const revised = deliveries.submit(f.member, task.id, { requestId: 'second-submission', taskVersion: task.version, seriesId: submitted.series.id, seriesVersion: returned.series.version, previousRevision: 1, previousSubmissionId: submitted.delivery.id, actualOutcome: '冻结第二版结果', evidenceRefs: ['补充附件'], acceptanceCriteria: '全部样本通过', reviewerId: f.manager.id })
   deliveries.decide(f.manager, submitted.delivery.id, { requestId: 'correct-first-decision', seriesVersion: revised.series.version, action: 'correct', conclusion: 'accepted', note: '原始样本复核通过', supersedesDecisionId: returned.decision!.id })
   const blocked = work.updateTask(f.member, task.id, { version: task.version, status: 'blocked', blockerReason: '环境故障', blockerImpact: '本周实验无法运行', supportNeeded: '协调恢复', nextAction: '准备备用环境' })
   const episode = f.store.list<BlockerEpisode>('blockerEpisodes').find(row => row.parentTaskId === task.id)!
-  support.assignBlocker(f.manager, episode.id, { requestId: 'assign-coordinator', version: episode.version, coordinatorId: f.coordinator.id, responseDueAt: '2026-09-26T09:00:00.000Z', reason: '环境值班' })
-  const decision = support.createDecision(f.manager, { requestId: 'create-decision', taskId: task.id, taskVersion: blocked.version, blockerEpisodeId: episode.id, question: '是否切换环境', options: ['切换', '等待'], decisionOwnerId: f.manager.id, responseDueAt: '2026-09-25T09:00:00.000Z', reason: '业务判断' })
+  support.assignBlocker(f.manager, episode.id, { requestId: 'assign-coordinator', version: episode.version, coordinatorId: f.coordinator.id, responseDueAt: laterResponseDueAt, reason: '环境值班' })
+  const decision = support.createDecision(f.manager, { requestId: 'create-decision', taskId: task.id, taskVersion: blocked.version, blockerEpisodeId: episode.id, question: '是否切换环境', options: ['切换', '等待'], decisionOwnerId: f.manager.id, responseDueAt: futureResponseDueAt, reason: '业务判断' })
   support.decideDecision(f.manager, decision.id, { requestId: 'decide-environment', version: decision.version, result: '切换备用环境' })
   return { ...f, task, submitted, revised, episode, decision }
 }
@@ -86,7 +90,7 @@ test('v5 preview rejects broken revision and decision chains, head state drift a
 
 test('v5 restoration rejects cross-task blocker sources and action responsibility references atomically', t => {
   const source = populated(t), target = accounts(t, 'target-'), work = new WorkService(source.store)
-  const otherTask = work.createTask(source.member, { title: '另一独立任务', dueDate: '2026-09-30', isTemporary: true, temporaryReason: '专项' })
+  const otherTask = work.createTask(source.member, { title: '另一独立任务', dueDate: futureTaskDate, isTemporary: true, temporaryReason: '专项' })
   const otherWeekly = work.createWeeklyRecord(source.member, { taskId: otherTask.id, weekStart: '2026-09-21', commitment: '另一任务的周安排', submitted: false })
   const original = exportBusinessData(source.store, source.manager)
   const mutations: [string, (packet: typeof original) => void][] = [
@@ -152,7 +156,7 @@ test('v3-v4 retain genuine legacy support but reject new responsibility fields, 
     assert.equal(parsePacket(legacy).collections.blockerEpisodes.length, 1)
     const inject: ((packet: typeof legacy) => void)[] = [
       packet => { packet.collections.blockerEpisodes[0].coordinatorId = source.coordinator.id },
-      packet => { packet.collections.blockerEpisodes[0].responseDueAt = '2026-09-25T09:00:00.000Z' },
+      packet => { packet.collections.blockerEpisodes[0].responseDueAt = futureResponseDueAt },
       packet => { packet.collections.blockerEpisodes[0].coordinationState = 'responded' },
       packet => { packet.collections.blockerEpisodes[0].responseNote = '新协调回应' },
       packet => { packet.collections.blockerEpisodes[0].openedAtKnown = false },

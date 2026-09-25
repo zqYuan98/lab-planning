@@ -62,6 +62,7 @@ export class Store {
   }
   private depth = 0
   private connectionRevision = randomUUID()
+  private readAuditChanges = 0
   private transactionContext = new AsyncLocalStorage<{ active: boolean }>()
   constructor(path: string) {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true })
@@ -87,8 +88,36 @@ export class Store {
     return this.readRows('SELECT data FROM entities WHERE collection=? ORDER BY rowid', [collection])
       .map(row => this.parseRow<T>(row.data as string))
   }
+  /** Internal fixed SELECT statements only; request values must always be bound parameters. */
+  selectRows(sql: string, values: (string | number | null)[] = []) {
+    if (!/^\s*(SELECT|WITH)\b/i.test(sql)) throw new Error('Read queries must be SELECT statements')
+    return this.readRows(sql, values)
+  }
+  /** Page services select only their authorized rows/projections, retaining JSON read metrics. */
+  selectJson<T>(sql: string, values: (string | number | null)[] = []): T[] {
+    return this.selectRows(sql, values).map(row => this.parseRow<T>(row.data as string))
+  }
+  /** Preserve list('events') insertion order, including equal-version snapshot precedence. */
+  entityEvents(entityType: string, entityId: string): import('../shared/types.ts').AuditEvent[] {
+    return this.readRows(`SELECT data FROM entities WHERE collection='events' AND json_extract(data,'$.entityType')=? AND json_extract(data,'$.entityId')=? ORDER BY rowid`, [entityType, entityId])
+      .map(row => this.parseRow<import('../shared/types.ts').AuditEvent>(row.data as string))
+  }
+  entityTypeEvents(entityTypes: string[]): import('../shared/types.ts').AuditEvent[] {
+    if (!entityTypes.length) return []
+    return this.readRows(`SELECT data FROM entities WHERE collection='events' AND json_extract(data,'$.entityType') IN (${entityTypes.map(() => '?').join(',')}) ORDER BY rowid`, entityTypes)
+      .map(row => this.parseRow<import('../shared/types.ts').AuditEvent>(row.data as string))
+  }
+  entityEventsExplain(entityType: string, entityId?: string) {
+    return this.readRows(`EXPLAIN QUERY PLAN SELECT data FROM entities WHERE collection='events' AND json_extract(data,'$.entityType')=?${entityId === undefined ? '' : " AND json_extract(data,'$.entityId')=?"} ORDER BY rowid`, entityId === undefined ? [entityType] : [entityType, entityId])
+  }
   /** O(1), process-local invalidation token. SQLite remains a single writer instance. */
-  workspaceRevision(): string { return `${this.connectionRevision}:${this.readRows('SELECT total_changes() AS n')[0].n}` }
+  workspaceRevision(): string { return `${this.connectionRevision}:${Number(this.readRows('SELECT total_changes() AS n')[0].n) - this.readAuditChanges}` }
+  /** Access logs contain identifiers only. Reads must not invalidate business paging. */
+  recordObjectRead(input: { actorId: string; action: string; objectType: string; objectId: string; objectIds: string[]; authorizedGoalId?: string; outcome: 'allowed' | 'denied' }): void {
+    this.insert<Entity & typeof input & { occurredAt: string }>('objectReadAudits', { ...input, objectIds: [...input.objectIds], occurredAt: new Date().toISOString() })
+    // SQLite total_changes includes rolled-back inserts too, so this counter must not roll back.
+    this.readAuditChanges++
+  }
   workspaceCount(filter: WorkspaceSqlFilter): number {
     const where = workspaceWhere(filter)
     return Number(this.readRows(`SELECT COUNT(*) AS n FROM entities e WHERE ${where.sql}`, where.values)[0].n)
@@ -252,7 +281,7 @@ export class Store {
     if (rule.effectiveWeek !== nextWeek || JSON.stringify(rule.windows) !== JSON.stringify([{ fromWeek: nextWeek, toWeek: null }])) return false
     if (['weeklyCycles', 'weeklyDuties', 'weeklySubmissions', 'weeklyMissing', 'weeklyAdjustments', 'weeklyPlanReviews'].some(name => this.list(name).length > 0)) return false
     if (this.list<{ planApproval?: unknown }>('weeklyRecords').some(row => row.planApproval)) return false
-    if (this.list<{ entityType: string }>('events').some(event => ['weeklyRule', 'weeklyCycle', 'weeklyPlanReview'].includes(event.entityType))) return false
+    if (this.list<{ entityType: string }>('events').some(event => ['weeklyRule', 'weeklyCycle', 'weeklyDuty', 'weeklyPlanReview'].includes(event.entityType))) return false
     return !this.list<{ snapshot?: { weeklySubmissions?: unknown[] } }>('reports').some(report => report.snapshot?.weeklySubmissions?.length)
   }
   /** Migration-only exception: replace exactly an unused bootstrap rule, atomically. */

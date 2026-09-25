@@ -1,5 +1,8 @@
+import AnnualGoalPicker from '../components/AnnualGoalPicker'
+import { periodScope } from '../period-workspace'
 import { useState } from 'react'
 import { api, json } from '../api'
+import { usePeriodCandidates } from '../period-workspace'
 import {
   Empty,
   Field,
@@ -10,7 +13,7 @@ import {
   type PageProps,
 } from '../ui'
 export default function MergeProposals({
-  data,
+  data: initialData,
   month,
   onClose,
   onSaved,
@@ -21,6 +24,9 @@ export default function MergeProposals({
   onSaved: (message: string) => Promise<void>
 }) {
   const [ids, setIds] = useState<string[]>([])
+  const [annualGoalId, setAnnualGoalId] = useState(''), [explicitAnnualLink, setExplicitAnnualLink] = useState(false)
+  const resource = usePeriodCandidates(initialData, initialData.user.id, 'merge', month)
+  const data = resource.value ?? { ...initialData, plans: [] }
   const candidates = data.plans.filter(
     (plan) =>
       plan.month === month &&
@@ -34,6 +40,8 @@ export default function MergeProposals({
   )
   return (
     <Modal title="合并同一成果的提报" onClose={onClose} wide>
+      {resource.error && <div role="alert" className="error">{resource.error}<button onClick={resource.retry}>重新读取可合并提报</button></div>}
+      {!resource.value && !resource.error && <p role="status">正在核对整月可合并范围…</p>}
       <p className="modal-intro">
         仅合并同月、同项目（部门工作则同类别）且尚未拆分任务的提报。系统保留来源和原始责任，新事项以审核通过状态等待发布。
       </p>
@@ -41,8 +49,10 @@ export default function MergeProposals({
         onCancel={onClose}
         submitLabel="合并为一项月度成果"
         onSubmit={async (event) => {
+          if (!resource.value || resource.error) throw new Error('请先完整读取当前可合并提报')
           if (ids.length < 2) throw new Error('请至少选择两条提报。')
           const chosen = candidates.filter((plan) => ids.includes(plan.id))
+          if (chosen.length !== ids.length) throw new Error('所选提报已变化，请重新核对选择范围')
           if (
             new Set(
               chosen.map(
@@ -56,6 +66,7 @@ export default function MergeProposals({
             json({
               ...Object.fromEntries(new FormData(event.currentTarget)),
               planIds: ids,
+              ...(explicitAnnualLink ? { annualGoalId: annualGoalId || null } : {}),
             }),
           )
           await onSaved('提报已合并，原始来源和责任记录已保留')
@@ -93,6 +104,8 @@ export default function MergeProposals({
             />
           )}
         </div>
+        <label className="checkbox-label"><input type="checkbox" checked={explicitAnnualLink} onChange={event => setExplicitAnnualLink(event.target.checked)} />明确选择合并后的年度关联（不同关联时必选）</label>
+        {explicitAnnualLink && <AnnualGoalPicker year={Number(month.slice(0,4))} value={annualGoalId} onChange={setAnnualGoalId} scope={periodScope(data)} />}
         <Field label="合并后的成果名称">
           <input name="title" required maxLength={200} />
         </Field>

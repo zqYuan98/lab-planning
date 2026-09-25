@@ -12,6 +12,7 @@ import { collaborationCommand, collaborationId, ensureVersion, meaningfulText, r
 import { endTaskRequests, enrollTaskTracking } from './collaboration-tracking.ts'
 import { withCollaborationMutation } from './collaboration-hooks.ts'
 import { TaskSupportService } from './task-support.ts'
+import { scheduleWeeklyCalendarChange } from './weekly-calendar-service.ts'
 
 export { readCollaborationSettings, effectiveManagerIds, taskTrackingEligible } from './collaboration-policy.ts'
 type Input = Record<string, unknown>
@@ -46,8 +47,8 @@ export class CollaborationService {
   taskView(actor: User, taskId: string, options: { includeProgress?: boolean } = {}): CollaborationTaskView {
     const viewer = liveCollaborationActor(this.store, actor)
     const task = this.task(viewer, taskId, false), manager = viewer.role === 'manager'
-    const rows = <T extends { taskId?: string; parentTaskId?: string; ownerId: string }>(collection: string): T[] => this.store.list<T>(collection).filter(row => (row.taskId ?? row.parentTaskId) === task.id && (manager || row.ownerId === actor.id))
-    return { task, ...summarizeCollaborationTask(task, this.store.list<WeeklyRecord>('weeklyRecords'), viewer, this.clock()), tracking: this.store.get<TaskTracking>('taskTrackings', task.id) ?? null,
+    const rows = <T extends { taskId?: string; parentTaskId?: string; ownerId: string }>(collection: string): T[] => this.store.selectJson<T>("SELECT data FROM entities WHERE collection=? AND COALESCE(json_extract(data,'$.taskId'),json_extract(data,'$.parentTaskId'))=? AND (?=1 OR json_extract(data,'$.ownerId')=?) ORDER BY rowid", [collection, task.id, manager ? 1 : 0, actor.id])
+    return { task, ...summarizeCollaborationTask(task, this.store.selectJson<WeeklyRecord>("SELECT data FROM entities WHERE collection='weeklyRecords' AND json_extract(data,'$.taskId')=? ORDER BY rowid", [task.id]), viewer, this.clock()), tracking: this.store.get<TaskTracking>('taskTrackings', task.id) ?? null,
       progressEvents: options.includeProgress === false ? [] : rows('progressEvents'), followups: rows('followupRequests'), responses: rows('followupResponses'), blockerEpisodes: rows('blockerEpisodes'), blockerActions: rows('blockerActions'), deadlineRequests: rows('deadlineChangeRequests'),
       effectiveManagerIds: effectiveManagerIds(this.store, task), enabled: isActiveTask(task) && collaborationEnabledFor(this.store, task.ownerId), eligible: taskTrackingEligible(this.store, task, this.clock()) }
   }
@@ -91,6 +92,7 @@ export class CollaborationService {
       if (patch.autoRulesEnabled && !allows(9) && !allows(17)) throw new HttpError(400, '自动规则至少需要允许 09:00 或 17:00，请调整总发送时段')
       if ((patch.dailyManagerEnabled || patch.weeklyManagerEnabled || patch.memberActionsEnabled) && !allows(17.5)) throw new HttpError(400, '摘要需要允许 17:30，请调整总发送时段')
       const row = before.version ? this.store.update<CollaborationSettings>('collaborationSettings', before.id, before.version, patch) : this.store.insert<CollaborationSettings>('collaborationSettings', { ...before, ...patch, id: COLLABORATION_SETTINGS_ID })
+      if (JSON.stringify(before.calendarOverrides) !== JSON.stringify(row.calendarOverrides)) scheduleWeeklyCalendarChange(this.store, actor, row.calendarOverrides, this.clock())
       this.audit(actor, 'collaborationSettings', row.id, 'update', before.version ? before : null, row)
       return row
     })

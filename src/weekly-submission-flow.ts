@@ -27,7 +27,7 @@ export function recordTarget(record: Pick<WeeklyRecord,'weekStart'|'ownerId'>, c
   return { cycleWeek: plan ? advanceWeek(record.weekStart,-7) : record.weekStart, contentWeek: record.weekStart, ownerId:record.ownerId, kind:plan ? 'plan':'results' }
 }
 export const submissionLabels = { due:'待整份提交', on_time:'按时提交', missing:'逾期未整份提交', late:'逾期补交', exempt:'已豁免' }
-export const planReviewLabels = { not_required:'无需审核', unsubmitted:'待提交审核', pending:'待管理员审核', approved:'计划已通过', returned:'已退回修改', changed:'计划已变化，待重提' }
+export const planReviewLabels = { not_required:'无需审核', unsubmitted:'待提交审核', pending:'待审核', approved:'计划已通过', returned:'已退回修改', changed:'计划已变化，待重提' }
 export const planReviewTones = { not_required:'neutral', unsubmitted:'neutral', pending:'amber', approved:'green', returned:'red', changed:'amber' }
 export function weeklyRecordState(record: WeeklyRecord) {
   if (!isActiveWeeklyRecord(record)) return { label:'已删除', tone:'neutral' }

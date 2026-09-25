@@ -1,3 +1,4 @@
+import { effortInput } from '../../shared/effort'
 import { useState } from 'react'
 import type { Bootstrap, Task, WeeklyRecord } from '../../shared/types'
 import type { EditableObject } from '../../shared/task-view'
@@ -40,6 +41,8 @@ export default function WeeklyProgressForm({data,selected,selectedTask,onSaved,o
               return saveWeeklyProgress(selected.id,
                   {
                     ...Object.fromEntries(form),
+                    plannedEffortDays: effortInput(form.get('plannedEffortDays')),
+                    actualEffortDays: effortInput(form.get('actualEffortDays')),
                     submitted: form.has('submitted'),
                     version: version ?? Math.max(selected.version,savedVersion),
                     ...(completesTask ? { completeTask: true, taskVersion: currentTask.version } : {}),
@@ -59,6 +62,7 @@ export default function WeeklyProgressForm({data,selected,selectedTask,onSaved,o
                 rows={2}
               />
             </Field>
+            <div className="form-grid"><Field label="本周预计投入（人日）"><input name="plannedEffortDays" type="number" min="0" step="0.5" defaultValue={selected.plannedEffortDays ?? ''} /></Field><Field label="本周实际投入（人日）" hint="以 0.5 人日填写，未填写与 0 分开统计。"><input name="actualEffortDays" type="number" min="0" step="0.5" defaultValue={selected.actualEffortDays ?? ''} /></Field></div>
             <Field label="执行状态">
               <select name="status"  defaultValue={selected.status} onChange={event => {
                 const nextStatus = event.target.value as WeeklyRecord['status']

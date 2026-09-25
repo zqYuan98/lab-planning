@@ -1,0 +1,22 @@
+{
+  "commit": "65317c6",
+  "sourceSha256": {
+    "server/plan-visibility.ts": "1ab19c69e37bba66e94a26ee3aaa3c8a6b8bcb1297f5d3ff1c3e588c3c90a3e9",
+    "server/work-progress.ts": "44fcd0b237a55f5e72b425a0e639e27751d630a6b1a9f16665ae67831290131e",
+    "server/object-access.ts": "e626c5c0c6012eb705f87f4ba0933eb284fdd3ed90ed4c1731bbd09731599bba",
+    "shared/auth-policy.ts": "a458965a6477c031017242cb18204950c94962291d37aadd40dbcd2366b15e0d",
+    "shared/weekly-record-state.ts": "b4364b6dd1335be039e762262873f1e080ce523953a8e21e5a3afbe8b5bc4d6a",
+    "shared/task-state.ts": "412dfdf61a1d395784af4aff728d657074f3777215cfe8900d82a97efd8695ee",
+    "server/auth.ts": "125dc4b678abf4358bd4d3397933615763709c02f2c541290abcda3ebbab706e",
+    "server/collaboration-store.ts": "74529b11597f09164bc621c80013269c43a97922174af0fbd39adb737553041e",
+    "server/work-origin.ts": "28ffacd00d42dd722fe33320b30867563614039e8022b4913bb2093d96fbdec1",
+    "server/domain.ts": "7fab993e42890b2dbcd99967effe03bd90722bf994348012f9b0643537975b22",
+    "shared/work-calendar.ts": "91de2318d841d7b9801c812a31bad1aac4bb2273b4aa87dca382e64b1ac2c918"
+  },
+  "adaptations": [
+    "Relative import paths",
+    "Extract unchanged safeUser, meaningfulText and workOriginProjector bodies",
+    "Extract bootstrap into legacyBootstrap(store, actor, includeLegacyOrigins, includeDeleted, now)",
+    "Store I/O, unchanged AI configuration and operation epoch infrastructure remain live; no modified hotpath implementation is imported"
+  ]
+}

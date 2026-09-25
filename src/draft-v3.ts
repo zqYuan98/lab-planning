@@ -80,7 +80,7 @@ export function mergeDraft(groups:MergeGroup[], choices:Record<string,'server'|'
 }
 export function editableDraftValues(values:Record<string,unknown>, current:DraftValues):DraftValues {
   const aliases:Record<string,string>={taskStatus:'status',__status:'status',__source:'workSource',__priority:'priority',__waiting:'waitingForFeedback'}
-  const editableFields=new Set(['title','description','dueDate','status','completionNote','evidenceUrl','blockerReason','blockerImpact','supportNeeded','nextAction','workSource','assignedBy','assignedOn','requestedOutcome','priority','estimatedEffort','currentProgress','decisionNeeded','waitingForFeedback','commitment','actualOutcome','blocker','submitted'])
+  const editableFields=new Set(['title','description','dueDate','status','completionNote','evidenceUrl','blockerReason','blockerImpact','supportNeeded','nextAction','workSource','assignedBy','assignedOn','requestedOutcome','priority','estimatedEffort','remainingEffortDays','plannedEffortDays','actualEffortDays','currentProgress','decisionNeeded','waitingForFeedback','commitment','actualOutcome','blocker','submitted'])
   return Object.fromEntries(Object.entries(current).map(([key,value])=>{
     const field=aliases[key]||key
     if (!Object.hasOwn(values,field) && !editableFields.has(field)) return [key,value]

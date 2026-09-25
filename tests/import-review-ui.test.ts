@@ -88,7 +88,28 @@ test('linking an existing task adopts locked source metadata and unlinking resto
   assert.equal(detached.taskId, '')
   assert.deepEqual(importWorkFields(detached), originalSource)
   const legacy = selectImportTask(candidate, { ...task, workSource: undefined, assignedBy: undefined, assignedOn: undefined })
-  assert.deepEqual(importWorkFields(legacy), { workSource: '', assignedBy: '', assignedOn: '' })
+  assert.deepEqual(importWorkFields(legacy), { workSource: '', assignedBy: '', assignedOn: '', remainingEffortDays: null })
+})
+
+test('selecting existing tasks replaces locked effort and unlinking restores the candidate estimate with source metadata', () => {
+  const candidate = row('effort-link', { kind: 'weekly', remainingEffortDays: 5, plannedEffortDays: 1.5, actualEffortDays: 0, workSource: 'coordination', assignedBy: '原文交办人' })
+  const original = importWorkFields(candidate)
+  const task = { id: 'existing', ownerId: 'member', monthlyPlanId: null, isTemporary: true, temporaryReason: '支持', workSource: 'leader', remainingEffortDays: 2 } as Task
+  const linked = selectImportTask(candidate, task)
+  assert.equal(linked.remainingEffortDays, 2)
+  assert.equal(linked.plannedEffortDays, 1.5); assert.equal(linked.actualEffortDays, 0)
+  const switched = selectImportTask(linked, { ...task, id: 'zero-task', remainingEffortDays: 0 }, original)
+  assert.equal(switched.remainingEffortDays, 0)
+  const unknown = selectImportTask(switched, { ...task, id: 'unknown-task', remainingEffortDays: undefined }, original)
+  assert.equal(unknown.remainingEffortDays, null)
+  assert.equal(JSON.parse(JSON.stringify(unknown)).remainingEffortDays, null, 'clearing must survive JSON rather than preserve a stale server value')
+  const detached = selectImportTask(unknown, undefined, original)
+  assert.equal(detached.remainingEffortDays, 5)
+  assert.equal(detached.workSource, candidate.workSource); assert.equal(detached.assignedBy, candidate.assignedBy)
+  for (const remainingEffortDays of [0, null, undefined]) {
+    const source = { ...candidate, remainingEffortDays }, saved = importWorkFields(source)
+    assert.equal(selectImportTask(selectImportTask(source, task), undefined, saved).remainingEffortDays, remainingEffortDays ?? null)
+  }
 })
 
 test('members can hand off parsed batches even when all candidates belong to other owners', () => {

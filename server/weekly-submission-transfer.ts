@@ -1,14 +1,60 @@
 import type { Entity, WeeklyRecord, Report, AuditEvent } from '../shared/types.ts'
-import type { WeeklyRule, WeeklyCycle, WeeklyDuty, WeeklySubmission, WeeklyMissing, WeeklyAdjustment, WeeklyReportSubmission, WeeklyPlanReview } from '../shared/weekly-submissions.ts'
-import { planFingerprintParts, type BusinessCollections, type TransferCollection } from './data-transfer-schema.ts'
+import type { WeeklyRule, WeeklyCycle, WeeklyDuty, WeeklySubmission, WeeklyMissing, WeeklyAdjustment, WeeklyReportSubmission, WeeklyPlanReview, WeeklyDeadlineSnapshot } from '../shared/weekly-submissions.ts'
+import { canonical, planFingerprintParts, type BusinessCollections, type TransferCollection } from './data-transfer-schema.ts'
 import { isWeeklyPlanReviewCycle, weeklyPlanFingerprint } from '../shared/weekly-record-state.ts'
 import { addWeekDays, fridayDeadline, mondayInstant } from './weekly-submission-clock.ts'
+import { snapshotDeadline, workingDaysInWeek } from '../shared/work-calendar.ts'
 
 const time = (value: string) => Date.parse(value)
 const sameTime = (left: string, right: string) => time(left) === time(right)
 
+/** A frozen fact is interpreted from its own inputs, including legacy Friday facts. */
+function deadlineIssues(week: string, deadlineAt: string | null, snapshot: WeeklyDeadlineSnapshot | undefined, allowRest: boolean, label: string, issue: (message: string) => void) {
+  if (!snapshot) {
+    if (deadlineAt === null || !sameTime(deadlineAt, fridayDeadline(week))) issue(`${label}：截止时间与固定周五周期不一致`)
+    return
+  }
+  const days = snapshot.workingDays, nextWeek = addWeekDays(week, 7)
+  if (days.some((day, index) => day < week || day >= nextWeek || index > 0 && days[index - 1] >= day)) issue(`${label}：工作日快照须为周期内有序且唯一的日期`)
+  if (snapshot.policyVersion === 0 && snapshot.mode !== 'last_workday') issue(`${label}：显式修复必须使用最后工作日策略`)
+  const expected = snapshotDeadline(week, snapshot)
+  if (expected === null ? !allowRest || deadlineAt !== null : deadlineAt === null || !sameTime(deadlineAt, expected)) issue(`${label}：截止时间与冻结工作日快照不一致`)
+}
+
+/** Used for current rows and audit before/after independently of today's policy. */
+export function weeklyDeadlineRowIssues(name: TransferCollection, input: unknown, issue: (message: string) => void) {
+  if (name === 'weeklyCycles') {
+    const cycle = input as WeeklyCycle
+    deadlineIssues(cycle.week, cycle.deadlineAt, cycle.deadlinePolicy, true, `weeklyCycles/${cycle.id}`, issue)
+    if (cycle.id !== cycle.week) issue(`weeklyCycles/${cycle.id}：周期身份不一致`)
+  }
+  if (name === 'weeklyDuties') {
+    const duty = input as WeeklyDuty
+    deadlineIssues(duty.cycleWeek, duty.deadlineAt, duty.deadlinePolicy, false, `weeklyDuties/${duty.id}`, issue)
+    if (duty.contentWeek !== addWeekDays(duty.cycleWeek, duty.kind === 'results' ? 0 : 7)) issue(`weeklyDuties/${duty.id}：内容周不一致`)
+  }
+  if (name === 'weeklyRules') {
+    const rule = input as WeeklyRule
+    for (let index = 0; index < (rule.deadlinePolicies?.length ?? 0); index++) {
+      const policy = rule.deadlinePolicies![index], previous = rule.deadlinePolicies![index - 1]
+      if (policy.fromWeek < rule.effectiveWeek || previous && (previous.fromWeek >= policy.fromWeek || previous.version >= policy.version)) issue('weeklyRules：截止策略版本或生效周顺序无效')
+    }
+  }
+  if (name === 'events') {
+    const event = input as AuditEvent
+    if (event.action !== 'deadline_repair' || !['weeklyCycle', 'weeklyDuty'].includes(event.entityType)) return
+    const before = event.before as WeeklyCycle | WeeklyDuty | null, after = event.after as WeeklyCycle | WeeklyDuty | null
+    if (!before || !after || !event.reason.trim() || before.id !== event.entityId || after.id !== event.entityId || after.version !== before.version + 1 || after.deadlinePolicy?.policyVersion !== 0) {
+      issue(`events/${event.id}：截止修复审计身份、原因或版本不一致`)
+      return
+    }
+    const unchanged = (row: WeeklyCycle | WeeklyDuty) => Object.fromEntries(Object.entries(row).filter(([key]) => !['version', 'updatedAt', 'deadlineAt', 'deadlinePolicy'].includes(key)))
+    if (canonical(unchanged(before)) !== canonical(unchanged(after))) issue(`events/${event.id}：截止修复不得改动名单、义务身份或冻结时间`)
+  }
+}
+
 export function reportSubmissionIssues(row: WeeklyReportSubmission, issue: (message: string) => void) {
-  if (!sameTime(row.deadlineAt, fridayDeadline(row.cycleWeek))) issue('报告提报摘要：截止时间与周期不一致')
+  deadlineIssues(row.cycleWeek, row.deadlineAt, row.deadlinePolicy, false, '报告提报摘要', issue)
   if (row.firstSubmittedAt && time(row.firstSubmittedAt) < time(mondayInstant(row.cycleWeek))) issue('报告提报摘要：提交早于周期开始')
   if (row.status === 'on_time' && (!row.firstSubmittedAt || time(row.firstSubmittedAt) >= time(row.deadlineAt)) || row.status === 'late' && (!row.firstSubmittedAt || time(row.firstSubmittedAt) < time(row.deadlineAt))) issue('报告提报摘要：状态与提交时间不一致')
   if (['due', 'missing'].includes(row.status) && row.firstSubmittedAt !== null || row.status === 'exempt' && !row.exemptionReason.trim()) issue('报告提报摘要：状态与事实不一致')
@@ -22,6 +68,12 @@ export function weeklyTransferIssues(rows: BusinessCollections, available: Recor
   const receipts = available.weeklySubmissions as Map<string, WeeklySubmission>
   const records = available.weeklyRecords as Map<string, WeeklyRecord>
   const reviews = [...available.weeklyPlanReviews.values()] as WeeklyPlanReview[]
+  const policySnapshotIssues = (week: string, snapshot: WeeklyDeadlineSnapshot | undefined, label: string) => {
+    if (!snapshot || snapshot.policyVersion === 0) return
+    const policy = rules.get('weekly-submission-rule')?.deadlinePolicies?.filter(policy => policy.fromWeek <= week).at(-1)
+    const expectedDays = policy && workingDaysInWeek(week, policy.calendarOverrides)
+    if (!policy || policy.version !== snapshot.policyVersion || policy.mode !== snapshot.mode || canonical(expectedDays) !== canonical(snapshot.workingDays)) issue(`${label}：冻结工作日快照与生效策略不一致`)
+  }
   const invalidReceipts = new Set<string>()
   for (const adjustment of available.weeklyAdjustments.values() as Iterable<WeeklyAdjustment>) {
     if (adjustment.action === 'invalidate' && adjustment.submissionId) invalidReceipts.add(adjustment.submissionId)
@@ -51,7 +103,7 @@ export function weeklyTransferIssues(rows: BusinessCollections, available: Recor
   }
   for (const cycle of rows.weeklyCycles) {
     const rule = rules.get('weekly-submission-rule')
-    if (cycle.id !== cycle.week || !sameTime(cycle.deadlineAt, fridayDeadline(cycle.week))) issue(`weeklyCycles/${cycle.id}：周期或截止时间不一致`)
+    policySnapshotIssues(cycle.week, cycle.deadlinePolicy, `weeklyCycles/${cycle.id}`)
     if (rule && !rule.windows.some(w => w.fromWeek <= cycle.week && (!w.toWeek || cycle.week < w.toWeek))) issue(`weeklyCycles/${cycle.id}：周期不在规则生效窗口内`)
     if (new Set(cycle.rosterIds).size !== cycle.rosterIds.length) issue(`weeklyCycles/${cycle.id}：名单映射后重复`)
     if (time(cycle.frozenAt) < time(mondayInstant(cycle.week))) issue(`weeklyCycles/${cycle.id}：冻结时间早于周期开始`)
@@ -59,8 +111,7 @@ export function weeklyTransferIssues(rows: BusinessCollections, available: Recor
   }
   for (const duty of rows.weeklyDuties) {
     const cycle = cycles.get(duty.cycleWeek)
-    if (cycle && (cycle.needsReview || !cycle.rosterIds.includes(duty.ownerId) || !sameTime(cycle.deadlineAt, duty.deadlineAt))) issue(`weeklyDuties/${duty.id}：应交项与周期名单不一致`)
-    if (duty.contentWeek !== addWeekDays(duty.cycleWeek, duty.kind === 'results' ? 0 : 7) || !sameTime(duty.deadlineAt, fridayDeadline(duty.cycleWeek))) issue(`weeklyDuties/${duty.id}：内容周或截止时间不一致`)
+    if (cycle && (cycle.needsReview || !cycle.rosterIds.includes(duty.ownerId) || cycle.deadlineAt === null || !sameTime(cycle.deadlineAt, duty.deadlineAt) || canonical(cycle.deadlinePolicy) !== canonical(duty.deadlinePolicy))) issue(`weeklyDuties/${duty.id}：应交项与周期名单、截止时间或快照不一致`)
   }
   const identity = (name: string, row: WeeklySubmission | WeeklyMissing | WeeklyAdjustment) => {
     const duty = duties.get(row.dutyId)
@@ -124,6 +175,10 @@ export function weeklyTransferIssues(rows: BusinessCollections, available: Recor
   }
   const auditApprovals = (event: AuditEvent) => {
     if (event.entityType === 'weeklyRecord') for (const value of [event.before, event.after]) if (value) approvalIssues(value as WeeklyRecord)
+    if (event.entityType === 'weeklyCycle' || event.entityType === 'weeklyDuty') for (const value of [event.before, event.after]) if (value) {
+      const row = value as WeeklyCycle | WeeklyDuty
+      policySnapshotIssues('week' in row ? row.week : row.cycleWeek, row.deadlinePolicy, `events/${event.id}`)
+    }
   }
   for (const row of rows.weeklyRecords) approvalIssues(row, true)
   for (const row of rows.weeklySubmissions) for (const snapshot of row.records) approvalIssues(snapshot)
@@ -134,7 +189,7 @@ export function weeklyTransferIssues(rows: BusinessCollections, available: Recor
   }
   for (const row of rows.weeklyMissing) {
     const duty = identity('weeklyMissing', row)
-    if (!sameTime(row.deadlineAt, fridayDeadline(row.cycleWeek)) || duty && !sameTime(row.deadlineAt, duty.deadlineAt) || time(row.detectedAt) < time(row.deadlineAt)) issue(`weeklyMissing/${row.id}：缺交检测早于截止或截止时间不一致`)
+    if (duty && !sameTime(row.deadlineAt, duty.deadlineAt) || !duty && !sameTime(row.deadlineAt, fridayDeadline(row.cycleWeek)) || time(row.detectedAt) < time(row.deadlineAt)) issue(`weeklyMissing/${row.id}：缺交检测早于截止或截止时间不一致`)
   }
   for (const row of rows.weeklyAdjustments) {
     identity('weeklyAdjustments', row)

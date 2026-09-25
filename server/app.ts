@@ -1,6 +1,5 @@
 import express, { type ErrorRequestHandler, type RequestHandler } from 'express'
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isIP } from 'node:net'
@@ -25,6 +24,11 @@ import { observerRouteGuard, objectAccessRouter } from './object-access-routes.t
 import { deliveryRouter } from './delivery-routes.ts'
 import { carryWorkflowRouter } from './carry-workflow-routes.ts'
 import { periodReviewRouter } from './period-review-routes.ts'
+import { periodWorkspaceRouter } from './period-workspace.ts'
+import { directoryWorkspaceRouter } from './directory-workspace.ts'
+import { goalOwnerRouter } from './goal-owner.ts'
+import { overviewWorkspaceRouter } from './overview-workspace.ts'
+import { importWorkspaceRouter } from './import-workspace.ts'
 import { workspaceQueryRouter } from './workspace-query.ts'
 import { TaskViewService } from './task-view.ts'
 import { MyActionsService } from './my-actions.ts'
@@ -32,8 +36,11 @@ import type { DingTalkNativeClient } from './dingtalk-native.ts'
 import { feedbackRouter } from './feedback-routes.ts'
 import { createReportAgentRouter } from './report-agent-routes.ts'
 import { requireReportManager } from './reports.ts'
+import { compressResponses, staticDelivery } from './http-delivery.ts'
+import { UsageAnalyticsStore } from './usage-analytics.ts'
+import { usageAnalyticsRouter, usageAnalyticsSuccessMiddleware } from './usage-analytics-routes.ts'
 
-interface AppOptions { store?: Store; dbPath?: string; enableScheduler?: boolean; dingtalkClient?: DingTalkClient; nativeClient?: DingTalkNativeClient }
+interface AppOptions { store?: Store; dbPath?: string; enableScheduler?: boolean; dingtalkClient?: DingTalkClient; nativeClient?: DingTalkNativeClient; usageAnalytics?: UsageAnalyticsStore }
 /** Trust named loopback or explicit proxy addresses, never a caller-supplied hop count. */
 function trustedProxies(value = process.env.TRUST_PROXY): false | string[] {
   if (!value || value === 'false') return false
@@ -56,8 +63,11 @@ export function createApp(options: AppOptions = {}) {
   const app = express()
   const dingtalk = options.dingtalkClient ?? createDingTalkClient()
   app.locals.store = store
+  const usageAnalytics = options.usageAnalytics ?? new UsageAnalyticsStore(':memory:')
+  app.locals.usageAnalytics = usageAnalytics
   app.disable('x-powered-by')
   app.set('trust proxy', proxies)
+  app.use(compressResponses())
   app.use((_req, res, next) => {
     res.set({ 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'same-origin' })
     if (process.env.NODE_ENV === 'production') res.set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
@@ -148,12 +158,14 @@ export function createApp(options: AppOptions = {}) {
   app.use('/api/v1', requireIntegrationAuth(store), createImportRouter(store), createDataRouter(store, true), (_req, _res, next) => next(new HttpError(404, '集成接口不存在')))
   app.use('/api', dingtalkRouter(store, dingtalk))
   app.use('/api', requireAuth(store))
+  app.use('/api', usageAnalyticsRouter(store, usageAnalytics))
+  app.use('/api', usageAnalyticsSuccessMiddleware(store, usageAnalytics))
   app.use('/api', observerRouteGuard(store))
   app.use('/api', objectAccessRouter(store))
   app.use('/api', deliveryRouter(store))
   app.use('/api', carryWorkflowRouter(store))
   app.use('/api', periodReviewRouter(store))
-  app.use('/api', workspaceQueryRouter(store))
+  app.use('/api', periodWorkspaceRouter(store), directoryWorkspaceRouter(store), goalOwnerRouter(store), overviewWorkspaceRouter(store), importWorkspaceRouter(store), workspaceQueryRouter(store))
   const taskViews = new TaskViewService(store), myActions = new MyActionsService(store)
   app.get('/api/tasks/:id/view', (req, res) => res.json(taskViews.view(req.user, String(req.params.id), { section: req.query.section, weeklyRecordId: req.query.weeklyRecordId })))
   app.get('/api/tasks/:id/history', (req, res) => res.json(taskViews.history(req.user, String(req.params.id), { cursor: req.query.cursor, limit: req.query.limit })))
@@ -162,7 +174,6 @@ export function createApp(options: AppOptions = {}) {
   app.get('/api/my-actions', (req, res) => res.json(myActions.list(req.user, { kind: req.query.kind, cursor: req.query.cursor, limit: req.query.limit })))
   app.get('/api/auth/me', (req, res) => res.json(req.user))
   app.post('/api/auth/logout', (req, res) => { clearSession(store, req.headers.cookie, res); res.json({ ok: true }) })
-  app.get('/api/bootstrap', (req, res) => res.json(domain.bootstrap(req.user)))
   app.use('/api', createWeeklySubmissionRouter(store))
   app.use('/api', notificationRouter(store, dingtalk))
   app.use('/api', collaborationRouter(store))
@@ -208,10 +219,7 @@ export function createApp(options: AppOptions = {}) {
   app.use('/api', (_req, _res, next) => next(new HttpError(404, '接口不存在')))
 
   const dist = resolve(dirname(fileURLToPath(import.meta.url)), '../dist')
-  if (existsSync(resolve(dist, 'index.html'))) {
-    app.use(express.static(dist, { index: false, maxAge: 0 }))
-    app.use((req, res, next) => req.method === 'GET' && req.accepts('html') ? res.sendFile(resolve(dist, 'index.html')) : next())
-  }
+  app.use(staticDelivery(dist))
   const errors: ErrorRequestHandler = (error, req, res, next) => {
     if (res.headersSent) return next(error)
     const status = Number.isInteger(error?.status) && error.status >= 400 && error.status < 600 ? error.status : 500

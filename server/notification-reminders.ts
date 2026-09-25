@@ -1,19 +1,35 @@
 import { canUseAccount } from '../shared/auth-policy.ts'
+import type { Notification } from '../shared/notifications.ts'
 import type { User } from '../shared/types.ts'
 import type { WeeklyDutyView, WeeklyRule } from '../shared/weekly-submissions.ts'
-import { enqueueNotification } from './notifications.ts'
+import { enqueueNotification, notificationId } from './notifications.ts'
 import { Store } from './store.ts'
 import { addWeekDays, shanghaiWeek } from './weekly-submission-clock.ts'
 import { WeeklySubmissionService } from './weekly-submissions.ts'
 
-export function currentReminderSlot(now: Date, week = shanghaiWeek(now)): '09:00' | '15:00' | '16:05' | undefined {
-  const friday = addWeekDays(week, 4)
+export function currentReminderSlot(now: Date, week?: string, deadlineAt?: string | null): '09:00' | '15:00' | '16:05' | undefined {
+  if (!Number.isFinite(now.getTime()) || deadlineAt === null) return
+  const deadline = deadlineAt === undefined ? undefined : new Date(deadlineAt)
+  if (deadline && !Number.isFinite(deadline.getTime())) return
+  const day = deadline ? new Date(deadline.getTime() + 8 * 3_600_000).toISOString().slice(0, 10) : addWeekDays(week ?? shanghaiWeek(now), 4)
   const local = new Date(now.getTime() + 8 * 3_600_000).toISOString()
-  if (local.slice(0, 10) !== friday) return
+  if (local.slice(0, 10) !== day) return
   const time = local.slice(11, 16)
   if (time >= '16:05') return '16:05'
   if (time >= '15:00' && time < '16:00') return '15:00'
   if (time >= '09:00' && time < '15:00') return '09:00'
+}
+
+/** A queued event belongs to one deadline date and one slot, including legacy events. */
+export function weeklyNotificationMatchesSlot(row: Notification, now: Date, week: string, deadlineAt: string | null): boolean {
+  const slot = currentReminderSlot(now, week, deadlineAt)
+  if (!slot || (row.kind === 'weekly_summary') !== (slot === '16:05')) return false
+  const legacyKey = `weekly:${week}:${slot}:${row.recipientId}`
+  if (row.eventKey !== legacyKey && row.eventKey !== `${legacyKey}:deadline:${deadlineAt}`) return false
+  // Old events have no explicit deadline snapshot. Their occurrence date and
+  // slot must still agree, so a changed deadline cannot revive an old queue.
+  const occurredAt = new Date(row.eventTime ?? row.createdAt)
+  return occurredAt <= now && currentReminderSlot(occurredAt, week, deadlineAt) === slot
 }
 
 function localTimestamp(now: Date) {
@@ -24,7 +40,7 @@ const pending = (duty: WeeklyDutyView) => duty.status !== 'exempt' && (!duty.lat
 const count = (duties: WeeklyDutyView[]) => `${duties.length}项（${new Set(duties.map(duty => duty.ownerId)).size}人）`
 
 /**
- * Only the latest current Friday slot may create inbox events. A recovered
+ * Only the latest current deadline-day slot may create inbox events. A recovered
  * scheduler may produce the 09:00 reminder until 15:00, then only the 15:00
  * reminder until cutoff. The summary is eligible from 16:05 until midnight.
  * Missed earlier slots and previous days/weeks are never replayed.
@@ -33,21 +49,31 @@ const count = (duties: WeeklyDutyView[]) => `${duties.length}项（${new Set(dut
  */
 export function runNotificationReminders(store: Store, now: Date = new Date()): void {
   if (!Number.isFinite(now.getTime())) return
-  const week = shanghaiWeek(now), slot = currentReminderSlot(now, week)
-  if (!slot) return
+  const week = shanghaiWeek(now)
 
   store.transaction(() => {
     const rule = store.get<WeeklyRule>('weeklyRules', 'weekly-submission-rule')
     if (!rule?.enabled || !rule.windows.some(window => week >= window.fromWeek && (!window.toWeek || week < window.toWeek))) return
 
-    const users = store.list<User>('users'), activeUsers = users.filter(canUseAccount)
+    const users = store.list<User>('users'), activeUsers = users.filter(user => canUseAccount(user) && user.role !== 'observer')
     const managers = activeUsers.filter(user => user.role === 'manager')
     const actor = managers[0] ?? activeUsers[0]
-    if (!actor || (slot === '16:05' && managers.length === 0)) return
+    if (!actor) return
 
     const service = new WeeklySubmissionService(store, () => now)
+    // Read the effective/frozen deadline before selecting the date. Friday is
+    // only a legacy policy, and must not gate holiday or make-up workday runs.
+    const preview = service.preview(actor, week)
+    const slot = currentReminderSlot(now, week, preview?.deadlineAt ?? null)
+    if (!slot || (slot === '16:05' && managers.length === 0)) return
     const view = service.view(actor, week)
-    if (!view.cycle || view.cycle.needsReview) return
+    if (!view.cycle || view.cycle.needsReview || !view.deadlineAt || currentReminderSlot(now, week, view.deadlineAt) !== slot) return
+    const eventKey = (recipientId: string) => `weekly:${week}:${slot}:${recipientId}:deadline:${view.deadlineAt}`
+    const legacyAlreadyQueued = (recipientId: string) => {
+      const key = `weekly:${week}:${slot}:${recipientId}`
+      const row = store.get<Notification>('notifications', notificationId(key, recipientId))
+      return !!row && weeklyNotificationMatchesSlot(row, now, week, view.deadlineAt)
+    }
     // A member view intentionally redacts the departmental roster. When there
     // is no active manager, read each member's own formal obligations instead.
     const duties = managers.length
@@ -74,8 +100,8 @@ export function runNotificationReminders(store: Store, now: Date = new Date()): 
         `内容已更新待重新提交：${count(changed)}`,
         `当前豁免：${count(duties.filter(duty => duty.status === 'exempt'))}`,
       ].join('\n')
-      for (const manager of managers) enqueueNotification(store, {
-        eventKey: `weekly:${week}:${slot}:${manager.id}`,
+      for (const manager of managers) if (!legacyAlreadyQueued(manager.id)) enqueueNotification(store, {
+        eventKey: eventKey(manager.id),
         recipientId: manager.id, kind: 'weekly_summary', title: '本周正式提报截止汇总', body,
         targets: [{ type: 'summary', id: week, cycleWeek: week, weekStart: week }], actionable: false,
       }, now)
@@ -83,6 +109,7 @@ export function runNotificationReminders(store: Store, now: Date = new Date()): 
     }
 
     for (const recipient of activeUsers) {
+      if (legacyAlreadyQueued(recipient.id)) continue
       const owed = duties.filter(duty => duty.ownerId === recipient.id && pending(duty))
         .sort((left, right) => (left.kind === 'results' ? 0 : 1) - (right.kind === 'results' ? 0 : 1))
       if (owed.length === 0) continue
@@ -92,7 +119,7 @@ export function runNotificationReminders(store: Store, now: Date = new Date()): 
         ...owed.map(duty => `${duty.kind === 'results' ? '本周完成情况' : '下周计划'}（${duty.contentWeek} 至 ${addWeekDays(duty.contentWeek, 6)}）：${duty.latestSubmission ? '已正式提交，内容已更新，请重新核对提交' : '尚未正式提交，请核对并提交'}`),
       ].join('\n')
       enqueueNotification(store, {
-        eventKey: `weekly:${week}:${slot}:${recipient.id}`,
+        eventKey: eventKey(recipient.id),
         recipientId: recipient.id, kind: 'weekly_reminder', title: '周提报待提交提醒', body,
         targets: owed.map(duty => ({ type: 'weeklySubmission', id: duty.id, cycleWeek: duty.cycleWeek, weekStart: duty.contentWeek, kind: duty.kind })),
         actionable: false,

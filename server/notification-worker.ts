@@ -4,7 +4,7 @@ import { canUseAccount } from '../shared/auth-policy.ts'
 import { isEffectiveWeeklyRecord } from '../shared/weekly-record-state.ts'
 import { createDingTalkClient, DingTalkError, type DingTalkClient } from './dingtalk.ts'
 import { currentIdentity, getNotificationSettings, notificationEnvironmentEnabled, notificationView } from './notifications.ts'
-import { currentReminderSlot } from './notification-reminders.ts'
+import { weeklyNotificationMatchesSlot } from './notification-reminders.ts'
 import { Store } from './store.ts'
 import { WeeklySubmissionService } from './weekly-submissions.ts'
 import { projectNotificationContent } from './notification-content.ts'
@@ -35,9 +35,14 @@ export function currentNotificationMessage(store: Store, actor: User, row: Notif
   if (view.kind === 'manual_reminder') {
     if (!view.sourceCanAcknowledge || !view.sourceNotificationId) return undefined
   }
-  if (view.kind === 'weekly_summary') {
+  let formal: ReturnType<WeeklySubmissionService['preview']>
+  if (view.kind === 'weekly_summary' || view.kind === 'weekly_reminder') {
     const week = view.targets[0]?.cycleWeek
-    if (!week || currentReminderSlot(now, week) !== '16:05') return undefined
+    if (!week) return undefined
+    const service = new WeeklySubmissionService(store, () => now)
+    formal = readOnly ? service.preview(actor, week) : service.view(actor, week)
+    if (!formal?.rule.enabled || !formal.rule.windows.some(window => week >= window.fromWeek && (!window.toWeek || week < window.toWeek))
+      || !formal.cycle || formal.cycle.needsReview || !formal.deadlineAt || !weeklyNotificationMatchesSlot(row, now, week, formal.deadlineAt)) return undefined
   }
   if (view.kind !== 'weekly_reminder') {
     for (const target of view.targets) {
@@ -59,19 +64,12 @@ export function currentNotificationMessage(store: Store, actor: User, row: Notif
     }
     return row.kind.startsWith('collaboration_') ? { ...view, ...projectCollaborationContent(store, actor, row, view.targets, now) } : view
   }
-  const cycle = view.targets[0]?.cycleWeek
-  if (!cycle) return undefined
-  const hour = new Date(now.getTime() + 8 * 3600000).getUTCHours()
-  if (view.eventKey.includes(':09:00:') && hour >= 15) return undefined
-  const service = new WeeklySubmissionService(store, () => now)
-  const formal = readOnly ? service.preview(actor, cycle) : service.view(actor, cycle)
-  if (!formal || !formal.rule.enabled || formal.cycle?.needsReview || now.toISOString() >= formal.deadlineAt) return undefined
-  const due = formal.duties.filter(duty => view.targets.some(target => target.id === duty.id) && duty.status !== 'exempt' && (!duty.latestSubmission || duty.changedSinceSubmission))
+  if (!formal?.deadlineAt || now.toISOString() >= formal.deadlineAt) return undefined
+  const due = formal.duties.filter(duty => formal.cycle!.rosterIds.includes(duty.ownerId) && duty.deadlineAt === formal.deadlineAt
+    && view.targets.some(target => target.id === duty.id) && duty.status !== 'exempt' && (!duty.latestSubmission || duty.changedSinceSubmission))
   if (!due.length) return undefined
-  const time = new Date(now.getTime() + 8 * 3600000).toISOString().slice(11, 16)
   const targets = view.targets.filter(target => due.some(duty => duty.id === target.id))
-  const current = { ...row, body: `截至今日 ${time}，${due.map(duty => `${duty.kind === 'results' ? '本周完成情况' : '下周计划'}${duty.latestSubmission ? '有修改待重新提报' : '尚未正式提报'}`).join('；')}。请在今日 16:00 前核对并提交。` }
-  return { ...view, targets, ...projectNotificationContent(store, actor, current, targets, { canAcknowledge: false, now }) }
+  return { ...view, targets, ...projectNotificationContent(store, actor, row, targets, { canAcknowledge: false, now }) }
 }
 
 /** A lease is persisted before network I/O. An abandoned send without a receipt is uncertain, never retried automatically. */

@@ -16,6 +16,9 @@ import WorkTaskPanel from '../components/WorkTaskPanel'
 import TaskProgressSummary from '../components/TaskProgressSummary'
 import { PriorityBadge, WorkTypeBadge, TaskLegend, ContextHelp } from '../components/TaskSignals'
 import { taskPriority, workKind } from '../task-presentation'
+import { queryAffected } from '../query-invalidation'
+import DirectoryPagination, { firstDirectoryPage } from '../components/DirectoryPagination'
+import { directoryAccountName } from '../components/DirectoryAccountPicker'
 import '../collaboration.css'
 
 interface BatchPreview { previewToken: string; dueAt: string; recipients: { recipientId: string; recipientName: string; externalQuotaAvailable: boolean; items: { taskId: string; title: string; taskDueDate: string; enrollRequired: boolean; existingRequest: FollowupRequest | null }[] }[] }
@@ -23,6 +26,12 @@ export default function WorkFollowups(props: PageProps & { navigate: Navigate })
   const { data, intent, notify, navigate } = props
   const [view, setView] = useState<Dashboard | null>(null), [error, setError] = useState(''), [selected, setSelected] = useState<string[]>([])
   const [taskId, setTaskId] = useState<string | null>(null), [filter, setFilter] = useState('all'), [query, setQuery] = useState('')
+  const [paging, setPaging] = useState(firstDirectoryPage)
+  const parameters = new URLSearchParams({ filter, q: query, limit: '30' })
+  const firstPath = `/collaboration?${parameters}`
+  if (paging.cursor) parameters.set('cursor', paging.cursor)
+  const path = `/collaboration?${parameters}`, readPath = useRef(path), firstReadPath = useRef(firstPath)
+  firstReadPath.current = firstPath
   const [batch, setBatch] = useState(false), [preview, setPreview] = useState<BatchPreview | null>(null), [payload, setPayload] = useState<Record<string, unknown> | null>(null)
   const [digest, setDigest] = useState<(NotificationDigest & { items: DigestItem[] }) | null>(null)
   const [loading, setLoading] = useState(false)
@@ -33,7 +42,7 @@ export default function WorkFollowups(props: PageProps & { navigate: Navigate })
   const confirmedMutations = useRef<ConfirmedMutations>({})
   const dashboardRead = useRef<LatestRead<Dashboard> | null>(null)
   if (!dashboardRead.current) dashboardRead.current = new LatestRead({
-    load: signal => api<Dashboard>('/collaboration', { signal }),
+    load: signal => api<Dashboard>(readPath.current, { signal }),
     accept: next => {
       const result = reconcileFollowupDashboard(currentView.current, next, confirmedMutations.current)
       const value = result.value
@@ -44,7 +53,7 @@ export default function WorkFollowups(props: PageProps & { navigate: Navigate })
       if (result.stale) throw new StaleReadError()
     },
     error: failure => {
-      if (failure instanceof ApiError && [401, 403].includes(failure.status)) {
+      if (failure instanceof ApiError && ([401, 403].includes(failure.status) || failure.code === 'WORKSPACE_CURSOR_STALE')) {
         currentView.current = null; confirmedMutations.current = {}; setView(null)
         if (failure.status === 401) window.dispatchEvent(new Event('workspace-login-expired'))
       }
@@ -60,12 +69,19 @@ export default function WorkFollowups(props: PageProps & { navigate: Navigate })
     catch (e) { if (current()) setError(e instanceof Error ? e.message : '摘要读取失败') }
   }
   const load = useCallback(() => mounted.current ? dashboardRead.current!.read() : Promise.reject(new MutationContextChangedError()), [])
+  const reloadFirst = useCallback(() => { setPaging(firstDirectoryPage()); readPath.current = firstReadPath.current; return load() }, [load])
+  useEffect(() => {
+    if (readPath.current === path) return
+    readPath.current = path; dashboardRead.current!.invalidate()
+    setSelected([])
+    void load().catch(() => {})
+  }, [path, load])
   useEffect(() => {
     mounted.current = true
     currentView.current = null; confirmedMutations.current = {}; setView(null)
     void load().catch(() => {})
     const unsubscribe = subscribeMutationResponses(event => {
-      if (!mounted.current || event.context !== captureMutationContext()) return
+      if (!mounted.current || event.context !== captureMutationContext() || !queryAffected('/collaboration', event.path)) return
       dashboardRead.current!.invalidate()
       confirmedMutations.current = confirmMutation(confirmedMutations.current, event.value)
       const previous = currentView.current
@@ -73,14 +89,14 @@ export default function WorkFollowups(props: PageProps & { navigate: Navigate })
         const next = applyFollowupMutation(previous, event.path, event.value)
         currentView.current = next; setView(next)
       }
-      void load().catch(() => {})
+      void reloadFirst().catch(() => {})
     }, () => {
       dashboardRead.current!.reset(); savedRefresh.current!.reset(mounted.current); currentView.current = null; confirmedMutations.current = {}
       previewSequence.current++; digestSequence.current++
       if (mounted.current) { setView(null); setDigest(null); setPreview(null); setPayload(null); setSelected([]); setTaskId(null); setBatch(false); setError(''); setLoading(false) }
     })
     return () => { mounted.current = false; unsubscribe(); dashboardRead.current!.reset(); savedRefresh.current!.reset(false); previewSequence.current++; digestSequence.current++ }
-  }, [load, data.user.id, data.user.role, data.operationEpoch])
+  }, [load, reloadFirst, data.user.id, data.user.role, data.operationEpoch, data.accessScopeVersion])
   useEffect(() => {
     if (!intent?.id) return
     let live = true
@@ -97,7 +113,7 @@ export default function WorkFollowups(props: PageProps & { navigate: Navigate })
       attempt.current = null; onSaved?.()
     }, () => finishSaved(async () => {
       if (!mounted.current || context !== captureMutationContext()) throw new MutationContextChangedError()
-      await load()
+      await reloadFirst()
       if (!mounted.current || context !== captureMutationContext()) throw new MutationContextChangedError()
       notify(message)
     })) } catch (failure) {
@@ -105,25 +121,26 @@ export default function WorkFollowups(props: PageProps & { navigate: Navigate })
       if (!(failure instanceof SavedResultError)) throw failure
     }
   }
-  const rows = (view?.tasks || []).filter(row => (!query || row.task.title.toLowerCase().includes(query.toLowerCase())) && (filter === 'all' || filter === 'unfinished' && row.task.status !== 'done' || filter === 'done' && row.task.status === 'done' || filter === 'risk' && view!.risks.some(r => r.taskId === row.task.id) || filter === 'followup' && row.openFollowup || filter === row.tracking?.state))
+  const rows = view?.tasks || []
   return <div className="collaboration-page">
-    <PageHeader eyebrow="WORK / FOLLOW-UP" title={manager ? '进展与催办' : '我的进展与回应'} description={manager ? '聚焦关键任务，及时回应风险与阻塞。' : '更新任务进展，集中处理待回应事项。'} actions={<><button className="button secondary" aria-busy={loading} onClick={() => { void load().catch(() => {}) }}><RefreshCw size={16} />刷新</button>{manager && <button className="button secondary" onClick={() => navigate('notification-settings')}>协作设置</button>}</>} />
+    <PageHeader eyebrow="WORK / FOLLOW-UP" title={manager ? '进展与催办' : '我的进展与回应'} description={manager ? '聚焦关键任务，及时回应风险与阻塞。' : '更新任务进展，集中处理待回应事项。'} actions={<><button className="button secondary" aria-busy={loading} onClick={() => { void reloadFirst().catch(() => {}) }}><RefreshCw size={16} />刷新</button>{manager && <button className="button secondary" onClick={() => navigate('notification-settings')}>协作设置</button>}</>} />
     {saveState !== 'idle' && <div className="note" role="status"><p>{saveState === 'saving' ? '正在保存，请稍候。' : saveState === 'failed' ? '内容已经保存，但刷新失败。无需重复提交，请重新加载已保存结果。' : '内容已保存，正在重新读取结果。'}</p>{saveState === 'failed' && <button className="button primary" type="button" onClick={() => { void savedRefresh.current!.retry().catch(() => {}) }}>重新加载已保存结果</button>}</div>}
     <fieldset className="form-fields" disabled={saveState !== 'idle'}>
     {error && <div className="error" role="alert">{error}</div>}
     {!view ? !error && <p role="status">正在读取工作事项…</p> : <>
       {!view.settings.enabled && <p className="note">进展与催办尚未启用。管理员可在通知设置中选择试点成员、管理接收人和提醒规则。</p>}
       {!manager && view.settings.memberActionsEnabled && <details className="notification-settings-card"><summary>可选行动摘要</summary><Form key={view.preference.version} submitLabel="保存我的摘要偏好" onSubmit={async e => { const f = new FormData(e.currentTarget), body = { version: view.preference.version, memberActionsEnabled: f.has('memberActionsEnabled') }; await saveDashboard('/collaboration/preferences', body, '摘要偏好已保存', 'PUT') }}><label className="checkbox-label"><input name="memberActionsEnabled" type="checkbox" defaultChecked={view.preference.memberActionsEnabled} />接收我的下一步行动摘要</label><p className="form-hint">此偏好只影响可选摘要。工作安排、本人待回应的催办和正式提报要求仍可在系统查看。</p></Form></details>}
-      <div className="collaboration-summary"><span><strong>{view.risks.length}</strong>项风险</span><span><strong>{view.tasks.filter(r => r.openFollowup).length}</strong>项待回应</span><span><strong>{view.tasks.filter(r => r.tracking?.state === 'active').length}</strong>项督办中</span><span><strong>{view.tasks.filter(r => r.tracking?.state === 'paused').length}</strong>项已暂停</span></div>
-      <p className="collaboration-scope-note">全部周期 · {view.tasks.length} 项任务 · {view.tasks.filter(row => row.task.status !== 'done').length} 项整体未完成</p>
+      <div className="collaboration-summary"><span><strong>{view.counts?.risks ?? 0}</strong>项风险</span><span><strong>{view.counts?.followup ?? 0}</strong>项待回应</span><span><strong>{view.counts?.active ?? 0}</strong>项督办中</span><span><strong>{view.counts?.paused ?? 0}</strong>项已暂停</span></div>
+      <p className="collaboration-scope-note">全部周期 · {view.counts?.all ?? 0} 项任务 · {view.counts?.unfinished ?? 0} 项整体未完成</p>
       <ContextHelp title="任务范围与完成状态说明">
         <p>{manager ? '全体成员' : '本人'}的跨周期任务总台账，包含历史任务和已完成任务，不限本周或本月。</p>
         <p>周执行完成代表当周安排完成，不会自动把整个任务标为完成。</p>
       </ContextHelp>
-      <div className="collaboration-toolbar"><Field label="搜索工作事项"><input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="输入任务标题" /></Field><Field label="筛选范围"><select value={filter} onChange={e => setFilter(e.target.value)}><option value="all">全部周期（含已完成）</option><option value="unfinished">整个任务未完成</option><option value="done">整个任务已自报完成</option><option value="risk">有当前风险</option><option value="followup">待回应催办</option><option value="active">督办中</option><option value="paused">督办已暂停</option></select></Field>{manager && <button className="button primary" disabled={!selected.length || !view.settings.enabled} onClick={() => { setPreview(null); setBatch(true) }}>催办所选 {selected.length ? `(${selected.length})` : ''}</button>}</div>
+      <div className="collaboration-toolbar"><Field label="搜索工作事项"><input type="search" value={query} onChange={e => { setQuery(e.target.value); setPaging(firstDirectoryPage()) }} placeholder="输入任务标题" /></Field><Field label="筛选范围"><select value={filter} onChange={e => { setFilter(e.target.value); setPaging(firstDirectoryPage()) }}><option value="all">全部周期（含已完成）</option><option value="unfinished">整个任务未完成</option><option value="done">整个任务已自报完成</option><option value="risk">有当前风险</option><option value="followup">待回应催办</option><option value="active">督办中</option><option value="paused">督办已暂停</option></select></Field>{manager && <button className="button primary" disabled={loading || !selected.length || !view.settings.enabled} onClick={() => { setPreview(null); setBatch(true) }}>催办所选 {selected.length ? `(${selected.length})` : ''}</button>}</div>
+      <DirectoryPagination total={view.total ?? 0} nextCursor={view.nextCursor ?? null} paging={paging} setPaging={setPaging} loading={loading} />
       <TaskLegend />
       {rows.length ? <div className="collaboration-list">{rows.map(row => {
-        const plan = data.plans.find(item => item.id === row.task.monthlyPlanId)
+        const plan = row.plan ?? undefined
         const priority = taskPriority(row.task, plan)
         const isTemporary = !!(row.task.isTemporary || row.task.temporaryReason?.trim() || plan?.isTemporary)
         const kind = workKind({ isTemporary, monthlyPlanId: row.task.monthlyPlanId })
@@ -137,14 +154,14 @@ export default function WorkFollowups(props: PageProps & { navigate: Navigate })
             {manager && <input aria-label={`选择 ${row.task.title}`} type="checkbox" checked={selected.includes(row.task.id)} onChange={e => setSelected(old => e.target.checked ? [...old, row.task.id] : old.filter(id => id !== row.task.id))} />}
             <button className="text-button" onClick={() => openTask({taskId:row.task.id,section:'followups'})}>{row.task.title}</button>
           </div>
-          <p>{nameOf(data, row.task.ownerId)} · 截止 {row.task.dueDate || '未设置'}</p>
+          <p>{directoryAccountName(row.owner)} · 截止 {row.task.dueDate || '未设置'}</p>
           <TaskProgressSummary task={row.task} weeklySummary={row.weeklySummary} overallStatusNeedsConfirmation={row.overallStatusNeedsConfirmation} />
           {row.openFollowup && <p>待回应：{row.openFollowup.requirement} · 回应期限 {dateTime(row.openFollowup.dueAt)}</p>}
           <div className="collaboration-risk-tags">{view.risks.filter(risk => risk.taskId === row.task.id).map(risk => <Badge key={risk.key} tone="amber">{risk.detail}</Badge>)}</div>
           <button className="button secondary" onClick={() => openTask({taskId:row.task.id,section:'followups'})}>{row.openFollowup && row.task.ownerId === data.user.id ? '更新进展并回应' : '查看进展与处理'}</button>
         </article>
       })}</div> : <Empty title="没有符合筛选的工作事项" description="任务发布或纳入督办后，可在这里更新进展和处理催办。" />}
-      <section className="notification-settings-card"><h2>我的工作摘要</h2>{view.digests.length ? <div className="collaboration-digests">{view.digests.map(row => <button className="button secondary" key={row.id} onClick={() => { void openDigest(row.id) }}>{dateTime(row.generatedAt)} · {({ risk_member: '工作风险提醒', risk_manager: '管理风险摘要', critical_manager: '重要变化', approval_manager: '待办审批', daily_manager: '每日摘要', weekly_manager: '每周摘要', member_actions: '我的行动摘要', manual_followup: '工作催办' })[row.type]} · {row.itemIds.length} 项</button>)}</div> : <p>暂无摘要。启用相应规则后，摘要将按工作日生成。</p>}</section>
+      <section className="notification-settings-card"><h2>我的工作摘要</h2>{view.digests.length ? <div className="collaboration-digests">{view.digests.map(row => <button className="button secondary" key={row.id} onClick={() => { void openDigest(row.id) }}>{dateTime(row.generatedAt)} · {({ risk_member: '工作风险提醒', risk_manager: '管理风险摘要', critical_manager: '重要变化', approval_manager: '待办审批', daily_manager: '每日摘要', weekly_manager: '每周摘要', member_actions: '我的行动摘要', manual_followup: '工作催办' })[row.type]} · {'itemCount' in row ? row.itemCount : row.itemIds.length} 项</button>)}</div> : <p>暂无摘要。启用相应规则后，摘要将按工作日生成。</p>}</section>
     </>}
 
     {batch && <Modal wide title="预览批量催办" onClose={() => { previewSequence.current++; setBatch(false) }}><Form submitLabel="生成预览" onSubmit={async e => { const sequence = ++previewSequence.current, context = captureMutationContext(); const f = new FormData(e.currentTarget), next = { taskIds: selected, requirement: String(f.get('requirement')), ...(f.get('dueAt') ? { dueAt: new Date(`${f.get('dueAt')}:00+08:00`).toISOString() } : {}), enroll: f.has('enroll') }; const result = await api<BatchPreview>('/followups/preview', json(next)); if (!mounted.current || context !== captureMutationContext() || sequence !== previewSequence.current) return; setPayload({ ...next, dueAt: result.dueAt }); setPreview(result) }}><div onChange={() => { previewSequence.current++; setPreview(null); setPayload(null) }}><Field label="希望负责人更新什么"><textarea name="requirement" required rows={3} /></Field><Field label="回应期限（北京时间，留空则下一个工作日 17:00）"><input type="datetime-local" name="dueAt" /></Field><label className="checkbox-label"><input name="enroll" type="checkbox" />将所选未跟踪任务明确纳入督办</label></div></Form>

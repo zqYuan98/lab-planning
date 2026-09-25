@@ -1,13 +1,9 @@
+import { shiftDay, workingDay } from './work-calendar.ts'
+export { shiftDay, workingDay } from './work-calendar.ts'
 /** Fixed Shanghai offset; business deadlines never follow the host time zone. */
 export const shanghaiDate = (now: Date) => new Date(now.getTime() + 8 * 3600000).toISOString().slice(0, 10)
 export const shanghaiTime = (now: Date) => new Date(now.getTime() + 8 * 3600000).toISOString().slice(11, 16)
 export const dayAt = (day: string, time = '09:00') => new Date(`${day}T${time}:00+08:00`)
-export function shiftDay(day: string, count: number) { const date = new Date(`${day}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + count); return date.toISOString().slice(0, 10) }
-export function workingDay(day: string, overrides: Record<string, boolean> = {}): boolean {
-  if (Object.hasOwn(overrides, day)) return overrides[day]
-  const weekday = new Date(`${day}T00:00:00Z`).getUTCDay()
-  return weekday >= 1 && weekday <= 5
-}
 export function adjacentWorkday(day: string, direction: -1 | 1, overrides: Record<string, boolean> = {}) {
   for (let count = 1; count <= 370; count++) { const date = shiftDay(day, count * direction); if (workingDay(date, overrides)) return date }
   throw new Error('工作日历中没有可用日期')

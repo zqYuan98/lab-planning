@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
+import { retryableLazy } from './LazyPage'
 import { CheckCheck, Download, RefreshCw, Save, Sparkles } from 'lucide-react'
 import type { Report } from '../../shared/types'
 import type { ReportAgentBlock, ReportAgentCell, ReportAgentJob, ReportFact } from '../../shared/report-agent'
@@ -8,7 +9,7 @@ import { useFormDraft } from '../use-form-draft'
 import { allowDraftLeave } from '../draft-recovery'
 import ReportAgentJobCard from './ReportAgentJobCard'
 import { agentJobPending, agentLabel, agentReportUrl, agentRequestId, agentTime, editAgentCell, readAgentReportTarget, submitAgentGeneration, type AgentPendingRequest } from './ReportAgentHelpers'
-const ReportAgentPreview = lazy(() => import('./ReportAgentPreview'))
+const ReportAgentPreview = retryableLazy(() => import('./ReportAgentPreview'))
 
 export function canRewriteAgentBlock(block: ReportAgentBlock): boolean {
   const cells = block.kind === 'text' ? [block.content] : block.rows.flat()
@@ -63,7 +64,7 @@ export default function ReportAgentEditor({ report, accountId, aiConfigured, ref
   async function save() {
     await action(async () => {
       const result = await api<Report>(`/report-agent/reports/${saved.id}`, json({ expectedVersion: editVersion, title, blocks }, 'PATCH'))
-      accept(result); notify('周报内容已保存并重新校验。'); await finishSaved(refresh)
+      accept(result); notify('报告内容已保存并重新校验。'); await finishSaved(refresh)
     })
   }
   async function reload(resultJob?: Pick<ReportAgentJob, 'reportId'> | null) {
@@ -83,9 +84,9 @@ export default function ReportAgentEditor({ report, accountId, aiConfigured, ref
     })
   }
   return <div className="report-agent agent-editor">
-    <header className="report-document-header"><div><span className="report-overline">WEEKLY REPORT / V{saved.revision}</span><h2>{saved.title}</h2><p>事实截至 {agentTime(agent.capturedAt)} · 上海时间</p><p className="agent-note">模板：{agent.template.name} · 模板版本 {agent.template.version} · {agent.modelIdentifier ? '已使用 AI 辅助写作' : '规则草稿'}</p></div><Badge tone={editable ? 'amber' : 'green'}>{editable ? dirty ? '编辑未保存' : '草稿已保存' : '已定稿 · 文件已归档'}</Badge></header>
+    <header className="report-document-header"><div><span className="report-overline">{saved.type === 'monthly' ? 'MONTHLY' : 'WEEKLY'} REPORT / V{saved.revision}</span><h2>{saved.title}</h2><p>事实截至 {agentTime(agent.capturedAt)} · 上海时间</p><p className="agent-note">模板：{agent.template.name} · 模板版本 {agent.template.version} · {agent.modelIdentifier ? '已使用 AI 辅助写作' : '规则草稿'}</p></div><Badge tone={editable ? 'amber' : 'green'}>{editable ? dirty ? '编辑未保存' : '草稿已保存' : '已定稿 · 文件已归档'}</Badge></header>
     <div className="agent-editor-body">
-      <div className="agent-callout">周阶段完成与月目标验收分别记录。表格逐格保留来源；系统外补充需填写来源并明确确认。修改文字不改变业务计划状态。</div>
+      <div className="agent-callout">{saved.type === 'monthly' ? '本月成果依据月目标验收；下月安排单独列示，投入按周一所属月份归集。' : '周阶段完成与月目标验收分别记录。'}表格逐格保留来源；系统外补充需填写来源并明确确认。修改文字不改变业务计划状态。</div>
       {job && <ReportAgentJobCard key={job.id} initial={job} onOpen={id => void reload({ reportId: id })} onComplete={result => { setJob(result); if (result.status === 'ready' || result.status === 'needs_input') setJobReady(true) }} />}
       {jobReady && <div className="agent-callout">任务已处理，当前人工编辑仍保留。<button type="button" className="text-button" disabled={busy} onClick={() => void reload(job)}>读取保存结果</button></div>}
       {error && <div className="error" role="alert">{error}{refreshFailed && <button type="button" className="text-button" onClick={() => void action(async () => { await refresh(); notify('已刷新报告列表。') })}>重新加载列表</button>}</div>}
@@ -105,15 +106,15 @@ export default function ReportAgentEditor({ report, accountId, aiConfigured, ref
         <div className="agent-actions"><button type="button" className="button secondary" disabled={busy || dirty} onClick={() => setPreview(true)}>预览{editable ? '已保存草稿' : '归档定稿'}</button>{!dirty && <a className="button secondary" href={agentReportUrl(saved.id, saved.version)} download><Download size={16} />{editable ? '导出草稿 Word' : '下载定稿 Word'}</a>}{editable && <button type="button" className="button primary" disabled={busy || dirty || blockers.length > 0} onClick={() => { setReviewed(false); setFinalizeOpen(true) }}><CheckCheck size={16} />审阅并定稿</button>}</div>
         {agent.finalHash && <p className="agent-note">定稿已归档，后续下载使用相同文件。校验摘要：{agent.finalHash.slice(0, 16)}…</p>}
       </section>
-      <details className="agent-new-version"><summary>从此报告生成新版本</summary><p className="agent-note">原报告及人工编辑保留。可选择沿用本次冻结事实，或重新读取当前系统数据；过去的周次不会恢复当时的历史状态。</p><label className="agent-check"><input type="checkbox" checked={refreshSource} onChange={event => setRefreshSource(event.target.checked)} />刷新事实（截至重新生成时）</label><button type="button" className="button secondary" disabled={busy || dirty || !!job && agentJobPending(job.status)} onClick={() => void action(async () => {
+      <details className="agent-new-version"><summary>从此报告生成新版本</summary><p className="agent-note">原报告及人工编辑保留。可选择沿用本次冻结事实，或重新读取当前系统数据；过去的周期不会恢复当时的历史状态。</p><label className="agent-check"><input type="checkbox" checked={refreshSource} onChange={event => setRefreshSource(event.target.checked)} />刷新事实（截至重新生成时）</label><button type="button" className="button secondary" disabled={busy || dirty || !!job && agentJobPending(job.status)} onClick={() => void action(async () => {
         const result = await submitAgentGeneration(generationRequest, { templateId: agent.template.id, period: saved.period, sourceReportId: saved.id, refreshSnapshot: refreshSource, useAi: false }, input => api<ReportAgentJob>('/report-agent/jobs', json(input)))
         setJob(result); setJobReady(result.status === 'ready' || result.status === 'needs_input'); notify('已提交新版本生成任务。')
       })}>生成独立新版本</button></details>
     </div>
-    {preview && <Modal title={editable ? '已保存周报草稿' : '已归档周报定稿'} wide onClose={() => setPreview(false)}><Suspense fallback={<p role="status">正在加载预览…</p>}><ReportAgentPreview url={agentReportUrl(saved.id, saved.version)} title={editable ? '保存版本的 Word 预览' : '归档文件预览'} /></Suspense></Modal>}
-    {finalizeOpen && <Modal title="确认周报定稿" onClose={() => setFinalizeOpen(false)}><p>将归档当前已保存的第 {saved.revision} 版及其 Word 文件。定稿后不可继续编辑，需要修改时生成新版本。</p><ReportFinalizeReview busy={busy} reviewed={reviewed} reviewNote={reviewNote} hasWarnings={agent.issues.some(issue => issue.severity === 'warning')} onReviewed={setReviewed} onReviewNote={setReviewNote} onClose={() => setFinalizeOpen(false)} onConfirm={() => void action(async () => {
+    {preview && <Modal title={editable ? '已保存报告草稿' : '已归档报告定稿'} wide onClose={() => setPreview(false)}><Suspense fallback={<p role="status">正在加载预览…</p>}><ReportAgentPreview url={agentReportUrl(saved.id, saved.version)} title={editable ? '保存版本的 Word 预览' : '归档文件预览'} /></Suspense></Modal>}
+    {finalizeOpen && <Modal title="确认报告定稿" onClose={() => setFinalizeOpen(false)}><p>将归档当前已保存的第 {saved.revision} 版及其 Word 文件。定稿后不可继续编辑，需要修改时生成新版本。</p><ReportFinalizeReview busy={busy} reviewed={reviewed} reviewNote={reviewNote} hasWarnings={agent.issues.some(issue => issue.severity === 'warning')} onReviewed={setReviewed} onReviewNote={setReviewNote} onClose={() => setFinalizeOpen(false)} onConfirm={() => void action(async () => {
       const result = await api<Report>(`/report-agent/reports/${saved.id}/finalize`, json({ expectedVersion: saved.version, reviewNote }))
-      accept(result); setFinalizeOpen(false); notify('周报已定稿，Word 文件已归档。'); await finishSaved(refresh)
+      accept(result); setFinalizeOpen(false); notify('报告已定稿，Word 文件已归档。'); await finishSaved(refresh)
     })} />{error && <p className="error" role="alert">{error}</p>}</Modal>}
   </div>
 }

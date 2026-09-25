@@ -153,6 +153,43 @@ test('approving after results submission does not make results receipt changed',
   assert.equal(f.duty('results', '2026-09-14').changedSinceSubmission, false)
 })
 
+test('effort-only edits mark results receipts changed without changing plan approval or legacy empty values', t => {
+  for (const field of ['plannedEffortDays', 'actualEffortDays'] as const) {
+    const f = fixture(); t.after(() => f.store.close())
+    const work = new WorkService(f.store), row = f.add(), fingerprint = weeklyPlanFingerprint(row)
+    f.submit(); f.service.review(f.manager, f.reviewInput())
+    const results = () => f.duty('results', '2026-09-14')
+    let minute = 0
+    const submitResults = () => {
+      f.set(`2026-09-18T07:0${minute++}:00Z`)
+      const duty = results()
+      return f.service.submit(f.member, { dutyId: duty.id, version: duty.version, manifest: duty.manifest, requestId: crypto.randomUUID() })
+    }
+    const receipt = submitResults(), frozen = JSON.stringify(receipt)
+    let current = f.store.get<WeeklyRecord>('weeklyRecords', row.id)!
+    current = work.updateWeeklyRecord(f.member, row.id, { version: current.version, [field]: null })
+    assert.equal(results().changedSinceSubmission, false, 'legacy missing and explicit empty both mean unknown')
+    current = work.updateWeeklyRecord(f.member, row.id, { version: current.version, [field]: 0 })
+    assert.equal(results().changedSinceSubmission, true, 'zero is a reported value rather than unknown')
+    assert.equal(weeklyPlanFingerprint(current), fingerprint)
+    assert.equal(f.duty().planReviewStatus, 'approved')
+    assert.equal(f.duty().changedSinceSubmission, false)
+    assert.equal(isEffectiveWeeklyRecord(current), true)
+    assert.equal(JSON.stringify(results().latestSubmission), frozen)
+    assert.equal(receipt.records[0][field], undefined)
+    assert.equal(submitResults().records[0][field], 0)
+    assert.equal(results().changedSinceSubmission, false)
+    current = f.store.get<WeeklyRecord>('weeklyRecords', row.id)!
+    current = work.updateWeeklyRecord(f.member, row.id, { version: current.version, [field]: 0.5 })
+    assert.equal(results().changedSinceSubmission, true)
+    assert.equal(submitResults().records[0][field], 0.5)
+    assert.equal(results().changedSinceSubmission, false)
+    current = f.store.get<WeeklyRecord>('weeklyRecords', row.id)!
+    work.updateWeeklyRecord(f.member, row.id, { version: current.version, [field]: null })
+    assert.equal(results().changedSinceSubmission, true, 'clearing a reported value also needs a new receipt')
+  }
+})
+
 test('approving blocked rows for multiple tasks keeps every blocker attached to its own task', t => {
   const f = fixture(); t.after(() => f.store.close())
   new CollaborationService(f.store).updateSettings(f.manager, { version: 0, requestId: 'enable-blocker-review', enabled: true, pilotUserIds: [f.member.id] })

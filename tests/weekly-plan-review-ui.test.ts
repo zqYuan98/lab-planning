@@ -7,7 +7,7 @@ import type { WeeklyDutyView, WeeklySubmission } from '../shared/weekly-submissi
 import { weeklyPlanFingerprint } from '../shared/weekly-record-state.ts'
 import { submissionChangeNotice, submissionProgress, weeklyRecordState } from '../src/weekly-submission-flow.ts'
 import { PlanReviewStatus, WeeklySubmissionSnapshot } from '../src/components/WeeklySubmissionPanel.tsx'
-import Weekly, { DeletedWeeklyRecordNotice } from '../src/pages/Weekly.tsx'
+import { WeeklyBody as Weekly, DeletedWeeklyRecordNotice } from '../src/pages/Weekly.tsx'
 import TaskProgressSummary from '../src/components/TaskProgressSummary.tsx'
 
 const entity = { version:1, createdAt:'2026-09-20T00:00:00Z', updatedAt:'2026-09-20T00:00:00Z' }

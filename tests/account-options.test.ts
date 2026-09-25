@@ -4,8 +4,8 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { accountDisplayName, assignmentAccounts, historicalRosterAccounts, visibleAccounts, visibleMonthlyPlan } from '../src/account-options.ts'
 import { buildWorkspaceSearchIndex, filterWorkspaceSearch } from '../src/components/WorkspaceSearch.tsx'
-import Weekly from '../src/pages/Weekly.tsx'
-import Monthly from '../src/pages/Monthly.tsx'
+import { WeeklyBody as Weekly } from '../src/pages/Weekly.tsx'
+import { MonthlyBody as Monthly } from '../src/pages/Monthly.tsx'
 import type { Bootstrap, MonthlyPlan, Task, User, WeeklyRecord } from '../shared/types.ts'
 
 const entity = { version: 1, createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z' }

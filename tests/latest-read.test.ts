@@ -138,7 +138,7 @@ test('real API success accepts saved version before refresh; refresh failure ret
     if (getCalls === 2) return new Response(JSON.stringify({ error: 'read failed' }), { status: 503 })
     return new Response(JSON.stringify({ ...workspace(), tasks: [saved] }))
   }
-  const reader = new LatestRead({ load: signal => api<Bootstrap>('/bootstrap', { signal }), accept: value => { current = reconcileBootstrap(current, value, confirmed).value } })
+  const reader = new LatestRead({ load: signal => api<Bootstrap>('/workspace', { signal }), accept: value => { current = reconcileBootstrap(current, value, confirmed).value } })
   const unsubscribe = subscribeMutationResponses(event => {
     reader.invalidate(); confirmed = confirmMutation(confirmed, event.value); current = applyBootstrapMutation(current, event.value)
   })

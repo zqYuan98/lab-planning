@@ -13,6 +13,7 @@ import { callAiJson, resolveAiSettings } from './ai-service.ts'
 import { ExistingPlanWriter, importMetadataIssues, importWorkMetadata, temporaryImportIssues, validateExistingRow } from './existing-plan-writer.ts'
 import { participates, visiblePlan } from './plan-visibility.ts'
 import { withSilentImport } from './import-notification-context.ts'
+import { readImportDirectory } from './import-context.ts'
 
 interface ImportSource extends Entity { ownerId: string; fileName: string; mimeType: string; base64: string; hash: string; parsed: ParsedImportFile }
 export interface HistoricalRecord extends Entity { importedBy: string; batchId: string; sourceId: string; row: ImportRow }
@@ -49,12 +50,14 @@ interface ImportJob extends Entity { ownerId: string; batchId: string; status: '
 interface ParsedChunk extends Entity { sourceId?: string; rows: Input[]; warnings: string[] }
 interface StructuredSourceIdentity extends Entity { hash: string; rowIds: string[] }
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex')
+const r4Fields = ['annualGoalId', 'remainingEffortDays', 'plannedEffortDays', 'actualEffortDays'] as const
 const scalarFields = ['ownerName', 'ownerId', 'projectName', 'projectId', 'category', 'title', 'month', 'weekStart', 'dueDate', 'expectedOutcome', 'acceptanceCriteria', 'actualOutcome', 'blocker', 'nextAction', 'sourceStatus', 'monthlyPlanId', 'linkedRowId', 'taskId'] as const
 // Ordinary and legacy rows retain their exact pre-temporary fingerprint, including key order.
 const rowFingerprint = (row: ImportRow) => hash(JSON.stringify({ kind: row.kind, sourceSheet: row.sourceSheet, sourceRow: row.sourceRow, sourceText: row.sourceText, ...Object.fromEntries(scalarFields.map(key => [key, row[key]])), ...(row.isTemporary === true ? { isTemporary: true, temporaryReason: row.temporaryReason ?? '' } : {}),
   ...(row.collaboratorIds?.length ? { collaboratorIds: row.collaboratorIds } : {}), ...(row.collaboratorNames?.length ? { collaboratorNames: row.collaboratorNames } : {}),
   ...(row.workSource ? { workSource: row.workSource } : {}), ...(row.assignedBy ? { assignedBy: row.assignedBy } : {}), ...(row.assignedOn ? { assignedOn: row.assignedOn } : {}),
   ...(row.taskCompleted ? { taskCompleted: true, completionNote: row.completionNote ?? '' } : {}),
+  ...Object.fromEntries(r4Fields.filter(field => row[field] !== undefined).map(field => [field, row[field]])),
 }))
 const executionFingerprint = (row: ImportRow) => hash(JSON.stringify(row.kind === 'monthly' ? importedMonthlyResult(row) : importedWeeklyStatus(row)))
 const reconciledItemCount = (rows: ImportRow[]) => rows.filter(row => row.selected || !row.exclusionReason?.trim() || !['duplicate', 'not_task'].includes(row.exclusionKind ?? 'task')).length
@@ -229,6 +232,16 @@ export class ImportService {
       sourceText: before?.sourceText ?? text(input.sourceText, '原始内容', false, 20000), issues: [],
       ...Object.fromEntries(scalarFields.map(field => [field, text(input[field], field, false, field === 'title' ? 300 : 12000)])) as Pick<ImportRow, typeof scalarFields[number]>,
     }
+    for (const field of r4Fields) {
+      const value = input[field] === undefined ? before?.[field] : input[field]
+      if (value === undefined) continue
+      if (field === 'annualGoalId') result[field] = value === null || value === '' ? null : text(value, '年度目标', true, 200)
+      else {
+        const number = value === null || typeof value === 'string' && value.trim() === '' ? null : typeof value === 'string' ? Number(value) : value
+        if (number !== null && (typeof number !== 'number' || !Number.isFinite(number) || number < 0 || !Number.isInteger(number * 2))) throw new HttpError(400, '投入人日必须为有限、非负且以 0.5 为步长的数字')
+        result[field] = number
+      }
+    }
     if (!result.title && !result.sourceText) throw new HttpError(400, `第${index + 1}条没有标题或原文`)
     const isTemporary = input.isTemporary === undefined ? before?.isTemporary : input.isTemporary
     const temporaryReason = input.temporaryReason === undefined ? before?.temporaryReason : input.temporaryReason
@@ -267,7 +280,7 @@ export class ImportService {
     return result
   }
   private match(actor: User, rows: ImportRow[]): ImportRow[] {
-    const visible = this.domain.bootstrap(actor)
+    const visible = readImportDirectory(this.store, actor)
     return rows.map(row => {
       const matched = { ...row }
       const users = visible.users.filter(u => canUseAccount(u) && (u.name === row.ownerName || u.email === row.ownerName))
@@ -613,7 +626,7 @@ export class ImportService {
           row.result = { collection: 'historicalRecords', id: history.id }
         } else if (row.kind === 'monthly') {
           const plan = existingWriter ? existingWriter.monthly(row, activateId)
-            : this.domain.createPlan(actor, { month: row.month, title: row.title, projectId: row.projectId || undefined, category: row.category, ownerId: row.ownerId, collaboratorIds: row.collaboratorIds, expectedOutcome: row.expectedOutcome, acceptanceCriteria: row.acceptanceCriteria, dueDate: row.dueDate, isTemporary: row.isTemporary, temporaryReason: row.temporaryReason })
+            : this.domain.createPlan(actor, { annualGoalId: row.annualGoalId, month: row.month, title: row.title, projectId: row.projectId || undefined, category: row.category, ownerId: row.ownerId, collaboratorIds: row.collaboratorIds, expectedOutcome: row.expectedOutcome, acceptanceCriteria: row.acceptanceCriteria, dueDate: row.dueDate, isTemporary: row.isTemporary, temporaryReason: row.temporaryReason })
           if (!existingWriter) this.store.update<MonthlyPlan>('plans', plan.id, plan.version, { importSource, ...importWorkMetadata(row) })
           plansByRow.set(row.id, plan.id)
           row.result = { collection: 'plans', id: plan.id }
@@ -625,10 +638,10 @@ export class ImportService {
           if (!task) {
             const monthlyPlanId = row.monthlyPlanId || plansByRow.get(row.linkedRowId)
             // Importing a weekly draft is not a live assignment. Its later explicit publication may notify.
-            const created = this.domain.createTask(actor, { title: row.title, monthlyPlanId, ownerId: row.ownerId, description: row.sourceText, dueDate: row.dueDate, isTemporary: row.isTemporary, temporaryReason: row.temporaryReason, ...importWorkMetadata(row) })
+            const created = this.domain.createTask(actor, { remainingEffortDays: row.remainingEffortDays, title: row.title, monthlyPlanId, ownerId: row.ownerId, description: row.sourceText, dueDate: row.dueDate, isTemporary: row.isTemporary, temporaryReason: row.temporaryReason, ...importWorkMetadata(row) })
             task = this.store.update<Task>('tasks', created.id, created.version, { importSource, ...(row.taskCompleted ? { status: 'done', completionNote: row.completionNote } : {}) })
           }
-          const weekly = this.domain.createWeeklyRecord(actor, { taskId: task.id, weekStart: row.weekStart, commitment: row.expectedOutcome, actualOutcome: row.actualOutcome, blocker: row.blocker, nextAction: row.nextAction, status: 'planned', submitted: false })
+          const weekly = this.domain.createWeeklyRecord(actor, { plannedEffortDays: row.plannedEffortDays, actualEffortDays: row.actualEffortDays, taskId: task.id, weekStart: row.weekStart, commitment: row.expectedOutcome, actualOutcome: row.actualOutcome, blocker: row.blocker, nextAction: row.nextAction, status: 'planned', submitted: false })
           this.store.update<WeeklyRecord>('weeklyRecords', weekly.id, weekly.version, { importSource })
           row.result = { collection: 'weeklyRecords', id: weekly.id }
         }

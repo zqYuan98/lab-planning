@@ -76,10 +76,15 @@ test('HTTP template review, job, versioned preview and final archive form a clos
   assert.equal((await f.request('/report-agent', undefined, f.member.id)).status, 403)
 })
 
-test('new weekly schedule suppresses legacy weekly generation while monthly scheduling remains available', async t => {
+test('active weekly template suppresses legacy weekly generation with paused scheduler while monthly stays available', async t => {
   const f = await setup(t), schedule = getReportSchedule(f.store)
   updateReportSchedule(f.store, { version: schedule.version, enabled: true, weeklyDay: 3, weeklyTime: '00:00', monthlyDay: 0, monthlyTime: '00:00' })
-  f.store.insert('settings', { id: 'report-agent-schedule', enabled: true } as never)
+  const asset = await (await f.request('/report-agent/assets', { filename: 'weekly.docx', contentBase64: (await fixture(p('周报'))).toString('base64'), purpose: 'template' })).json() as ReportAssetSummary
+  let template = await (await f.request('/report-agent/templates', { sourceAssetId: asset.id, name: '正式周报', effectiveWeek: '2026-09-21' })).json() as ReportTemplate
+  template = await (await f.request(`/report-agent/templates/${template.id}`, { expectedVersion: template.version, name: template.name, bindings: template.bindings, rules: [], rulesConfirmed: true, exampleAssetIds: [], effectiveWeek: template.effectiveWeek }, f.manager.id, 'PATCH')).json() as ReportTemplate
+  template = await (await f.request(`/report-agent/templates/${template.id}/preview`, { expectedVersion: template.version })).json() as ReportTemplate
+  await f.request(`/report-agent/templates/${template.id}/activate`, { expectedVersion: template.version, layoutVerified: true, layoutNote: '已核对' })
+  f.store.insert('settings', { id: 'report-agent-schedule', enabled: false } as never)
   const ids = runScheduledReports(f.store, new Date('2026-09-30T12:00:00+08:00'))
   assert.equal(ids.length, 1)
   assert.equal(f.store.get<Report>('reports', ids[0])!.type, 'monthly')

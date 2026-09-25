@@ -2,7 +2,8 @@ import { Fragment } from "react";
 import { ChevronRight, Inbox, AlertCircle, CalendarDays } from "lucide-react";
 import type { User } from "../../../shared/types";
 import { addCalendarDays, shanghaiToday } from "../../overview-data";
-import { previewWorkRows, summarizeWorkRows, type WorkRow } from "../../overview-workspace-data";
+import { previewWorkRows, summarizeWorkRows } from "../../overview-workspace-data";
+import type { OverviewDrill, OverviewGroup, OverviewMember, OverviewRow as WorkRow } from '../../../shared/overview-workspace';
 import { PriorityBadge, WorkTypeBadge } from "../TaskSignals";
 import { priorityLabels, workKindLabels } from "../../task-presentation";
 import {
@@ -436,10 +437,14 @@ export function Board({
   rows,
   group,
   onOpen,
+  totals,
+  onFilter,
 }: {
   rows: WorkRow[];
   group: "status" | "owner" | "project";
   onOpen: RowAction;
+  totals?: OverviewGroup[];
+  onFilter?: (filter: OverviewDrill) => void;
 }) {
   const groups = new Map<string, { title: string; rows: WorkRow[] }>();
   if (group === "status")
@@ -459,7 +464,8 @@ export function Board({
     item.rows.push(row);
     groups.set(key, item);
   }
-  if (!rows.length) return <NoRows />;
+  for (const total of totals || []) if (!groups.has(total.id)) groups.set(total.id, { title: group === 'status' ? statusLabels[total.id as WorkRow['status']] : total.name, rows: [] });
+  if (!rows.length && !totals?.length) return <NoRows />;
   return (
     <div className="ow-board" role="region" aria-label="任务看板，可横向滚动" tabIndex={0}>
       {[...groups].map(([key, item]) => (
@@ -471,15 +477,16 @@ export function Board({
         >
           <header className="ow-lane-heading">
             <strong>{item.title}</strong>
-            <span>{item.rows.length}</span>
+            <span>{totals?.find(total => total.id === key)?.summary.total ?? item.rows.length}</span>
           </header>
           {item.rows.length ? (
             item.rows.map((row) => (
               <TaskCard key={row.id} row={row} onOpen={onOpen} />
             ))
           ) : (
-            <p className="ow-muted">暂无任务</p>
+            <p className="ow-muted">{totals?.some(total => total.id === key && total.summary.total) ? '本页暂无此组任务' : '暂无任务'}</p>
           )}
+          {onFilter && totals?.some(total => total.id === key && total.summary.total > item.rows.length) && <button className="ow-title-button" onClick={() => onFilter(group === 'status' ? { status: key as WorkRow['status'] } : group === 'owner' ? { ownerId: key } : { projectId: key })}>查看分组全部任务</button>}
         </section>
       ))}
     </div>
@@ -666,4 +673,28 @@ export function Timeline({
       )}
     </>
   );
+}
+
+/** Counts and previews are computed from the complete filtered scope on the server. */
+export function OverviewMemberTable({ members, columns, onOpen, onDrill }: {
+  members: OverviewMember[]; columns: ColumnId[]; onOpen: RowAction; onDrill: (filter: OverviewDrill) => void;
+}) {
+  if (!members.length) return <NoRows text="当前条件下没有成员" />;
+  const count = (member: OverviewMember, value: number, filter: OverviewDrill = {}) => value ? <button className="ow-count" onClick={() => onDrill({ ownerId: member.id, ...filter })}>{value}</button> : <span className="ow-zero">0</span>;
+  const preview = (member: OverviewMember) => <div className="ow-task-preview">
+    {member.preview.map(row => <button key={row.id} className={`ow-title-button ${workRowClass(row)}`} onClick={() => onOpen(row)}><span className="ow-preview-title">{row.title}</span><span className="ow-preview-tags"><WorkRowSignals row={row}/><StatusPill row={row}/>{row.overdue && <small className="ow-overdue">逾期</small>}</span></button>)}
+    {!member.summary.total && <span className="ow-empty-member">本期暂无任务安排</span>}
+    {member.summary.total > member.preview.length && <button className="ow-title-button ow-preview-more" onClick={() => onDrill({ ownerId: member.id })}>查看全部 {member.summary.total} 项<ChevronRight size={13}/></button>}
+  </div>;
+  return <><div className="ow-table-wrap ow-member-table" tabIndex={0} role="region" aria-label="可横向滚动的全员工作表"><table className="ow-table" aria-label="全员任务与进展"><thead><tr><th scope="col" className="ow-person-cell">成员 <span className="ow-muted">{members.length}</span></th><th scope="col">任务数</th>{columns.map(column => <th key={column} scope="col" className={`ow-col-${column}`}>{columnLabels[column]}</th>)}</tr></thead><tbody>
+    {members.map(member => <tr key={member.id}><th scope="row" className="ow-person-cell"><div className="ow-person"><span className="ow-avatar" data-color={avatarColor(member.id)} aria-hidden="true">{member.name.slice(-2)}</span><div><strong>{member.name}</strong><span className="ow-person-meta">{!member.active ? '已停用 · 历史任务' : member.position || (member.role === 'manager' ? '管理者' : '团队成员')}</span></div></div></th><td>{count(member, member.summary.total)}</td>
+      {columns.map(column => <td key={column} className={`ow-col-${column}`}>{column === 'projects' ? member.projects.join('、') || <span className="ow-muted">暂无项目任务</span> : column === 'doing' ? count(member, member.summary.doing, { status: 'doing' }) : column === 'done' ? count(member, member.summary.done, { status: 'done' }) : column === 'risk' ? count(member, member.summary.risk, { riskOnly: true }) : column === 'drafts' ? <>{count(member, member.summary.drafts, { status: 'draft' })}<span className="ow-muted"> / </span>{count(member, member.summary.unscheduled, { status: 'unscheduled' })}</> : column === 'progress' ? member.summary.total ? <div className="ow-progress" aria-label={`自报完成 ${member.summary.done} / ${member.summary.total}`}><span><i style={{ width: `${member.summary.done / member.summary.total * 100}%` }}/></span><small>{Math.round(member.summary.done / member.summary.total * 100)}%</small></div> : <span className="ow-muted">暂无任务</span> : preview(member)}</td>)}
+    </tr>)}
+  </tbody></table></div><div className="ow-member-cards" aria-label="全员任务卡片">{members.map(member => <article className="ow-member-card" key={member.id}><header><div className="ow-person"><span className="ow-avatar" data-color={avatarColor(member.id)}>{member.name.slice(-2)}</span><div><strong>{member.name}</strong><span className="ow-person-meta">{!member.active ? '已停用 · 历史任务' : member.position || '团队成员'}</span></div></div><button className="ow-member-total" onClick={() => onDrill({ ownerId: member.id })}><strong>{member.summary.total}</strong> 项任务<ChevronRight size={14}/></button></header>{member.summary.total > 0 && <div className="ow-member-card-meta"><span>推进中 {member.summary.doing}</span><span>自报完成 {member.summary.done}</span>{member.summary.risk > 0 && <span className="ow-overdue">{member.summary.risk} 项需关注</span>}</div>}{preview(member)}</article>)}</div></>;
+}
+
+export function OverviewProjectView({ groups, onDrill }: { groups: OverviewGroup[]; onDrill: (filter: OverviewDrill) => void }) {
+  if (!groups.length) return <NoRows />;
+  const values = (group: OverviewGroup): Record<WorkRow['status'], number> => ({ planned: group.summary.planned, doing: group.summary.doing, blocked: group.summary.blocked, done: group.summary.done, not_done: group.summary.notDone, draft: group.summary.drafts, unscheduled: group.summary.unscheduled });
+  return <div className="ow-project-grid">{groups.map(group => <section className="ow-project-card" key={group.id}><header><h3>{group.name}</h3><button className="ow-title-button" onClick={() => onDrill({ projectId: group.id })}>查看 {group.summary.total} 项<ChevronRight size={14}/></button></header><p className="ow-muted">{group.ownerCount} 人参与 · {group.planCount} 个月度目标</p><div className="ow-stacked-track" aria-label="任务状态分布">{statusOrder.map(status => <span key={status} className={`status-${status}`} style={{ flex: values(group)[status] }}/>)}</div><div className="ow-project-stats">{statusOrder.filter(status => values(group)[status]).map(status => <button key={status} onClick={() => onDrill({ projectId: group.id, status })}><span className={`ow-dot status-${status}`}/>{statusLabels[status]}<strong>{values(group)[status]}</strong></button>)}</div><p className="ow-muted">{group.ownerNames.join('、')}</p></section>)}</div>;
 }
