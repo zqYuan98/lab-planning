@@ -11,6 +11,8 @@ import { safeUser } from './auth.ts'
 import { projectPlan, planReference, participates } from './plan-visibility.ts'
 import type { WorkspaceSqlFilter } from './workspace-query-sql.ts'
 import { workOriginProjector } from './work-origin.ts'
+import { isManager, isObserver } from './authorization.ts'
+import { PRIORITIES } from '../shared/entity-rules.ts'
 
 type Query = Record<string, unknown>
 const cursorSecret = randomBytes(32)
@@ -50,23 +52,23 @@ function parseCursor(raw: unknown, binding: string): { createdAt: string; id: st
 export class WorkspaceQueryService {
   constructor(private store: Store) {}
   shell(actor: User): WorkspaceShellData {
-    return this.store.transaction(() => {
+    return this.store.readTransaction(() => {
       actor = liveObjectActor(this.store, actor)
-      const business = actor.role !== 'observer'
-      return { user: safeUser(actor), capabilities: { manage: actor.role === 'manager', business, authorizedWork: actor.role === 'observer' }, accessScopeVersion: readScopeVersion(this.store, actor), operationEpoch: getOperationEpoch(this.store), aiConfigured: business && aiConfigured(this.store), counts: { openTasks: business ? this.store.workspaceCount({ resource: 'tasks', actorId: actor.id, manager: actor.role === 'manager', scope: 'open' }) : 0 } }
+      const business = !isObserver(actor)
+      return { user: safeUser(actor), capabilities: { manage: isManager(actor), business, authorizedWork: isObserver(actor) }, accessScopeVersion: readScopeVersion(this.store, actor), operationEpoch: getOperationEpoch(this.store), aiConfigured: business && aiConfigured(this.store), counts: { openTasks: business ? this.store.workspaceCount({ resource: 'tasks', actorId: actor.id, manager: isManager(actor), scope: 'open' }) : 0 } }
     })
   }
   private context(actor: User) {
     actor = liveObjectActor(this.store, actor)
-    if (actor.role === 'observer') throw new HttpError(403, '观察者仅能读取明确授权的内容', 'READ_ONLY_OBSERVER')
+    if (isObserver(actor)) throw new HttpError(403, '观察者仅能读取明确授权的内容', 'READ_ONLY_OBSERVER')
     const accessScopeVersion = readScopeVersion(this.store, actor), epoch = getOperationEpoch(this.store), revision = this.store.workspaceRevision()
     return { actor, accessScopeVersion, epoch, revision }
   }
   page(actor: User, resource: WorkspaceResource, input: Query): WorkspacePage<WorkspaceItem> {
-    return this.store.transaction(() => {
+    return this.store.readTransaction(() => {
       const context = this.context(actor); actor = context.actor
       keys(input, ['ownerId', 'status', 'month', 'weekStart', 'taskId', 'q', 'includeCancelled', 'scope', 'kind', 'type', 'period', 'role', 'cursor', 'limit'])
-      const filter: WorkspaceSqlFilter = { resource, actorId: actor.id, manager: actor.role === 'manager', ownerId: str(input.ownerId, '负责人'), status: str(input.status, '状态'), taskId: str(input.taskId, '任务'), q: str(input.q, '搜索词', 120), scope: choice(input.scope, ['open', 'all'], '范围'), kind: choice(input.kind, ['user', 'project', 'plan'], '候选类型'), type: choice(input.type, ['weekly', 'monthly'], '报告类型'), period: str(input.period, '周期') }
+      const filter: WorkspaceSqlFilter = { resource, actorId: actor.id, manager: isManager(actor), ownerId: str(input.ownerId, '负责人'), status: str(input.status, '状态'), taskId: str(input.taskId, '任务'), q: str(input.q, '搜索词', 120), scope: choice(input.scope, ['open', 'all'], '范围'), kind: choice(input.kind, ['user', 'project', 'plan'], '候选类型'), type: choice(input.type, ['weekly', 'monthly'], '报告类型'), period: str(input.period, '周期') }
       if (resource === 'candidates' && !filter.kind) throw new HttpError(400, '请指定候选类型')
       filter.role = choice(input.role, ['manager', 'member'], '角色')
       if (input.includeCancelled !== undefined && !['true', 'false'].includes(String(input.includeCancelled))) throw new HttpError(400, '作废筛选无效')
@@ -81,7 +83,7 @@ export class WorkspaceQueryService {
       const total = this.store.workspaceCount(filter), selected = this.store.workspacePage<WorkspaceItem>(filter, limit + 1, after), items = selected.slice(0, limit).map(item => {
         if (resource === 'candidates' && filter.kind === 'user') return safeUser(item as User)
         if (resource === 'plans' || resource === 'candidates' && filter.kind === 'plan') return projectPlan(actor, item as MonthlyPlan, this.store)
-        if (resource === 'history' && actor.role !== 'manager') {
+        if (resource === 'history' && !isManager(actor)) {
           const event = item as AuditEvent
           const project = (value: unknown) => (value as Task | null)?.ownerId === actor.id ? value : null
           return { ...event, before: project(event.before), after: project(event.after), reason: '' }
@@ -94,18 +96,18 @@ export class WorkspaceQueryService {
   }
   report(actor: User, id: string): Report {
     actor = liveObjectActor(this.store, actor)
-    if (actor.role !== 'manager') throw new HttpError(403, '只有管理者可以读取报告档案')
+    if (!isManager(actor)) throw new HttpError(403, '只有管理者可以读取报告档案')
     const report = this.store.get<Report>('reports', id)
     if (!report) throw new HttpError(404, '报告不存在或当前不可访问')
     return report
   }
   register(actor: User, input: Query): RegisterPage {
-    return this.store.transaction(() => {
+    return this.store.readTransaction(() => {
       const context = this.context(actor); actor = context.actor
       keys(input, ['view', 'q', 'priority', 'kind', 'cursor', 'limit'])
       const today = workRegisterToday(), base = buildWorkRegister({ user: actor, tasks: [], weeklyRecords: [] }, { today })
       const view = choice(input.view, Object.keys(workRegisterViewLabels) as WorkRegisterView[], '工作范围') ?? 'active'
-      const filter = { actorId: actor.id, manager: actor.role === 'manager', weekStart: base.weekStart, view, q: str(input.q, '搜索词', 120), priority: choice(input.priority, ['high', 'medium', 'low'], '优先级'), kind: choice(input.kind, ['monthly', 'temporary', 'routine'], '工作类型') }
+      const filter = { actorId: actor.id, manager: isManager(actor), weekStart: base.weekStart, view, q: str(input.q, '搜索词', 120), priority: choice(input.priority, PRIORITIES, '优先级'), kind: choice(input.kind, ['monthly', 'temporary', 'routine'], '工作类型') }
       const limit = pageSize(input), binding = digest(['register', filter, limit, context.accessScopeVersion, context.epoch, context.revision]), cursor = parseCursor(input.cursor, binding)
       const page = this.store.registerPage(filter, limit + 1, cursor), selected = page.rows.slice(0, limit)
       const tasks = selected.filter(row => row.kind === 'task').map(row => { const task = row.entity as Task; return task.workOrigin || task.importSource ? task : workOriginProjector(this.store.initialTaskEvents(task.id))(task, 'task') }), plans = selected.filter(row => row.kind === 'plan').map(row => row.entity as MonthlyPlan)
@@ -114,7 +116,7 @@ export class WorkspaceQueryService {
         if (!task.monthlyPlanId || references.has(task.monthlyPlanId)) continue
         const plan = this.store.get<MonthlyPlan>('plans', task.monthlyPlanId)
         if (plan) {
-          if (participates(plan, actor.id) || actor.role === 'manager') references.set(plan.id, projectPlan(actor, plan, this.store))
+          if (participates(plan, actor.id) || isManager(actor)) references.set(plan.id, projectPlan(actor, plan, this.store))
           else {
             const historical = this.store.registerHistoricalPlan(plan.id, actor.id)
             references.set(plan.id, historical ? { ...projectPlan(actor, historical, this.store), visibility: 'historical' } : planReference(plan))
@@ -123,7 +125,7 @@ export class WorkspaceQueryService {
       }
       const weeklyRecords = tasks.flatMap(task => this.store.registerTaskRecords(task.id, actor.id, base.weekStart))
       const users = [...new Set(tasks.flatMap(task=>task.workOrigin?.actorId?[task.workOrigin.actorId]:[]))].flatMap(id=>{const user=this.store.get<User>('users',id);return user?[safeUser(user)]:[]})
-      const taskProgress = this.store.workspaceTaskProgress(tasks, actor.id, actor.role === 'manager', today)
+      const taskProgress = this.store.workspaceTaskProgress(tasks, actor.id, isManager(actor), today)
       const projected = buildWorkRegister({ user: actor, tasks, weeklyRecords, plans: [...references.values()], users, taskProgress }, { view, today })
       // SQL controls membership/order. The shared projector supplies the established display fields.
       const byId = new Map(projected.rows.map(row => [`${row.kind}:${row.id}`, row]))

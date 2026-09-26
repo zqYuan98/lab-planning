@@ -7,6 +7,7 @@ import { safeUser, type StoredUser } from './auth.ts'
 import { manager, text, number, type Input } from './domain-common.ts'
 import { HttpError, Store } from './store.ts'
 import { assertBusinessActor } from './object-access.ts'
+import { isManager } from './authorization.ts'
 
 const SCOPES = ['imports:read', 'imports:write', 'imports:commit', 'data:read']
 interface IntegrationToken extends Entity { userId: string; credentialVersion: number; name: string; expiresAt: string; revokedAt: string | null; scopes: string[] }
@@ -40,7 +41,7 @@ export function revokeIntegrationToken(store: Store, actor: User, id: string) {
 export function assertIntegrationTokenActive(store: Store, id: string, scope: string) {
   const token = store.get<IntegrationToken>('integrationTokens', id)
   const user = token ? store.get<StoredUser>('users', token.userId) : undefined
-  if (!token || token.revokedAt || Date.parse(token.expiresAt) <= Date.now() || !token.scopes.includes(scope) || !user || !canUseAccount(user) || user.role !== 'manager' || token.credentialVersion !== user.credentialVersion) throw new HttpError(403, '集成令牌权限已变化，已停止后续解析')
+  if (!token || token.revokedAt || Date.parse(token.expiresAt) <= Date.now() || !token.scopes.includes(scope) || !user || !canUseAccount(user) || !isManager(user) || token.credentialVersion !== user.credentialVersion) throw new HttpError(403, '集成令牌权限已变化，已停止后续解析')
 }
 export function requireIntegrationAuth(store: Store): RequestHandler {
   const usage = new Map<string, { count: number; expires: number }>()
@@ -48,7 +49,7 @@ export function requireIntegrationAuth(store: Store): RequestHandler {
     const secret = req.get('authorization')?.match(/^Bearer (lp_[a-f0-9]{64})$/)?.[1]
     const token = secret ? store.get<IntegrationToken>('integrationTokens', createHash('sha256').update(secret).digest('hex')) : undefined
     const user = token ? store.get<StoredUser>('users', token.userId) : undefined
-    if (!token || token.revokedAt || Date.parse(token.expiresAt) <= Date.now() || !user || !canUseAccount(user) || user.role !== 'manager' || token.credentialVersion !== user.credentialVersion) return next(new HttpError(401, '集成令牌无效、已到期或已撤销'))
+    if (!token || token.revokedAt || Date.parse(token.expiresAt) <= Date.now() || !user || !canUseAccount(user) || !isManager(user) || token.credentialVersion !== user.credentialVersion) return next(new HttpError(401, '集成令牌无效、已到期或已撤销'))
     const routePath = req.path.toLowerCase().replace(/\/+$/, '')
     const scope = routePath.startsWith('/data') || routePath === '/context' ? 'data:read' : ['GET', 'HEAD'].includes(req.method) ? 'imports:read' : req.method === 'DELETE' || routePath.endsWith('/commit') || /^\/imports\/history\//.test(routePath) ? 'imports:commit' : 'imports:write'
     if (!token.scopes.includes(scope)) return next(new HttpError(403, `令牌缺少${scope}权限`))

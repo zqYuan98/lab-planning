@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react'
 import type { User } from '../../shared/types'
 import type { WorkspacePage } from '../../shared/workspace-query'
 import { useBusinessResource } from '../use-business-resource'
+import { useDebouncedSearch } from '../use-debounced-search'
 import { Field } from '../ui'
 
 /** Selection is independent from the current search page, so paging never clears recipients. */
 export default function ManagerRecipients({ initialIds, scope }: { initialIds: string[]; scope: string }) {
   const [selected, setSelected] = useState(initialIds), [query, setQuery] = useState(''), [cursor, setCursor] = useState('')
-  const resource = useBusinessResource<WorkspacePage<User>>(`/workspace/candidates?kind=user&role=manager&limit=50&q=${encodeURIComponent(query)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, scope)
+  const querySearch = useDebouncedSearch(query)
+  const resource = useBusinessResource<WorkspacePage<User>>(`/workspace/candidates?kind=user&role=manager&limit=50&q=${encodeURIComponent(querySearch)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, scope)
   useEffect(() => { setSelected(initialIds); setCursor(''); setQuery('') }, [scope])
   return <fieldset><legend>管理通知接收人（不选则使用默认管理者）</legend>
     {selected.map(id => <input key={id} type="hidden" name="managerRecipientIds" value={id} />)}

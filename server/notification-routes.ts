@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import type { Entity, User } from '../shared/types.ts'
 import type { Notification, NotificationDelivery, NotificationPreview, NotificationSettings, NotificationSettingsView } from '../shared/notifications.ts'
-import { requireManager } from './auth.ts'
+import { requireManager } from './authorization.ts'
 import type { DingTalkClient } from './dingtalk.ts'
 import { currentIdentity, enqueueNotification, getNotification, getNotificationSettings, notificationEnvironmentEnabled, notificationId, notificationView, openNotification, updateNotificationSettings } from './notifications.ts'
 import { HttpError, Store } from './store.ts'

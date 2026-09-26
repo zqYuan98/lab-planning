@@ -4,17 +4,14 @@ import type { AuthorizedProjectSummary, AuthorizedTaskView, AuthorizedWorkRespon
 import type { DeliveryDecision, DeliverySeries } from '../shared/deliveries.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
 import { safeUser } from './auth.ts'
+import { businessActor, currentActor, isManager, isMember, isObserver } from './authorization.ts'
 import { HttpError, type Store } from './store.ts'
 
 export function liveObjectActor(store: Store, actor: User): User {
-  const current = store.get<User>('users', actor.id)
-  if (!current || !canUseAccount(current)) throw new HttpError(403, '账号当前不可用', 'ACCESS_REVOKED')
-  return safeUser(current)
+  return currentActor(store, actor)
 }
 export function assertBusinessActor(store: Store, actor: User): User {
-  const current = liveObjectActor(store, actor)
-  if (current.role === 'observer') throw new HttpError(403, '观察者仅能读取明确授权的内容', 'READ_ONLY_OBSERVER')
-  return current
+  return businessActor(store, actor)
 }
 export function activeGrant(store: Store, actor: User, objectType: ObjectType, objectId: string, capability: ObjectCapability = 'read', now = new Date()): ObjectGrant | undefined {
   const current = store.get<User>('users', actor.id)
@@ -27,7 +24,7 @@ export function readScopeVersion(store: Store, actor: User): string {
   const grants = store.list<ObjectGrant>('objectGrants').filter(grant => grant.subjectId === current.id).map(grant => [grant.id, grant.version, !grant.revokedAt && (!grant.expiresAt || Date.parse(grant.expiresAt) > now)]).sort((a, b) => String(a[0]).localeCompare(String(b[0])))
   // Start with owned goals. Unary + on the TEXT id removes affinity so SQLite can seek
   // the JSON-expression task index; identifiers themselves remain unchanged strings.
-  const derived = current.role === 'member' ? store.selectRows(`SELECT
+  const derived = isMember(current) ? store.selectRows(`SELECT
     (SELECT json_group_array(id) FROM (SELECT id FROM entities WHERE collection='plans' AND json_extract(data,'$.ownerId')=? AND json_extract(data,'$.status')!='merged' AND json_extract(data,'$.visibility') IS NULL ORDER BY id)) AS plans,
     (SELECT json_group_array(json_array(id,goal,owner,memberAvailable)) FROM (
       SELECT t.id AS id,p.id AS goal,json_extract(t.data,'$.ownerId') AS owner,
@@ -67,8 +64,8 @@ export function reportSourcesAccessible(store: Store, actor: User, report: Scope
 export function canReadObject(store: Store, actor: User, type: ObjectType, id: string, capability: ObjectCapability = 'read'): boolean {
   const current = store.get<User>('users', actor.id), object = store.get<Entity & { ownerId?: string }>(collections[type], id)
   if (!current || !canUseAccount(current) || !object) return false
-  if (current.role === 'manager') return true
-  if (current.role === 'member' && type === 'task') return object.ownerId === current.id
+  if (isManager(current)) return true
+  if (isMember(current) && type === 'task') return object.ownerId === current.id
   const grant = activeGrant(store, current, type, id, capability)
   if (!grant) return false
   return type !== 'scoped_report' || reportSourcesAccessible(store, current, object as ScopedReport, capability)
@@ -76,7 +73,7 @@ export function canReadObject(store: Store, actor: User, type: ObjectType, id: s
 export function canPerformAction(store: Store, actor: User, action: 'read' | 'read_evidence' | 'export_summary' | 'write', type: ObjectType, id: string): boolean {
   const current = store.get<User>('users', actor.id)
   if (action !== 'write') return canReadObject(store, actor, type, id, action)
-  return !!current && canUseAccount(current) && current.role !== 'observer' && canReadObject(store, current, type, id)
+  return !!current && canUseAccount(current) && !isObserver(current) && canReadObject(store, current, type, id)
 }
 export function historicalBoundary(store: Store, type: ObjectType, id: string): string[] {
   if (type !== 'task') return []
@@ -93,7 +90,7 @@ export class ObjectAccessService {
     actor = liveObjectActor(this.store, actor)
     if (!canReadObject(this.store, actor, 'task', id)) throw new HttpError(404, '授权事项不存在或权限已失效', 'ACCESS_REVOKED')
     const task = this.store.get<Task>('tasks', id)!, grant = activeGrant(this.store, actor, 'task', id)
-    const privileged = actor.role !== 'observer', evidence = privileged || !!activeGrant(this.store, actor, 'task', id, 'read_evidence')
+    const privileged = !isObserver(actor), evidence = privileged || !!activeGrant(this.store, actor, 'task', id, 'read_evidence')
     const safeTask: Task = { id: task.id, version: task.version, createdAt: task.createdAt, updatedAt: task.updatedAt, title: task.title, monthlyPlanId: task.monthlyPlanId, ownerId: task.ownerId, description: task.description, dueDate: task.dueDate, status: task.status, isTemporary: task.isTemporary, temporaryReason: '', currentProgress: task.currentProgress ?? '', requestedOutcome: task.requestedOutcome ?? '', nextAction: task.nextAction ?? '', ...(task.priority ? { priority: task.priority } : {}), ...(task.cancellation ? { cancellation: { ...task.cancellation, reason: '' } } : {}), ...(evidence && task.evidenceUrl ? { evidenceUrl: task.evidenceUrl } : {}) }
     const weeklyRecords = this.store.list<WeeklyRecord>('weeklyRecords').filter(row => row.taskId === id && row.submitted && !row.deletion && (privileged || !!grant && historyVisible(grant, row, 'weeklyRecord'))).map(row => ({ id: row.id, version: row.version, createdAt: row.createdAt, updatedAt: row.updatedAt, taskId: row.taskId, monthlyPlanId: row.monthlyPlanId, ownerId: row.ownerId, weekStart: row.weekStart, commitment: row.commitment, actualOutcome: row.actualOutcome, evidenceUrl: evidence ? row.evidenceUrl : '', blocker: row.blocker, nextAction: row.nextAction, status: row.status, submitted: true }))
     const history = this.store.entityEvents('task', id).filter(row => privileged || !!grant && historyVisible(grant, row)).map(row => ({ id: row.id, action: row.action, occurredAt: row.createdAt, actorName: this.store.get<User>('users', row.actorId)?.name ?? '成员' }))

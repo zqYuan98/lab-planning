@@ -14,17 +14,17 @@ interface MutationContext {
   actor: User; mutationId: string; now: Date; input: ProgressContent; source: ProgressEvent['source'];
   events: AuditEvent[]; weeklyAssignment?: boolean; result: ProgressEvent | null
 }
-const contexts = new WeakMap<Store, MutationContext>()
+const contexts = storeScope<MutationContext>()
 export function withCollaborationMutation<T>(store: Store, context: Omit<MutationContext, 'events' | 'result'>, operation: () => T): { value: T; event: ProgressEvent | null } {
   const current = contexts.get(store)
   if (current) return { value: operation(), event: current.result }
   const active: MutationContext = { ...context, events: [], result: null }
-  contexts.set(store, active)
-  try {
+  // Audits raised while the batch is processed still join this mutation, as before.
+  return contexts.run(store, active, () => {
     const value = operation()
     active.result = processAudits(store, active)
     return { value, event: active.result }
-  } finally { contexts.delete(store) }
+  })
 }
 export function currentCollaborationMutation(store: Store): ProgressContent | undefined { return contexts.get(store)?.input }
 export function collaborationWorkMutation<T>(store: Store, actor: User, input: Record<string, unknown>, source: ProgressEvent['source'], operation: () => T, weeklyAssignment = false): T {
@@ -58,7 +58,7 @@ export function validateCollaborationWorkUpdate(store: Store, actor: User, befor
   const context = contexts.get(store)?.input ?? {}
   if (type === 'task') {
     const task = before as Task
-    if (input.dueDate !== undefined && input.dueDate !== task.dueDate && actor.id === task.ownerId && actor.role !== 'manager' && task.workOrigin?.kind === 'assigned' && store.get<TaskTracking>('taskTrackings', task.id) && readCollaborationSettings(store).deadlineApprovalEnabled) throw new HttpError(409, '该下达任务改期需要先提出延期申请')
+    if (input.dueDate !== undefined && input.dueDate !== task.dueDate && actor.id === task.ownerId && !isManager(actor) && task.workOrigin?.kind === 'assigned' && store.get<TaskTracking>('taskTrackings', task.id) && readCollaborationSettings(store).deadlineApprovalEnabled) throw new HttpError(409, '该下达任务改期需要先提出延期申请')
   }
   const prospective = { ...before, ...input }
   const changes = progressChanges({ entityType: type, before, after: prospective } as AuditEvent)
@@ -84,7 +84,7 @@ function lifecycle(store: Store, context: MutationContext, event: AuditEvent) {
     const published = event.entityType === 'task' || isEffectiveWeeklyRecord(work as WeeklyRecord)
     const firstPublication = !event.before || event.entityType === 'weeklyRecord' && !isEffectiveWeeklyRecord(event.before as WeeklyRecord)
     const freshAssignment = !task.importSource || task.importSource.mode === 'draft' && event.entityType === 'weeklyRecord' && firstPublication
-    if (!tracking && published && firstPublication && actor.role === 'manager' && actor.id !== task.ownerId && freshAssignment && work?.workOrigin?.kind === 'assigned' && taskTrackingEligible(store, task, now)) {
+    if (!tracking && published && firstPublication && isManager(actor) && actor.id !== task.ownerId && freshAssignment && work?.workOrigin?.kind === 'assigned' && taskTrackingEligible(store, task, now)) {
       const inBatch = context.weeklyAssignment && event.entityType === 'task'
       if (!inBatch) tracking = enrollTaskTracking(store, task, actor, now, 'assignment', event.entityType === 'weeklyRecord' ? { activeFrom: weeklyActiveFrom(work as WeeklyRecord, now) } : {})
     }
@@ -114,6 +114,8 @@ function lifecycle(store: Store, context: MutationContext, event: AuditEvent) {
   }
 }
 import { effectiveManagerIds as importManagerIds } from './collaboration-policy.ts'
+import { isManager } from './authorization.ts'
+import { storeScope } from './operation-scope.ts'
 
 function updateBlocker(store: Store, context: MutationContext, event: AuditEvent, task: Task) {
   if (!event.after) return

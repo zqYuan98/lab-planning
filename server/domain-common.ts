@@ -3,9 +3,11 @@ import { Store, HttpError } from './store.ts'
 import { visiblePlan } from './plan-visibility.ts'
 export { participates } from './plan-visibility.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
+import { isObserver, requireManagerRole, requireOwnerOrManager } from './authorization.ts'
+import { LIMITS } from '../shared/entity-rules.ts'
 
 export type Input = Record<string, unknown>
-export function text(value: unknown, label: string, required = true, max = 12000): string {
+export function text(value: unknown, label: string, required = true, max: number = LIMITS.text): string {
   if (value === undefined || value === null) {
     if (!required) return ''
     throw new HttpError(400, `请填写${label}`)
@@ -46,11 +48,10 @@ export function version(input: Input): number {
   return Number(input.version)
 }
 export function manager(actor: User) {
-  if (actor.role !== 'manager') throw new HttpError(403, '此操作需要管理者权限')
+  requireManagerRole(actor)
 }
 export function own(actor: User, ownerId: string) {
-  if (actor.role === 'observer') throw new HttpError(403, '观察者不能修改业务记录', 'READ_ONLY_OBSERVER')
-  if (actor.role !== 'manager' && actor.id !== ownerId) throw new HttpError(403, '不能修改其他成员的记录')
+  requireOwnerOrManager(actor, ownerId)
 }
 
 export class DomainBase {
@@ -67,7 +68,7 @@ export class DomainBase {
   }
   protected activeUser(value: unknown): User {
     const user = this.need<User>('users', text(value, '负责人'))
-    if (!canUseAccount(user) || user.role === 'observer') throw new HttpError(400, '不能分配给观察者、已停用或未通过注册审核的成员')
+    if (!canUseAccount(user) || isObserver(user)) throw new HttpError(400, '不能分配给观察者、已停用或未通过注册审核的成员')
     return user
   }
   protected activeProject(id: string): Project {

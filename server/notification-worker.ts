@@ -12,6 +12,7 @@ import { notificationPresentation } from './notification-presentation.ts'
 import { beginRuntimeRun } from './runtime-health.ts'
 import { collaborationNotificationCurrent, projectCollaborationContent } from './collaboration-content.ts'
 import { routeNativeNotification } from './native-service.ts'
+import { isObserver } from './authorization.ts'
 
 const RETRY_MINUTES = [1, 5, 15, 60]
 const running = new WeakSet<Store>()
@@ -24,7 +25,7 @@ function update(store: Store, id: string, patch: Partial<NotificationDelivery>, 
 }
 export function currentNotificationMessage(store: Store, actor: User, row: Notification, now: Date, readOnly = false): NotificationView | undefined {
   const currentActor = store.get<User>('users', actor.id)
-  if (!currentActor || !canUseAccount(currentActor) || currentActor.role === 'observer') return undefined
+  if (!currentActor || !canUseAccount(currentActor) || isObserver(currentActor)) return undefined
   actor = currentActor
   if (row.kind.startsWith('feedback_') || row.targets.some(target => target.type === 'feedback')) return undefined
   const view = notificationView(store, actor, row, now)

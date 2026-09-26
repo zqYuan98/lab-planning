@@ -15,6 +15,8 @@ import { weeklyPlanApprovalMetadata } from './weekly-plan-review.ts'
 import { cancelTaskCollaboration, endTaskRequests } from './collaboration-tracking.ts'
 import type { BlockerEpisode } from '../shared/collaboration.ts'
 import { validateWorkChange } from './work-validation.ts'
+import { isManager, isMember } from './authorization.ts'
+import { LIMITS, PRIORITIES, TASK_STATUSES, WEEKLY_STATUSES, WORK_SOURCES } from '../shared/entity-rules.ts'
 
 function progressInput(store: Store, input: Input, type: 'task' | 'weeklyRecord'): Input {
   const context = currentCollaborationMutation(store)
@@ -31,9 +33,9 @@ function checkedEffort(value: unknown): number | null {
 function taskMetadata(input: Input): Partial<Task> {
   const fields: Partial<Task> = {}
   if (input.remainingEffortDays !== undefined) fields.remainingEffortDays = checkedEffort(input.remainingEffortDays)
-  if (input.workSource !== undefined) fields.workSource = choice(input.workSource, ['leader', 'self', 'coordination'], '工作来源')
-  if (input.priority !== undefined) fields.priority = choice(input.priority, ['high', 'medium', 'low'], '优先级')
-  if (input.assignedBy !== undefined) fields.assignedBy = text(input.assignedBy, '交办人', false, 100)
+  if (input.workSource !== undefined) fields.workSource = choice(input.workSource, WORK_SOURCES, '工作来源')
+  if (input.priority !== undefined) fields.priority = choice(input.priority, PRIORITIES, '优先级')
+  if (input.assignedBy !== undefined) fields.assignedBy = text(input.assignedBy, '交办人', false, LIMITS.assignedBy)
   if (input.assignedOn !== undefined) fields.assignedOn = input.assignedOn === '' ? '' : date(input.assignedOn, '交办日期')
   for (const [field, label] of [['requestedOutcome', '预期交付'], ['estimatedEffort', '预计剩余投入'], ['currentProgress', '当前进展'], ['decisionNeeded', '需要决策']] as const) {
     if (input[field] !== undefined) fields[field] = text(input[field], label, false)
@@ -143,7 +145,7 @@ export class WorkService extends DomainBase {
       if (input.assignedBy === undefined && (liveAssignment || plan?.assignedBy !== undefined)) metadata.assignedBy = liveAssignment ? actor.name : plan!.assignedBy
       if (input.assignedOn === undefined && plan?.assignedOn !== undefined) metadata.assignedOn = plan.assignedOn
       if (input.requestedOutcome === undefined && plan?.expectedOutcome) metadata.requestedOutcome = plan.expectedOutcome
-      const task = this.store.insert<Task>('tasks', { ...metadata, workOrigin, title: text(input.title, '任务标题', true, 300), monthlyPlanId, ownerId, description: text(input.description, '任务说明', false), dueDate: input.dueDate === '' ? '' : date(input.dueDate, '任务截止日期'), status: 'todo', isTemporary, temporaryReason })
+      const task = this.store.insert<Task>('tasks', { ...metadata, workOrigin, title: text(input.title, '任务标题', true, LIMITS.title), monthlyPlanId, ownerId, description: text(input.description, '任务说明', false), dueDate: input.dueDate === '' ? '' : date(input.dueDate, '任务截止日期'), status: 'todo', isTemporary, temporaryReason })
       this.audit(actor, 'task', task.id, 'create', null, task, temporaryReason)
       return task
     })
@@ -160,10 +162,10 @@ export class WorkService extends DomainBase {
         if (input[field] !== undefined && input[field] !== before[field]) throw new HttpError(400, '任务归属和临时工作标记不能直接修改，请由管理者调整关联')
       }
       const patch: Partial<Task> = taskMetadata(input)
-      if (input.title !== undefined) patch.title = text(input.title, '任务标题', true, 300)
+      if (input.title !== undefined) patch.title = text(input.title, '任务标题', true, LIMITS.title)
       if (input.description !== undefined) patch.description = text(input.description, '任务说明', false, before.importSource ? 20000 : 12000)
       if (input.dueDate !== undefined) patch.dueDate = input.dueDate === '' ? '' : date(input.dueDate, '任务截止日期')
-      if (input.status !== undefined) patch.status = choice(input.status, ['todo', 'doing', 'blocked', 'done'], '任务状态')
+      if (input.status !== undefined) patch.status = choice(input.status, TASK_STATUSES, '任务状态')
       if (!isSilentImport(this.store) && (['dueDate', 'description', 'requestedOutcome', 'title'] as const).some(field => patch[field] !== undefined && patch[field] !== before[field])) {
         text(input.reason || input.proxyReason, '承诺调整原因')
       }
@@ -234,7 +236,7 @@ export class WorkService extends DomainBase {
       evidenceUrl: text(input.evidenceUrl ?? before?.evidenceUrl, '证据链接', false, 2000),
       blocker: text(input.blocker ?? before?.blocker, '阻塞或未完成原因', false),
       nextAction: text(input.nextAction ?? before?.nextAction, '下一步', false),
-      status: choice(input.status ?? before?.status ?? 'planned', ['planned', 'doing', 'blocked', 'done', 'not_done'], '周记录状态'),
+      status: choice(input.status ?? before?.status ?? 'planned', WEEKLY_STATUSES, '周记录状态'),
       submitted: bool(input.submitted ?? before?.submitted ?? false, '提交状态'),
       ...(input.blockerImpact !== undefined || before?.blockerImpact !== undefined ? { blockerImpact: text(input.blockerImpact ?? before?.blockerImpact, '阻塞影响', false) } : {}),
       ...(input.supportNeeded !== undefined || before?.supportNeeded !== undefined ? { supportNeeded: text(input.supportNeeded ?? before?.supportNeeded, '需要支持', false) } : {}),
@@ -304,11 +306,11 @@ export class WorkService extends DomainBase {
       if (planApproval) patch.planApproval = planApproval
       const planChanged = weeklyPlanFingerprint(before) !== weeklyPlanFingerprint({ ...before, ...patch })
       // An owner's revision of an administrator's assignment is a new proposal, not another administrator decision.
-      if (actor.role === 'member' && planChanged) {
+      if (isMember(actor) && planChanged) {
         const revisedApproval = weeklyPlanApprovalMetadata(this.store, before.ownerId, before.weekStart, { kind: 'self', actorId: actor.id, reason: '' })
         if (revisedApproval) patch.planApproval ??= revisedApproval
       }
-      if (!options.formalSubmission && actor.role === 'manager' && actor.id !== before.ownerId && before.workOrigin?.kind === 'assigned'
+      if (!options.formalSubmission && isManager(actor) && actor.id !== before.ownerId && before.workOrigin?.kind === 'assigned'
         && patch.submitted && (!before.submitted || planChanged)) patch.planApproval = undefined
       const completeTask = input.completeTask === undefined ? false : bool(input.completeTask, '同时完成整个任务')
       let completionTask: Task | undefined

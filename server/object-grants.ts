@@ -3,6 +3,7 @@ import type { AuditEvent, Entity, Task, User } from '../shared/types.ts'
 import type { ObjectCapability, ObjectGrant, ObjectType, ScopedReport, ScopeFact } from '../shared/object-access.ts'
 import { HttpError, type Store } from './store.ts'
 import { activeGrant, canReadObject, factVisible, historicalBoundary, liveObjectActor, ObjectAccessService } from './object-access.ts'
+import { isManager, isObserver } from './authorization.ts'
 
 type Input = Record<string, unknown>
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
@@ -12,7 +13,7 @@ const conflict = () => new HttpError(409, '授权或对象版本已变化，请�
 interface Receipt extends Entity { actorId: string; requestId: string; command: string; payloadHash: string; resultId: string }
 export class ObjectGrantService {
   constructor(private store: Store, private clock: () => Date = () => new Date()) {}
-  private manager(actor: User) { actor = liveObjectActor(this.store, actor); if (actor.role !== 'manager') throw new HttpError(403, '此操作需要有效管理者权限'); return actor }
+  private manager(actor: User) { actor = liveObjectActor(this.store, actor); if (!isManager(actor)) throw new HttpError(403, '此操作需要有效管理者权限'); return actor }
   private audit(actor: User, type: string, id: string, action: string, before: unknown, after: unknown, reason: string) { this.store.insert<AuditEvent>('events', { entityType: type, entityId: id, actorId: actor.id, action, reason, before, after }) }
   private command<T>(actor: User, command: string, input: Input, collection: string, operation: (actor: User) => T & Entity): T {
     const requestId = required(input.requestId, '提交标识', 100)
@@ -38,7 +39,7 @@ export class ObjectGrantService {
       const subjectId = required(input.subjectId, '接收人', 200), subject = this.store.get<User>('users', subjectId)
       if (!subject) throw new HttpError(400, '接收人不存在')
       liveObjectActor(this.store, subject)
-      if (subject.role !== 'observer') throw new HttpError(400, '对象授权接收人须为观察者')
+      if (!isObserver(subject)) throw new HttpError(400, '对象授权接收人须为观察者')
       const type = input.objectType as ObjectType
       if (!['task', 'project_summary', 'scoped_report'].includes(type)) throw new HttpError(400, '授权对象类型无效')
       const objectId = required(input.objectId, '授权对象', 200), collection = { task: 'tasks', project_summary: 'projects', scoped_report: 'scopedReports' }[type], object = this.store.get<Entity & { subjectId?: string }>(collection, objectId)
@@ -78,7 +79,7 @@ export class ObjectGrantService {
   createReport(actor: User, input: Input): ScopedReport {
     return this.command(actor, 'scopedReport', input, 'scopedReports', current => {
       const subjectId = required(input.subjectId, '接收人', 200), subject = this.store.get<User>('users', subjectId)
-      if (!subject || liveObjectActor(this.store, subject).role !== 'observer') throw new HttpError(400, '摘要接收人须为有效观察者')
+      if (!subject || !isObserver(liveObjectActor(this.store, subject))) throw new HttpError(400, '摘要接收人须为有效观察者')
       if (!Array.isArray(input.taskIds) || !input.taskIds.length || input.taskIds.length > 100 || input.taskIds.some(id => typeof id !== 'string') || new Set(input.taskIds).size !== input.taskIds.length) throw new HttpError(400, '请选择 1 至 100 个不重复的授权任务')
       if (input.includeHistory !== undefined && typeof input.includeHistory !== 'boolean') throw new HttpError(400, '历史选项无效')
       const title = required(input.title, '摘要标题', 300), manifest: ScopeFact[] = [], evidenceRefs: ScopedReport['evidenceRefs'] = [], paragraphs: string[] = []

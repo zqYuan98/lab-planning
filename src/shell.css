@@ -453,6 +453,14 @@
 .shell-light.app-loading h2 {
   color: var(--text-body);
 }
+/* A chunk that arrives within 300ms should not flash a loading message. */
+.page-resource-loading {
+  animation: page-resource-loading-reveal 0s 300ms both;
+}
+@keyframes page-resource-loading-reveal {
+  from { visibility: hidden; }
+  to { visibility: visible; }
+}
 .shell-light.auth-page {
   display: grid;
   grid-template-columns: 1.05fr 1fr;

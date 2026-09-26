@@ -1,10 +1,9 @@
-import { AsyncLocalStorage } from 'node:async_hooks'
 import type { Store } from './store.ts'
+import { storeScope } from './operation-scope.ts'
 
-const context = new AsyncLocalStorage<ReadonlySet<Store>>()
+const silent = storeScope<true>()
 /** Import authority is server-created and cannot be supplied by a business HTTP payload. */
 export function withSilentImport<T>(store: Store, operation: () => T): T {
-  const stores = new Set(context.getStore()); stores.add(store)
-  return context.run(stores, operation)
+  return silent.run(store, true, operation)
 }
-export const isSilentImport = (store: Store) => context.getStore()?.has(store) === true
+export const isSilentImport = (store: Store) => silent.has(store)

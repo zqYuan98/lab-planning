@@ -9,6 +9,7 @@ import { isEffectiveWeeklyRecord } from '../shared/weekly-record-state.ts'
 import { readCollaborationSettings, effectiveManagerIds, taskTrackingEligible, liveCollaborationActor } from './collaboration-policy.ts'
 import { adjacentWorkday, dayAt, shanghaiDate, shanghaiTime, shiftDay, weekOf, workdayCount, workingDay } from './collaboration-calendar.ts'
 import { notificationId } from './notifications.ts'
+import { isManager } from './authorization.ts'
 
 /** Read-only: neither dry runs nor dashboard reads enroll tasks or consume quota. */
 export function evaluateWorkRisks(store: Store, now = new Date(), actor?: User): WorkRisk[] {
@@ -16,8 +17,8 @@ export function evaluateWorkRisks(store: Store, now = new Date(), actor?: User):
   if (!settings.enabled || !Number.isFinite(now.getTime())) return []
   const day = shanghaiDate(now), overrides = settings.calendarOverrides, results: WorkRisk[] = []
   // Closed generations and other owners cannot affect this read. Keep scheduler callers' original scope.
-  const ownerScope = actor && actor.role !== 'manager' ? ` AND json_extract(data,'$.ownerId')=?` : ''
-  const ownerValues = actor && actor.role !== 'manager' ? [actor.id] : []
+  const ownerScope = actor && !isManager(actor) ? ` AND json_extract(data,'$.ownerId')=?` : ''
+  const ownerValues = actor && !isManager(actor) ? [actor.id] : []
   const trackings = actor ? store.selectJson<TaskTracking>(`SELECT data FROM entities WHERE collection='taskTrackings' AND json_extract(data,'$.state') IN ('active','paused')${ownerScope} ORDER BY rowid`, ownerValues) : store.list<TaskTracking>('taskTrackings')
   const requests = actor ? null : store.list<FollowupRequest>('followupRequests'), episodes = actor ? null : store.list<BlockerEpisode>('blockerEpisodes')
   for (const tracking of trackings) {
@@ -41,11 +42,11 @@ export function evaluateWorkRisks(store: Store, now = new Date(), actor?: User):
     }
     const baseline = [tracking.enrolledAt, tracking.activeFrom, tracking.reminderBaselineAt, tracking.lastMeaningfulOwnerProgressAt ?? ''].sort().at(-1)!
     if (workdayCount(shanghaiDate(new Date(baseline)), day, overrides) >= settings.staleWorkdays) add('stale', baseline, '', `本人最近有效进展：${tracking.lastMeaningfulOwnerProgressAt ?? '纳入后尚无'}；已满 ${settings.staleWorkdays} 个完整工作日`)
-    const currentRequests = requests ?? store.selectJson<FollowupRequest>(`SELECT data FROM entities WHERE collection='followupRequests' AND json_extract(data,'$.taskId')=? AND json_extract(data,'$.status')='open' AND json_extract(data,'$.ownerId')=? AND json_extract(data,'$.generation')=?`, [task.id, task.ownerId, tracking.generation])
+    const currentRequests = requests ?? store.selectJson<FollowupRequest>(`SELECT data FROM entities INDEXED BY followup_open_task_owner WHERE collection='followupRequests' AND json_extract(data,'$.taskId')=? AND json_extract(data,'$.status')='open' AND json_extract(data,'$.ownerId')=? AND json_extract(data,'$.generation')=?`, [task.id, task.ownerId, tracking.generation])
     for (const request of currentRequests.filter(row => row.taskId === task.id && row.status === 'open' && row.ownerId === task.ownerId && row.generation === tracking.generation)) {
       if (request.dueAt < now.toISOString()) add('followup_overdue', request.id, request.dueAt, `回应期限：${request.dueAt}；${request.requirement}`)
     }
-    const currentEpisodes = episodes ?? store.selectJson<BlockerEpisode>(`SELECT data FROM entities WHERE collection='blockerEpisodes' AND json_extract(data,'$.parentTaskId')=? AND COALESCE(json_extract(data,'$.resolvedAt'),'')='' AND COALESCE(json_extract(data,'$.managementClosedAt'),'')='' AND json_extract(data,'$.ownerId')=? AND json_extract(data,'$.generation')=?`, [task.id, task.ownerId, tracking.generation])
+    const currentEpisodes = episodes ?? store.selectJson<BlockerEpisode>(`SELECT data FROM entities INDEXED BY blocker_parent_owner WHERE collection='blockerEpisodes' AND json_extract(data,'$.parentTaskId')=? AND COALESCE(json_extract(data,'$.resolvedAt'),'')='' AND COALESCE(json_extract(data,'$.managementClosedAt'),'')='' AND json_extract(data,'$.ownerId')=? AND json_extract(data,'$.generation')=?`, [task.id, task.ownerId, tracking.generation])
     for (const episode of currentEpisodes.filter(row => row.parentTaskId === task.id && !row.resolvedAt && !row.managementClosedAt && row.ownerId === task.ownerId && row.generation === tracking.generation)) {
       if (episode.reviewAt && episode.reviewAt > now.toISOString()) continue
       if (episode.sourceType === 'weeklyRecord') {
@@ -62,7 +63,7 @@ export function evaluateWorkRisks(store: Store, now = new Date(), actor?: User):
 
 export function risksForActor(store: Store, actor: User, now = new Date()) {
   actor = liveCollaborationActor(store, actor)
-  return evaluateWorkRisks(store, now, actor).filter(risk => actor.role === 'manager' || risk.ownerId === actor.id && !risk.managerOnly)
+  return evaluateWorkRisks(store, now, actor).filter(risk => isManager(actor) || risk.ownerId === actor.id && !risk.managerOnly)
 }
 
 /** Current-day slots only. Missed historical slots never become a replay backlog. */

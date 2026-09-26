@@ -10,6 +10,7 @@ import { isActiveTask } from '../shared/task-state.ts'
 import { readCollaborationSettings, taskTrackingEligible } from './collaboration-policy.ts'
 import { evaluateWorkRisks } from './collaboration-rules.ts'
 import { planHasMergedSource, projectPlan } from './plan-visibility.ts'
+import { isManager, isObserver } from './authorization.ts'
 
 const clean = (value: unknown) => typeof value === 'string' ? value.replace(/https?:\/\/[^\s<>]+/gi, '［链接请进入事项查看］').replace(/<[^>]*>/g, '').replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '').slice(0, 6000) : ''
 const localTime = (value: string) => Number.isFinite(Date.parse(value)) ? `${new Date(Date.parse(value) + 8 * 3600000).toISOString().slice(0, 16).replace('T', ' ')}（北京时间）` : value
@@ -27,29 +28,29 @@ function historicalLines(item: DigestItem) {
 
 export function collaborationTargetAccessible(store: Store, actor: User, target: NotificationTarget): boolean {
   const current = store.get<User>('users', actor.id)
-  if (!current || !canUseAccount(current) || current.role === 'observer') return false
+  if (!current || !canUseAccount(current) || isObserver(current)) return false
   actor = current
   if (target.type === 'digest') return store.get<NotificationDigest>('notificationDigests', target.id)?.recipientId === actor.id
   if (target.type === 'followup' || target.type === 'deadlineRequest') {
     const row = store.get<FollowupRequest | DeadlineChangeRequest>(target.type === 'followup' ? 'followupRequests' : 'deadlineChangeRequests', target.id)
     const task = row ? store.get<Task>('tasks', row.taskId) : undefined
-    return !!row && !!task && isActiveTask(task) && (actor.role === 'manager' || row.ownerId === actor.id && task.ownerId === actor.id)
+    return !!row && !!task && isActiveTask(task) && (isManager(actor) || row.ownerId === actor.id && task.ownerId === actor.id)
   }
-  if (target.type === 'report') return actor.role === 'manager' && !!store.get<Report>('reports', target.id)
-  if (target.type === 'summary') return actor.role === 'manager'
-  if (target.type === 'plan') { const plan = store.get<MonthlyPlan>('plans', target.id); return !!plan && plan.status !== 'merged' && (actor.role === 'manager' || plan.ownerId === actor.id || plan.collaboratorIds.includes(actor.id)) }
+  if (target.type === 'report') return isManager(actor) && !!store.get<Report>('reports', target.id)
+  if (target.type === 'summary') return isManager(actor)
+  if (target.type === 'plan') { const plan = store.get<MonthlyPlan>('plans', target.id); return !!plan && plan.status !== 'merged' && (isManager(actor) || plan.ownerId === actor.id || plan.collaboratorIds.includes(actor.id)) }
   const collection = target.type === 'task' ? 'tasks' : target.type === 'weeklyRecord' ? 'weeklyRecords' : 'weeklyDuties'
   const row = store.get<Task | WeeklyRecord | WeeklyDuty>(collection, target.id)
   const task = target.type === 'task' ? row as Task | undefined : target.type === 'weeklyRecord' && row ? store.get<Task>('tasks', (row as WeeklyRecord).taskId) : undefined
   if (task && !isActiveTask(task)) return false
-  return !!row && (target.type !== 'weeklyRecord' || isActiveWeeklyRecord(row as WeeklyRecord)) && (actor.role === 'manager' || row.ownerId === actor.id)
+  return !!row && (target.type !== 'weeklyRecord' || isActiveWeeklyRecord(row as WeeklyRecord)) && (isManager(actor) || row.ownerId === actor.id)
 }
 export function visibleDigestItems(store: Store, actor: User, digest: NotificationDigest): DigestItem[] {
   if (digest.recipientId !== actor.id) return []
   return digest.itemIds.flatMap(id => {
     const item = store.get<DigestItem>('digestItems', id)
-    if (!item || item.recipientId !== actor.id || actor.role !== 'manager' && item.ownerId !== actor.id || !collaborationTargetAccessible(store, actor, item.target)) return []
-    if (item.target.type === 'plan' && actor.role !== 'manager') {
+    if (!item || item.recipientId !== actor.id || !isManager(actor) && item.ownerId !== actor.id || !collaborationTargetAccessible(store, actor, item.target)) return []
+    if (item.target.type === 'plan' && !isManager(actor)) {
       const plan = store.get<MonthlyPlan>('plans', item.target.id)!
       if (planHasMergedSource(plan, store)) return [{ ...item, title: clean(plan.title), lines: ['团队合并目标内容以当前有权访问的成果要求为准。', ...currentPlanLines(plan)] }]
     }
@@ -111,7 +112,7 @@ export function projectCollaborationContent(store: Store, actor: User, row: Noti
       const digest = store.get<NotificationDigest>('notificationDigests', target.id)
       if (!digest) continue
       content.intro = `统计周期：${digest.periodStart}—${digest.periodEnd}；生成于 ${localTime(digest.generatedAt)}。`
-      if (actor.role === 'manager' && digest.statistics?.length) content.intro += `\n周期统计（含本期已回告事实）：${digest.statistics.map(item => `${item.label} ${item.value}`).join('；')}。`
+      if (isManager(actor) && digest.statistics?.length) content.intro += `\n周期统计（含本期已回告事实）：${digest.statistics.map(item => `${item.label} ${item.value}`).join('；')}。`
       for (const item of visibleDigestItems(store, actor, digest)) {
         if (sendAt && item.actionable && !itemStillActionable(store, item, sendAt)) continue
         content.items.push({ target: item.target, title: item.title, lines: item.lines })
@@ -126,7 +127,7 @@ export function projectCollaborationContent(store: Store, actor: User, row: Noti
     } else if (target.type === 'deadlineRequest') {
       const request = store.get<DeadlineChangeRequest>('deadlineChangeRequests', target.id), task = request ? store.get<Task>('tasks', request.taskId) : undefined
       if (request && task) content.items.push({ target, title: clean(task.title), lines: deadlineLines(store, actor, target) })
-      buttonText = request?.status === 'open' && actor.role === 'manager' ? '处理延期申请' : '查看延期结果'
+      buttonText = request?.status === 'open' && isManager(actor) ? '处理延期申请' : '查看延期结果'
     } else if (target.type === 'plan') {
       const raw = store.get<MonthlyPlan>('plans', target.id)
       if (!raw) continue
@@ -144,7 +145,7 @@ export function projectCollaborationContent(store: Store, actor: User, row: Noti
       const eventId = /^collaboration:event:([a-zA-Z0-9_-]+)$/.exec(row.eventKey)?.[1]
       const event = eventId ? store.get<BusinessNotificationEvent>('businessNotificationEvents', eventId) : undefined
       const task = target.type === 'task' ? store.get<Task>('tasks', target.id) : undefined
-      if (actor.role === 'manager' || event?.ownerId === actor.id) content.items.push({ target, title: clean(task?.title ?? row.title), lines: row.body.split('\n').map(readableLine) })
+      if (isManager(actor) || event?.ownerId === actor.id) content.items.push({ target, title: clean(task?.title ?? row.title), lines: row.body.split('\n').map(readableLine) })
       buttonText = target.type === 'weeklySubmission' ? '查看事项' : '查看进展'
     }
   }

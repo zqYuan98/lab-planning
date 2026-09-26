@@ -14,6 +14,7 @@ import { notifyFormalSubmission } from './collaboration-notifications.ts'
 import { ensureWeeklyPlanReviewRule, syncWeeklyPlanReviewPolicy, weeklyPlanApprovalMetadata, WeeklyPlanReviewService } from './weekly-plan-review.ts'
 import { isActiveWeeklyRecord, weeklyPlanFingerprint, weeklyPlanManifest } from '../shared/weekly-record-state.ts'
 import type { WeeklyPlanReview } from '../shared/weekly-submissions.ts'
+import { isManager, isMember } from './authorization.ts'
 
 const RULE = 'weekly-submission-rule'
 const manifest = (rows: WeeklyRecord[]) => rows.map(({ id, version }) => ({ id, version })).sort((a, b) => a.id.localeCompare(b.id))
@@ -88,7 +89,7 @@ export class WeeklySubmissionService extends DomainBase {
         if (!snapshot) snapshot = history.find(event => event.createdAt > asOf)?.before as User | undefined
       }
       if (!snapshot || !snapshot.id || snapshot.id !== user.id) { needsReview = true; continue }
-      if (snapshot.role === 'member' && canUseAccount(snapshot)) rosterIds.push(user.id)
+      if (isMember(snapshot) && canUseAccount(snapshot)) rosterIds.push(user.id)
     }
     return { rosterIds: rosterIds.sort(), needsReview }
   }
@@ -152,10 +153,10 @@ export class WeeklySubmissionService extends DomainBase {
     const week = cycleWeek(requestedWeek)
     const rule = this.getRule(), cycle = this.store.get<WeeklyCycle>('weeklyCycles', week) ?? null
     // Never include the departmental roster in member responses.
-    const safeCycle = cycle && actor.role !== 'manager' ? { ...cycle, rosterIds: cycle.rosterIds.filter(id => id === actor.id), confirmationReason: '', confirmedBy: null } : cycle
+    const safeCycle = cycle && !isManager(actor) ? { ...cycle, rosterIds: cycle.rosterIds.filter(id => id === actor.id), confirmationReason: '', confirmedBy: null } : cycle
     return { rule, week, nextWeek: addWeekDays(week, 7), ...this.deadlineView(rule, week, cycle), serverNow: this.clock().toISOString(), cycle: safeCycle,
-      ...(actor.role === 'manager' ? { workCalendar: readWorkCalendar(this.store) } : {}),
-      duties: this.rows<WeeklyDuty>('weeklyDuties').filter(d => d.cycleWeek === week && (actor.role === 'manager' || d.ownerId === actor.id)).map(d => this.dutyView(d)) }
+      ...(isManager(actor) ? { workCalendar: readWorkCalendar(this.store) } : {}),
+      duties: this.rows<WeeklyDuty>('weeklyDuties').filter(d => d.cycleWeek === week && (isManager(actor) || d.ownerId === actor.id)).map(d => this.dutyView(d)) }
     })
   }
 
@@ -166,10 +167,10 @@ export class WeeklySubmissionService extends DomainBase {
       const rule = this.store.get<WeeklyRule>('weeklyRules', RULE)
       if (!rule) return
       const week = cycleWeek(requestedWeek), cycle = this.store.get<WeeklyCycle>('weeklyCycles', week) ?? null
-      const safeCycle = cycle && actor.role !== 'manager' ? { ...cycle, rosterIds: cycle.rosterIds.filter(id => id === actor.id), confirmationReason: '', confirmedBy: null } : cycle
+      const safeCycle = cycle && !isManager(actor) ? { ...cycle, rosterIds: cycle.rosterIds.filter(id => id === actor.id), confirmationReason: '', confirmedBy: null } : cycle
       return { rule, week, nextWeek: addWeekDays(week, 7), ...this.deadlineView(rule, week, cycle), serverNow: this.clock().toISOString(), cycle: safeCycle,
-        ...(actor.role === 'manager' ? { workCalendar: readWorkCalendar(this.store) } : {}),
-        duties: this.rows<WeeklyDuty>('weeklyDuties').filter(duty => duty.cycleWeek === week && (actor.role === 'manager' || duty.ownerId === actor.id)).map(duty => this.dutyView(duty)) }
+        ...(isManager(actor) ? { workCalendar: readWorkCalendar(this.store) } : {}),
+        duties: this.rows<WeeklyDuty>('weeklyDuties').filter(duty => duty.cycleWeek === week && (isManager(actor) || duty.ownerId === actor.id)).map(duty => this.dutyView(duty)) }
     })
   }
 

@@ -1,3 +1,4 @@
+import { LIMITS } from '../../shared/entity-rules'
 import type { Bootstrap, Task } from '../../shared/types'
 import { isActiveTask } from '../../shared/task-state'
 import { isActiveWeeklyRecord } from '../../shared/weekly-record-state'
@@ -47,7 +48,7 @@ export function TaskCancellationModal({ data, task, onClose, onSaved }: {
       const reason = String(new FormData(event.currentTarget).get('reason') || '')
       await submitTaskCancellation(data, task, reason, onSaved)
     }}>
-      <Field label="作废原因" hint="例如：这项旧任务已不再使用，调整后的工作已另行安排。"><textarea name="reason" required rows={3} maxLength={12000} /></Field>
+      <Field label="作废原因" hint="例如：这项旧任务已不再使用，调整后的工作已另行安排。"><textarea name="reason" required rows={3} maxLength={LIMITS.text} /></Field>
     </Form>
   </Modal>
 }

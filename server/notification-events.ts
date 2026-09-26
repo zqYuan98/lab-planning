@@ -4,15 +4,15 @@ import { enqueueNotification, notificationId } from './notifications.ts'
 import type { Store } from './store.ts'
 import { captureNotificationFacts, notificationEventChanges } from './notification-content.ts'
 import { isSilentImport } from './import-notification-context.ts'
+import { storeScope } from './operation-scope.ts'
 import { collaborationEnabledFor } from './collaboration-policy.ts'
 import { isEffectiveWeeklyRecord } from '../shared/weekly-record-state.ts'
 import { isActiveTask } from '../shared/task-state.ts'
+import { isManager } from './authorization.ts'
 
-const suppressedTasks = new WeakSet<Store>()
+const suppressedTasks = storeScope<true>()
 export function withTaskNotificationSuppressed<T>(store: Store, operation: () => T): T {
-  const already = suppressedTasks.has(store)
-  suppressedTasks.add(store)
-  try { return operation() } finally { if (!already) suppressedTasks.delete(store) }
+  return suppressedTasks.run(store, true, operation)
 }
 const planTarget = (plan: MonthlyPlan): NotificationTarget => ({ type: 'plan', id: plan.id, month: plan.month })
 const changed = (before: unknown, after: unknown, fields: string[]) => fields.some(field => JSON.stringify((before as Record<string, unknown>)[field]) !== JSON.stringify((after as Record<string, unknown>)[field]))
@@ -27,7 +27,7 @@ export function notifyBusinessEvent(store: Store, actor: User, event: AuditEvent
     const work = event.after as Task | WeeklyRecord
     const currentTask = store.get<Task>('tasks', event.entityType === 'task' ? work.id : (work as WeeklyRecord).taskId)
     if (currentTask && !isActiveTask(currentTask) || event.entityType === 'task' && !isActiveTask(work as Task)) return
-    if (actor.role !== 'manager' || actor.id === work.ownerId || work.importSource && work.importSource.mode !== 'draft' || work.workOrigin?.kind !== 'assigned') return
+    if (!isManager(actor) || actor.id === work.ownerId || work.importSource && work.importSource.mode !== 'draft' || work.workOrigin?.kind !== 'assigned') return
     if (event.entityType === 'task' && work.importSource?.mode === 'draft' && !store.list<WeeklyRecord>('weeklyRecords').some(row => row.taskId === work.id && isEffectiveWeeklyRecord(row))) return
     // Only effective work is an assignment. A saved weekly draft becomes a
     // first assignment notification when the manager later publishes the row.
@@ -79,7 +79,7 @@ export function notifyBusinessEvent(store: Store, actor: User, event: AuditEvent
     })
   }
   if (plan.isTemporary && event.action === 'submit' && !collaborationEnabledFor(store, plan.ownerId)) {
-    for (const manager of store.list<User>('users').filter(user => user.role === 'manager' && user.id !== actor.id)) enqueueNotification(store, {
+    for (const manager of store.list<User>('users').filter(user => isManager(user) && user.id !== actor.id)) enqueueNotification(store, {
       eventKey: event.id, recipientId: manager.id, kind: 'proposal_review', title: '有临时目标待审核', body: `${plan.title} · ${plan.month}。请查看临时目标提报。`, targets: [planTarget(plan)], actionable: false, actorId: actor.id,
     })
   }

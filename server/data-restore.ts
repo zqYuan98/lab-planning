@@ -5,6 +5,7 @@ import { isActiveWeeklyRecord, isWeeklyPlanReviewCycle } from '../shared/weekly-
 import { isActiveTask } from '../shared/task-state.ts'
 import { addWeekDays } from './weekly-submission-clock.ts'
 import { manager } from './domain-common.ts'
+import { isMember, managerActor } from './authorization.ts'
 import { HttpError, Store } from './store.ts'
 import { rotateOperationEpoch } from './operation-context.ts'
 import { reportSubmissionIssues, weeklyDeadlineRowIssues, weeklyTransferIssues } from './weekly-submission-transfer.ts'
@@ -28,8 +29,7 @@ const fingerprint = (value: unknown) => createHash('sha256').update(canonical(va
 
 function requireManager(store: Store, actor: User) {
   manager(actor)
-  const live = store.get<User>('users', actor.id)
-  if (!live || !canUseAccount(live) || live.role !== 'manager') throw new HttpError(403, '仅有效管理者账号可以恢复业务数据')
+  managerActor(store, actor, { message: '仅有效管理者账号可以恢复业务数据' })
 }
 
 function semanticIssues(name: TransferCollection, input: unknown, issue: (message: string) => void, nested = false) {
@@ -114,7 +114,7 @@ function inspectRestore(store: Store, packet: BusinessDataPacket, requestedMappi
   const sourceUsers = new Map(packet.collections.users.map(user => [user.id, user]))
   const currentUsers = store.list<User>('users')
   const activeUsers = currentUsers.filter(canUseAccount)
-  const activeMemberIds = new Set(activeUsers.filter(user => user.role === 'member').map(user => user.id))
+  const activeMemberIds = new Set(activeUsers.filter(user => isMember(user)).map(user => user.id))
   const targetRule = store.get<WeeklyRule>('weeklyRules', 'weekly-submission-rule')
   const targetReviewWeek = targetRule?.planReviewEffectiveWeek
   const reviewRule = packet.collections.weeklyRules[0] ?? targetRule

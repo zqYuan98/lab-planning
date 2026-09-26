@@ -20,6 +20,7 @@ import { queryAffected } from '../query-invalidation'
 import DirectoryPagination, { firstDirectoryPage } from '../components/DirectoryPagination'
 import { directoryAccountName } from '../components/DirectoryAccountPicker'
 import '../collaboration.css'
+import { useDebouncedSearch } from '../use-debounced-search'
 
 interface BatchPreview { previewToken: string; dueAt: string; recipients: { recipientId: string; recipientName: string; externalQuotaAvailable: boolean; items: { taskId: string; title: string; taskDueDate: string; enrollRequired: boolean; existingRequest: FollowupRequest | null }[] }[] }
 export default function WorkFollowups(props: PageProps & { navigate: Navigate }) {
@@ -27,7 +28,8 @@ export default function WorkFollowups(props: PageProps & { navigate: Navigate })
   const [view, setView] = useState<Dashboard | null>(null), [error, setError] = useState(''), [selected, setSelected] = useState<string[]>([])
   const [taskId, setTaskId] = useState<string | null>(null), [filter, setFilter] = useState('all'), [query, setQuery] = useState('')
   const [paging, setPaging] = useState(firstDirectoryPage)
-  const parameters = new URLSearchParams({ filter, q: query, limit: '30' })
+  const querySearch = useDebouncedSearch(query)
+  const parameters = new URLSearchParams({ filter, q: querySearch, limit: '30' })
   const firstPath = `/collaboration?${parameters}`
   if (paging.cursor) parameters.set('cursor', paging.cursor)
   const path = `/collaboration?${parameters}`, readPath = useRef(path), firstReadPath = useRef(firstPath)

@@ -1,5 +1,6 @@
 import type { AnnualGoal, AuditEvent, MonthlyPlan, Project, Publication, Report, ReportSnapshot, Task, User, WeeklyRecord } from '../shared/types.ts'
 import type { Store } from './store.ts'
+import { managerActor } from './authorization.ts'
 import { acceptanceLabels, planOriginLabel, rateLabel, reportMetrics, snapshotWarnings, weeklyAssociationLabel, weeklyStatusLabel } from './report-metrics.ts'
 import { isActiveWeeklyRecord, isEffectiveWeeklyRecord } from '../shared/weekly-record-state.ts'
 import { markdownToWord } from './report-word.ts'
@@ -38,8 +39,7 @@ function publicUser(user: User): User {
   return { id, version, createdAt, updatedAt, name, email, role, position, active }
 }
 export function requireReportManager(store: Store, actorId: string) {
-  const user = store.get<User>('users', actorId)
-  if (!user || !canUseAccount(user) || user.role !== 'manager') fail('只有部门管理者可以管理报告。', 403)
+  managerActor(store, { id: actorId }, { message: '只有部门管理者可以管理报告。' })
 }
 export function buildReportSnapshot(store: Store, type: Report['type'], period: string): ReportSnapshot {
   const end = type === 'weekly' ? addDays(period, 6) : `${shiftMonth(period, 1)}-01`

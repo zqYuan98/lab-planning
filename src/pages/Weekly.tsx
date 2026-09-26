@@ -1,3 +1,4 @@
+import { LIMITS } from '../../shared/entity-rules'
 import { effortInput, summarizeEffort } from '../../shared/effort'
 import WeeklyProgressForm from '../components/WeeklyProgressForm'
 import { openTask } from '../navigation'
@@ -33,6 +34,8 @@ import { TaskCancellationAction, TaskCancellationModal } from '../components/Tas
 import { PriorityBadge, WorkTypeBadge, TaskLegend, ContextHelp } from '../components/TaskSignals'
 import { taskPriority, workKind } from '../task-presentation'
 import { recordTarget, advanceWeek, weeklyRecordState, type WorkTarget, type ReviewRequest } from '../weekly-submission-flow'
+import { weeklyPageQuery } from '../period-query'
+import { useDebouncedSearch } from '../use-debounced-search'
 import {
   Badge,
   Empty,
@@ -64,8 +67,9 @@ const statusTone: Record<string, string> = {
 type WeeklyProps = PageProps & { navigate?: Navigate }
 interface WeeklyControls { value: WeeklyWorkspace | null; setQuery: (query: string) => void }
 export default function Weekly(props: WeeklyProps) {
-  const initial = new URLSearchParams({ weekStart: props.intent?.weekStart || monday(), ownerId: props.intent?.ownerId || (props.data.user.role === 'manager' ? '' : props.data.user.id) }); if (props.intent?.id) initial.set('id', props.intent.id)
-  const [query, setQuery] = useState(initial.toString()), [cursors, setCursors] = useState<string[]>([])
+  // Matches WeeklyBody's first query so entering the page issues a single read.
+  const initial = weeklyPageQuery({ weekStart: props.intent?.weekStart || monday(), ownerId: props.intent?.ownerId || (props.data.user.role === 'manager' ? '' : props.data.user.id), status: props.intent?.status || 'all', q: props.intent?.query || '', source: 'all', includeInactive: false, id: props.intent?.id })
+  const [query, setQuery] = useState(initial), [cursors, setCursors] = useState<string[]>([])
   const firstPath = `/workspace/weekly?${query}`, resource = useWorkspaceQuery<WeeklyWorkspace>(firstPath + (cursors.length ? `&cursor=${encodeURIComponent(cursors.at(-1)!)}` : ''), periodScope(props.data), undefined, { onCursorStale: () => { setCursors([]); return firstPath } })
   const [initialized, setInitialized] = useState(!props.intent?.id)
   useEffect(() => { if (resource.value) setInitialized(true) }, [resource.value])
@@ -100,11 +104,12 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
   const handledIntent = useRef(false)
   const detailSequence = useRef(0)
   useEffect(() => () => { detailSequence.current++ }, [])
+  // The current page filters locally at once; the server read waits for a typing pause.
+  const querySearch = useDebouncedSearch(search)
   useEffect(() => {
     if (!period) return
-    const params = new URLSearchParams({ weekStart: week, ownerId: owner, status: filter, q: search, source: sourceFilter, includeInactive: String(includeInactive) }); if (intent?.id && !handledIntent.current) params.set('id', intent.id)
-    period.setQuery(params.toString())
-  }, [week, owner, filter, search, sourceFilter, includeInactive])
+    period.setQuery(weeklyPageQuery({ weekStart: week, ownerId: owner, status: filter, q: querySearch, source: sourceFilter, includeInactive, id: intent?.id && !handledIntent.current ? intent.id : undefined }))
+  }, [week, owner, filter, querySearch, sourceFilter, includeInactive])
   const [cycleWeek, setCycleWeek] = useState(intent?.cycleWeek || initialWeek)
   const [submissionView, setSubmissionView] = useState<WeeklySubmissionView | null>(null)
   const noSubmissionDuty = submissionView?.week === cycleWeek && submissionView.deadlineAt === null
@@ -647,7 +652,7 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
           const deleted = await api<WeeklyRecord>(`/weekly-records/${selected.id}`, json({ version:selected.version, reason }, 'DELETE'))
           await saved('该周安排已删除，原任务和历史记录保留')
           setDeletedRecord(deleted)
-        }}><Field label="删除原因" hint="例如：早期录入未关联月度临时计划，现需调整后重建。"><textarea name="reason" required rows={3} maxLength={12000} /></Field></Form>
+        }}><Field label="删除原因" hint="例如：早期录入未关联月度临时计划，现需调整后重建。"><textarea name="reason" required rows={3} maxLength={LIMITS.text} /></Field></Form>
       </Modal>}
       {(modal === 'create' || modal === 'temporary') && (
         period ? <PeriodEditorDirectory data={data} onCancel={close}>{editorData => <WeeklyCreate data={editorData} week={week} temporary={modal === 'temporary'} initialOwnerId={workContext?.ownerId || owner || (manager ? '' : data.user.id)} initialTask={creationTask} onClose={close} onSaved={saved} live />}</PeriodEditorDirectory> : <WeeklyCreate
@@ -945,7 +950,7 @@ function WeeklyCreate({
         </div>
         {data.user.role === 'manager' && ownerId && ownerId !== data.user.id && <>
           <Field label="安排方式"><select aria-label="安排方式" value={arrangement} onChange={event => setArrangement(event.target.value)}><option value="assigned">下发任务</option><option value="proxy">代成员录入</option></select></Field>
-          {creationKind === 'proxy' && <Field label="代录原因"><textarea name="creationReason" required rows={2} maxLength={12000} /></Field>}
+          {creationKind === 'proxy' && <Field label="代录原因"><textarea name="creationReason" required rows={2} maxLength={LIMITS.text} /></Field>}
           <p className="form-hint">{assigning ? '纳入周统计后才正式下发；草稿不发送下发通知。下发后成员可直接更新。' : '保留管理员代录来源及原因。'}此操作不会生成成员的整份提报回执。</p>
         </>}
         <Field label="本周预计投入（人日）" hint="以 0.5 人日填写；留空表示尚未估算。任务剩余投入不会自动计入本周。"><input name="plannedEffortDays" type="number" min="0" step="0.5" /></Field>
@@ -1017,7 +1022,7 @@ function WeeklyCreate({
               <input
                 name="title"
                 required
-                maxLength={200}
+                maxLength={LIMITS.title}
                 placeholder="责任人具体负责的交付内容"
               />
             </Field>

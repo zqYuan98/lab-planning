@@ -1,11 +1,12 @@
 import type { AuditEvent, Task, User, WeeklyRecord, WorkOrigin } from '../shared/types.ts'
 import { choice, text, type Input } from './domain-common.ts'
 import { HttpError } from './store.ts'
+import { isManager } from './authorization.ts'
 
 export function createWorkOrigin(actor: User, ownerId: string, input: Input): WorkOrigin {
   const kind = choice(input.creationKind ?? (actor.id === ownerId ? 'self' : 'assigned'), ['self', 'assigned', 'proxy'], '安排方式')
   if (actor.id === ownerId && kind !== 'self') throw new HttpError(400, '本人任务请选择自行安排')
-  if (actor.id !== ownerId && (actor.role !== 'manager' || kind === 'self')) throw new HttpError(403, '为他人安排任务需要管理者下发或代录')
+  if (actor.id !== ownerId && (!isManager(actor) || kind === 'self')) throw new HttpError(403, '为他人安排任务需要管理者下发或代录')
   return { kind, actorId: actor.id, reason: kind === 'proxy' ? text(input.creationReason, '代录原因') : '' }
 }
 

@@ -6,6 +6,7 @@ import { businessActor, cas, type Input } from './delivery-common.ts'
 import { requiredText, utcTime } from './collaboration-store.ts'
 import { assertOperationEpoch, getOperationEpoch } from './operation-context.ts'
 import { HttpError, type Store } from './store.ts'
+import { isManager } from './authorization.ts'
 
 type Receipt = Entity & { actorId: string; command: string; requestId: string; payloadHash: string; resultId: string }
 export function periodReviewContentHash(review: PeriodReviewContent & { revision: number; previousSnapshotId: string | null; differences: PeriodReviewSnapshot['differences'] }): string {
@@ -98,7 +99,7 @@ export class PeriodReviewService {
     return this.store.transaction(() => {
       actor = businessActor(this.store, actor)
       const review = this.need(id)
-      if (actor.role === 'manager') return review
+      if (isManager(actor)) return review
       if (review.status !== 'finalized') throw new HttpError(404, '复盘不存在')
       const entries = review.entries.filter(row => row.attributionKnown && row.ownerId === actor.id), weeklyCompliance = review.weeklyCompliance.filter(row => row.ownerId === actor.id)
       if (!entries.length && !weeklyCompliance.length) throw new HttpError(404, '复盘不存在')
@@ -110,18 +111,18 @@ export class PeriodReviewService {
   }
   list(actor: User) {
     actor = businessActor(this.store, actor)
-    return this.store.list<PeriodReviewSnapshot>('periodReviewSnapshots').filter(row => actor.role === 'manager' || row.status === 'finalized' && (row.entries.some(entry => entry.attributionKnown && entry.ownerId === actor.id) || row.weeklyCompliance.some(entry => entry.ownerId === actor.id)))
+    return this.store.list<PeriodReviewSnapshot>('periodReviewSnapshots').filter(row => isManager(actor) || row.status === 'finalized' && (row.entries.some(entry => entry.attributionKnown && entry.ownerId === actor.id) || row.weeklyCompliance.some(entry => entry.ownerId === actor.id)))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)).map(({ id, version, period, cutoffAt, generatedAt, revision, status, laterEvidenceThrough, ruleVersion, previousSnapshotId }) => ({ id, version, period, cutoffAt, generatedAt, revision, status, laterEvidenceThrough, ruleVersion, previousSnapshotId }))
   }
   displayReferences(actor: User, review: PeriodReviewContent): PeriodReviewDisplayReferences {
     actor = businessActor(this.store, actor)
-    const entries = review.entries.filter(row => actor.role === 'manager' || row.ownerId === actor.id)
-    const ownerIds = new Set([...entries.map(row => row.ownerId), ...review.weeklyCompliance.filter(row => actor.role === 'manager' || row.ownerId === actor.id).map(row => row.ownerId)])
+    const entries = review.entries.filter(row => isManager(actor) || row.ownerId === actor.id)
+    const ownerIds = new Set([...entries.map(row => row.ownerId), ...review.weeklyCompliance.filter(row => isManager(actor) || row.ownerId === actor.id).map(row => row.ownerId)])
     const planIds = new Set(entries.map(row => row.monthlyPlanId)), projectIds = new Set(entries.map(row => row.projectId))
     return { users: [...ownerIds].flatMap(id => { const row = id ? this.store.get<User>('users', id) : null; return row ? [{ id: row.id, name: row.name }] : [] }),
       // Department managers can resolve live dictionary names. Member historical scope does not grant today's private goal details.
-      plans: actor.role === 'manager' ? [...planIds].flatMap(id => { const row = id ? this.store.get<MonthlyPlan>('plans', id) : null; return row ? [{ id: row.id, title: row.title }] : [] }) : [],
-      projects: actor.role === 'manager' ? [...projectIds].flatMap(id => { const row = id ? this.store.get<Project>('projects', id) : null; return row ? [{ id: row.id, name: row.name }] : [] }) : [] }
+      plans: isManager(actor) ? [...planIds].flatMap(id => { const row = id ? this.store.get<MonthlyPlan>('plans', id) : null; return row ? [{ id: row.id, title: row.title }] : [] }) : [],
+      projects: isManager(actor) ? [...projectIds].flatMap(id => { const row = id ? this.store.get<Project>('projects', id) : null; return row ? [{ id: row.id, name: row.name }] : [] }) : [] }
   }
   export(actor: User, id: string): string {
     const review = this.read(actor, id), summary = review.evidenceCoverage

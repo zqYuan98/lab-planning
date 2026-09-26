@@ -17,7 +17,8 @@ test('encrypted backup verifies SQLite, isolated restore and offsite readback wi
   try {
     const manifest = await createVerifiedBackup(database, options)
     assert.equal(readFileSync(join(directory, `${manifest.id}.enc`)).includes(Buffer.from('PRIVATE BUSINESS CONTENT')), false)
-    assert.equal((await drillVerifiedBackup(options, manifest.id)).entityCount, 1)
+    // The sample row plus the operation epoch that every database creates when it opens.
+    assert.equal((await drillVerifiedBackup(options, manifest.id)).entityCount, 2)
     const remote = new Map<string, Uint8Array>()
     const fetchMock = (async (url: URL, init: RequestInit = {}) => {
       assert.equal(init.redirect, 'error'); assert.equal((init.headers as Record<string, string>).Authorization, 'Bearer synthetic-token')
@@ -33,7 +34,7 @@ test('encrypted backup verifies SQLite, isolated restore and offsite readback wi
     assert.ok(uploaded.offsiteVerifiedAt); assert.equal(remote.size, 2)
     assert.equal((await drillOffsiteBackup(options, manifest.id, { BACKUP_OFFSITE_URL: 'https://backup.example.test/managed/', BACKUP_OFFSITE_TOKEN: 'synthetic-token' }, fetchMock)).source, 'offsite')
     const recovery = { ...options, directory: join(root, 'fresh-disaster-recovery') }
-    assert.equal((await drillOffsiteBackup(recovery, manifest.id, { BACKUP_OFFSITE_URL: 'https://backup.example.test/managed/', BACKUP_OFFSITE_TOKEN: 'synthetic-token' }, fetchMock)).entityCount, 1)
+    assert.equal((await drillOffsiteBackup(recovery, manifest.id, { BACKUP_OFFSITE_URL: 'https://backup.example.test/managed/', BACKUP_OFFSITE_TOKEN: 'synthetic-token' }, fetchMock)).entityCount, 2)
     assert.equal(backupManifests(recovery.directory).length, 1, 'offsite recovery does not depend on the original local backup')
     assert.equal(JSON.stringify(uploaded).includes('synthetic-token'), false)
     assert.equal(backupManifests(directory).length, 1)

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createElement, Suspense } from 'react'
-import { renderToPipeableStream } from 'react-dom/server'
+import { renderToPipeableStream, renderToString } from 'react-dom/server'
 import { PassThrough } from 'node:stream'
 import { createLazyResource, PageModuleLoadError } from '../src/lazy-resource.ts'
 
@@ -31,6 +31,16 @@ test('failed lazy modules retry with a fresh React component and recover without
   const loaded = resource.component
   resource.retry()
   assert.equal(resource.component, loaded, 'successful components keep their identity and local draft state')
+})
+
+test('a preloaded module renders synchronously without showing the loading fallback', async () => {
+  const resource = createLazyResource(async () => ({ default: ({ label }: { label: string }) => createElement('p', null, label) }))
+  const render = () => renderToString(createElement(Suspense, { fallback: '正在加载' }, createElement(resource.component, { label: 'monthly-page' })))
+  assert.doesNotMatch(render(), /monthly-page/, 'an unloaded module still suspends')
+  await resource.load()
+  const markup = render()
+  assert.match(markup, /monthly-page/)
+  assert.doesNotMatch(markup, /正在加载/)
 })
 
 test('concurrent lazy reads share the request and pending retries do not duplicate a request', async () => {

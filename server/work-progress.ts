@@ -5,6 +5,7 @@ import { isActiveWeeklyRecord, isEffectiveWeeklyRecord } from '../shared/weekly-
 import { HttpError, type Store } from './store.ts'
 import { assertBusinessActor } from './object-access.ts'
 import { meaningfulText } from './collaboration-store.ts'
+import { isManager } from './authorization.ts'
 
 const clean = (value: unknown) => typeof value === 'string' ? value.trim() : ''
 const time = (value: string | null | undefined) => value && Number.isFinite(Date.parse(value)) ? value : null
@@ -18,7 +19,7 @@ export interface WorkProgressSources { records: WeeklyRecord[]; progressEvents: 
 /** One set of reads and grouping per response. updatedAt is never evidence of progress. */
 export function workProgressProjector(store: Store, actor: User, now = new Date(), sources?: WorkProgressSources) {
   actor = assertBusinessActor(store, actor)
-  const manager = actor.role === 'manager'
+  const manager = isManager(actor)
   const today = new Date(now.getTime() + 8 * 3600000).toISOString().slice(0, 10)
   const records = sources?.records ?? store.list<WeeklyRecord>('weeklyRecords')
   const progressEvents = sources?.progressEvents ?? store.list<ProgressEvent>('progressEvents')

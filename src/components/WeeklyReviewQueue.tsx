@@ -1,3 +1,4 @@
+import { LIMITS } from '../../shared/entity-rules'
 import { useEffect, useRef, useState } from 'react'
 import type { WeeklyReviewDelegationView, WeeklyReviewQueue as Queue } from '../../shared/weekly-review-delegation'
 import { api, json, finishSaved, ApiError } from '../api'
@@ -55,7 +56,7 @@ export default function WeeklyReviewQueue({ data, week, onUpdated }: Pick<PagePr
         await finishSaved(async () => { setSelectedId(''); await onUpdated(decision === 'approved' ? '整份计划已审核通过' : '整份计划已退回修改'); await queue.reload() })
       }}>
         <Field label="审核结果"><select value={decision} onChange={event => setDecision(event.target.value as 'approved' | 'returned')}><option value="approved">审核通过</option><option value="returned">退回修改</option></select></Field>
-        <Field label={decision === 'returned' ? '退回意见' : '审核意见（选填）'}><textarea name="reason" rows={3} maxLength={12000} required={decision === 'returned'} /></Field>
+        <Field label={decision === 'returned' ? '退回意见' : '审核意见（选填）'}><textarea name="reason" rows={3} maxLength={LIMITS.text} required={decision === 'returned'} /></Field>
       </Form>
     </Modal>}
     {configure && data.user.role === 'manager' && <DelegationSettings scope={scope} onClose={() => setConfigure(false)} onUpdated={onUpdated} />}

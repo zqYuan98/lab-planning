@@ -1,3 +1,4 @@
+import { LIMITS } from '../../shared/entity-rules'
 import { useState } from 'react'
 import { Eye, EyeOff, LockKeyhole, Mail } from 'lucide-react'
 import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from '../../shared/auth-policy'
@@ -25,9 +26,9 @@ export default function AuthAccess({ initialized, onLogin }: { initialized: bool
         if (registering) setSent(true)
         else await onLogin()
       }}>
-      {newAccount && <Field label="姓名"><input name="name" autoComplete="name" defaultValue={!initialized ? '袁中群' : ''} required maxLength={100} /></Field>}
-      {registering && <Field label="岗位（选填）"><input name="position" autoComplete="organization-title" maxLength={100} placeholder="如 算法工程师、产品经理" /></Field>}
-      <div className="auth-input-group"><Mail className="auth-input-icon" size={19} aria-hidden="true" /><Field label="邮箱"><input name="email" type="email" autoComplete="username" placeholder="you@company.com" maxLength={254} required /></Field></div>
+      {newAccount && <Field label="姓名"><input name="name" autoComplete="name" defaultValue={!initialized ? '袁中群' : ''} required maxLength={LIMITS.personName} /></Field>}
+      {registering && <Field label="岗位（选填）"><input name="position" autoComplete="organization-title" maxLength={LIMITS.position} placeholder="如 算法工程师、产品经理" /></Field>}
+      <div className="auth-input-group"><Mail className="auth-input-icon" size={19} aria-hidden="true" /><Field label="邮箱"><input name="email" type="email" autoComplete="username" placeholder="you@company.com" maxLength={LIMITS.email} required /></Field></div>
       <div className="auth-input-group auth-password-group">
         <LockKeyhole className="auth-input-icon" size={19} aria-hidden="true" />
         <Field label="密码" hint={newAccount ? '至少 8 位，可使用数字、字母或符号。' : undefined}>

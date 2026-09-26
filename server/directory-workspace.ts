@@ -7,6 +7,7 @@ import { safeUser } from './auth.ts'
 import { HttpError, type Store } from './store.ts'
 import { pageContext, pageWindow, queryKeys, queryText, type PageReadContext } from './page-read-common.ts'
 import { historicalPlanDataSql } from './workspace-plan-snapshot.ts'
+import { isManager, isObserver } from './authorization.ts'
 
 type Query = Record<string, unknown>
 type Value = string | number | null
@@ -27,7 +28,7 @@ export class DirectoryWorkspaceService {
   constructor(private store: Store) {}
   private context(actor: User, managerOnly = false) {
     const context = pageContext(this.store, actor)
-    if (managerOnly && context.actor.role !== 'manager') throw new HttpError(403, '此目录需要管理者权限')
+    if (managerOnly && !isManager(context.actor)) throw new HttpError(403, '此目录需要管理者权限')
     return context
   }
   private page<T>(input: Query, context: PageReadContext, scope: string, where: string, values: Value[], projection = 'e.data', order = `${field('createdAt')} DESC,e.id DESC`) {
@@ -39,7 +40,7 @@ export class DirectoryWorkspaceService {
   private people(ids: string[], actor: User): Map<string, DirectoryAccount> {
     const keys = [...new Set(ids.filter(Boolean))]
     if (!keys.length) return new Map()
-    const rows = this.store.selectJson<User>(`SELECT ${userData} AS data FROM entities e WHERE e.collection='users' AND e.id IN (${keys.map(() => '?').join(',')}) ${actor.role === 'manager' ? '' : `AND ${approved}`}`, keys)
+    const rows = this.store.selectJson<User>(`SELECT ${userData} AS data FROM entities e WHERE e.collection='users' AND e.id IN (${keys.map(() => '?').join(',')}) ${isManager(actor) ? '' : `AND ${approved}`}`, keys)
     return new Map(rows.map(user => [user.id, account(user)]))
   }
   private teamCounts(): TeamCounts {
@@ -53,7 +54,7 @@ export class DirectoryWorkspaceService {
     return { active: Number(row.active ?? 0), inactive: Number(row.inactive ?? 0), all: Number(row.allCount ?? 0), activeManagers: Number(row.managers ?? 0), pending: Number(row.pending ?? 0), rejected: Number(row.rejected ?? 0) }
   }
   team(actor: User, input: Query): TeamPage {
-    return this.store.transaction(() => {
+    return this.store.readTransaction(() => {
       queryKeys(input, ['status', 'q', 'focusId', 'cursor', 'limit'])
       const context = this.context(actor, true), status = oneOf(input.status, ['active', 'inactive', 'all'], 'active'), q = queryText(input.q, 120), focusId = queryText(input.focusId)
       let where = `e.collection='users' AND ${approved}`
@@ -66,7 +67,7 @@ export class DirectoryWorkspaceService {
     })
   }
   registrations(actor: User, input: Query): RegistrationPage {
-    return this.store.transaction(() => {
+    return this.store.readTransaction(() => {
       queryKeys(input, ['status', 'cursor', 'limit'])
       const context = this.context(actor, true), status = oneOf(input.status, ['all', 'pending', 'rejected'], 'all')
       const where = `e.collection='users' AND ${field('registrationStatus')} ${status === 'all' ? "IN ('pending','rejected')" : '=?'}`
@@ -76,7 +77,7 @@ export class DirectoryWorkspaceService {
     })
   }
   accounts(actor: User, input: Query): DirectoryAccountsPage {
-    return this.store.transaction(() => {
+    return this.store.readTransaction(() => {
       queryKeys(input, ['purpose', 'q', 'role', 'selectedIds', 'cursor', 'limit'])
       const purpose = oneOf(input.purpose, ['assignment', 'notification', 'diagnostics', 'usage'], 'assignment'), context = this.context(actor, purpose !== 'assignment')
       const q = queryText(input.q, 120), role = oneOf(input.role, ['all', 'member', 'manager', 'observer', 'business'], 'all')
@@ -90,7 +91,7 @@ export class DirectoryWorkspaceService {
         } catch { throw new HttpError(400, '已选账号标识无效，每次最多 100 项') }
       }
       let base = `e.collection='users'${purpose === 'usage' ? ` AND ${field('role')}='member'` : ''}`
-      if (context.actor.role !== 'manager') base += ` AND ${approved}`
+      if (!isManager(context.actor)) base += ` AND ${approved}`
       let where = `${base}${['assignment', 'notification'].includes(purpose) ? ` AND ${usable}` : ''}`
       const values: Value[] = []
       if (role === 'business') where += ` AND ${field('role')} IN ('member','manager')`
@@ -104,7 +105,7 @@ export class DirectoryWorkspaceService {
   private projectCounts(actor: User, ids: string[]) {
     if (!ids.length) return new Map<string, number>()
     const placeholders = ids.map(() => '?').join(',')
-    const rows = actor.role === 'manager'
+    const rows = isManager(actor)
       ? this.store.selectRows(`SELECT json_extract(data,'$.projectId') AS projectId,COUNT(*) AS n FROM entities WHERE collection='plans' AND json_extract(data,'$.status')='published' AND json_extract(data,'$.projectId') IN (${placeholders}) GROUP BY projectId`, ids)
       : this.store.selectRows(`WITH viewer AS (SELECT ? AS actorId), visible AS (
           SELECT CASE WHEN json_extract(p.data,'$.ownerId')=viewer.actorId OR EXISTS(SELECT 1 FROM json_each(p.data,'$.collaboratorIds') c WHERE c.value=viewer.actorId)
@@ -114,7 +115,7 @@ export class DirectoryWorkspaceService {
     return new Map(rows.map(row => [String(row.projectId), Number(row.n)]))
   }
   projects(actor: User, input: Query): ProjectsPage {
-    return this.store.transaction(() => {
+    return this.store.readTransaction(() => {
       queryKeys(input, ['status', 'q', 'focusId', 'cursor', 'limit'])
       const context = this.context(actor), status = oneOf(input.status, ['all', 'active'], 'active'), q = queryText(input.q, 120), focusId = queryText(input.focusId)
       let where = "e.collection='projects'"; const values: Value[] = []
@@ -129,12 +130,12 @@ export class DirectoryWorkspaceService {
     })
   }
   private annualPlans(actor: User, year: number, ids: string[]): MonthlyPlan[] {
-    if (!ids.length || actor.role === 'observer') return []
-    const visibility = actor.role === 'manager' ? '' : ` AND (${field('ownerId')}=? OR EXISTS(SELECT 1 FROM json_each(e.data,'$.collaboratorIds') c WHERE c.value=?))`
-    return this.store.selectJson<MonthlyPlan>(`SELECT json_object('id',e.id,'month',${field('month')},'annualGoalId',${field('annualGoalId')},'sourcePlanId',${field('sourcePlanId')},'mergedIntoId',${field('mergedIntoId')},'mergedFromIds',json(COALESCE(${field('mergedFromIds')},'[]')),'status',${field('status')},'acceptanceStatus',${field('acceptanceStatus')}) AS data FROM entities e WHERE e.collection='plans' AND substr(${field('month')},1,4)=? AND ${field('annualGoalId')} IN (${ids.map(() => '?').join(',')}) AND ${field('visibility')} IS NULL${visibility}`, [String(year), ...ids, ...(actor.role === 'manager' ? [] : [actor.id, actor.id])])
+    if (!ids.length || isObserver(actor)) return []
+    const visibility = isManager(actor) ? '' : ` AND (${field('ownerId')}=? OR EXISTS(SELECT 1 FROM json_each(e.data,'$.collaboratorIds') c WHERE c.value=?))`
+    return this.store.selectJson<MonthlyPlan>(`SELECT json_object('id',e.id,'month',${field('month')},'annualGoalId',${field('annualGoalId')},'sourcePlanId',${field('sourcePlanId')},'mergedIntoId',${field('mergedIntoId')},'mergedFromIds',json(COALESCE(${field('mergedFromIds')},'[]')),'status',${field('status')},'acceptanceStatus',${field('acceptanceStatus')}) AS data FROM entities e WHERE e.collection='plans' AND substr(${field('month')},1,4)=? AND ${field('annualGoalId')} IN (${ids.map(() => '?').join(',')}) AND ${field('visibility')} IS NULL${visibility}`, [String(year), ...ids, ...(isManager(actor) ? [] : [actor.id, actor.id])])
   }
   goalDetail(actor: User, id: string, input: Query): AnnualGoalDetail {
-    return this.store.transaction(() => {
+    return this.store.readTransaction(() => {
       queryKeys(input, ['cursor', 'limit'])
       const context = this.context(actor), goal = this.store.get<AnnualGoal>('annualGoals', id)
       if (!goal) throw new HttpError(404, '年度目标不存在')
@@ -145,7 +146,7 @@ export class DirectoryWorkspaceService {
     })
   }
   goals(actor: User, input: Query): GoalsPage {
-    return this.store.transaction(() => {
+    return this.store.readTransaction(() => {
       queryKeys(input, ['year', 'cursor', 'limit'])
       const context = this.context(actor), year = input.year === undefined ? new Date().getFullYear() : Number(input.year)
       if (!Number.isInteger(year) || year < 2020 || year > 2100 || Array.isArray(input.year)) throw new HttpError(400, '请选择 2020 至 2100 年')

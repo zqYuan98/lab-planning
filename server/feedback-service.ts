@@ -5,6 +5,7 @@ import { feedbackStatuses, type Feedback, type FeedbackAction, type FeedbackActi
 import { HttpError, type Store } from './store.ts'
 import { feedbackAttachmentMetadata, validateFeedbackAttachments, type StoredFeedbackAttachment } from './feedback-attachments.ts'
 import { notifyFeedback } from './feedback-notifications.ts'
+import { isManager, isObserver } from './authorization.ts'
 
 interface FeedbackCommand extends Entity { actorId: string; operation: string; requestId: string; fingerprint: string; feedbackId: string }
 const fail = (message: string): never => { throw new HttpError(400, message) }
@@ -44,23 +45,23 @@ export class FeedbackService {
   private actor(actor: User) {
     const current = this.store.get<User>('users', actor.id)
     if (!current || !canUseAccount(current)) throw new HttpError(401, '请先登录')
-    if (current.role === 'observer') throw new HttpError(403, '观察者不能读取或处理个人反馈')
+    if (isObserver(current)) throw new HttpError(403, '观察者不能读取或处理个人反馈')
     return current
   }
   private row(actor: User, id: string): Feedback {
     const row = this.store.get<Feedback>('feedback', id)
-    if (!row || actor.role !== 'manager' && row.reporterId !== actor.id) throw new HttpError(404, '反馈不存在或无权访问')
+    if (!row || !isManager(actor) && row.reporterId !== actor.id) throw new HttpError(404, '反馈不存在或无权访问')
     return row
   }
   private project(actor: User, row: Feedback): FeedbackView {
     const { duplicateOfId, ...safe } = row
     const assigneeAvailable = this.assigneeAvailable(row)
-    return { ...safe, ...(actor.role === 'manager' && duplicateOfId ? { duplicateOfId } : {}), reporterName: name(this.store, row.reporterId),
+    return { ...safe, ...(isManager(actor) && duplicateOfId ? { duplicateOfId } : {}), reporterName: name(this.store, row.reporterId),
       assigneeName: `${name(this.store, row.assigneeId)}${assigneeAvailable ? '' : '（当前不可受理）'}`, assigneeAvailable }
   }
   private assigneeAvailable(row: Feedback): boolean {
     const assignee = this.store.get<User>('users', row.assigneeId)
-    return !!assignee && assignee.role === 'manager' && canUseAccount(assignee)
+    return !!assignee && isManager(assignee) && canUseAccount(assignee)
   }
   /** This runs only inside a successful command transaction; read views never change ownership. */
   private ensureAssignee(actor: User, row: Feedback): Feedback {
@@ -77,16 +78,16 @@ export class FeedbackService {
   }
   meta(actor: User): FeedbackMetaResponse {
     this.actor(actor)
-    const managers = this.store.list<User>('users').filter(user => user.role === 'manager' && canUseAccount(user)).map(({ id, name }) => ({ id, name }))
+    const managers = this.store.list<User>('users').filter(user => isManager(user) && canUseAccount(user)).map(({ id, name }) => ({ id, name }))
     return { managers, defaultAssigneeId: managers[0]?.id ?? null }
   }
   list(actor: User, query: FeedbackListQuery = {}): FeedbackListResponse {
     actor = this.actor(actor)
     const scope = query.scope ?? 'mine', limit = query.limit ?? 30
     if (!['mine', 'all'].includes(scope) || !Number.isInteger(limit) || limit < 1 || limit > 100 || query.status !== undefined && !feedbackStatuses.includes(query.status)) fail('反馈筛选或分页参数无效')
-    if (scope === 'all' && actor.role !== 'manager') throw new HttpError(403, '只有管理者可以查看全部反馈')
+    if (scope === 'all' && !isManager(actor)) throw new HttpError(403, '只有管理者可以查看全部反馈')
     if (query.assigneeId !== undefined) {
-      if (actor.role !== 'manager') throw new HttpError(403, '只有管理者可以按受理人筛选反馈')
+      if (!isManager(actor)) throw new HttpError(403, '只有管理者可以按受理人筛选反馈')
       if (!this.meta(actor).managers.some(manager => manager.id === query.assigneeId)) fail('请选择有效受理人')
     }
     const rows = this.store.list<Feedback>('feedback').filter(row => (scope === 'all' || row.reporterId === actor.id) && (!query.assigneeId || row.assigneeId === query.assigneeId))
@@ -109,7 +110,7 @@ export class FeedbackService {
     const actions: FeedbackAction[] = ['comment']
     if (row.status === 'verification' && row.reporterId === actor.id) actions.push('confirm')
     if (row.status === 'verification' || row.status === 'closed') actions.push('reopen')
-    if (actor.role === 'manager' && row.status !== 'closed') {
+    if (isManager(actor) && row.status !== 'closed') {
       actions.push('assign', 'request_info', 'defer', 'ready', 'close', 'duplicate')
       if (row.status === 'new' || row.status === 'in_progress') actions.push('start')
     }
@@ -120,7 +121,7 @@ export class FeedbackService {
     const row = this.row(actor, id)
     return { feedback: this.project(actor, row), events: this.store.list<FeedbackEvent>('feedbackEvents').filter(event => event.feedbackId === id).map(event => {
       const { duplicateOfId, ...safe } = event
-      return { ...safe, ...(actor.role === 'manager' && duplicateOfId ? { duplicateOfId } : {}) }
+      return { ...safe, ...(isManager(actor) && duplicateOfId ? { duplicateOfId } : {}) }
     }), attachments: this.store.list<StoredFeedbackAttachment>('feedbackAttachments').filter(attachment => attachment.feedbackId === id).map(feedbackAttachmentMetadata), allowedActions: this.allowed(actor, row) }
   }
   attachment(actor: User, id: string, attachmentId: string): StoredFeedbackAttachment {
@@ -208,7 +209,7 @@ export class FeedbackService {
     return this.command(actor, `action:${id}`, input, () => {
       const before = this.row(actor, id), action = input.action as FeedbackAction
       if (!['comment', 'assign', 'start', 'request_info', 'defer', 'ready', 'confirm', 'reopen', 'close', 'duplicate'].includes(action)) fail('反馈处理动作无效')
-      if (!this.allowed(actor, before).includes(action)) throw new HttpError(actor.role !== 'manager' && !['comment', 'confirm', 'reopen'].includes(action) ? 403 : 409, '当前身份或反馈状态不允许此操作，请刷新查看')
+      if (!this.allowed(actor, before).includes(action)) throw new HttpError(!isManager(actor) && !['comment', 'confirm', 'reopen'].includes(action) ? 403 : 409, '当前身份或反馈状态不允许此操作，请刷新查看')
       if (input.version !== before.version) throw new HttpError(409, '反馈已更新，请刷新后核对再提交；输入内容已保留')
       const attachments = validateFeedbackAttachments(input.attachments), patch: Partial<Feedback> = { attachmentCount: before.attachmentCount + attachments.length }, extra: Partial<FeedbackEvent> = {}
       let text = ''

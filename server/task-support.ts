@@ -5,6 +5,7 @@ import { isActiveTask } from '../shared/task-state.ts'
 import { HttpError, type Store } from './store.ts'
 import { collaborationId, requiredText, utcTime } from './collaboration-store.ts'
 import { activePeople, activeTask, audit, businessActor, cas, command, inbox, ownedTask, type Input } from './delivery-common.ts'
+import { isManager } from './authorization.ts'
 
 export function coordinatorAvailable(store: Store, episode: BlockerEpisode): boolean { return activePeople(store).some(user => user.id === episode.coordinatorId) }
 export function decisionOwnerAvailable(store: Store, request: DecisionRequest): boolean { return activePeople(store, true).some(user => user.id === request.decisionOwnerId) }
@@ -20,18 +21,18 @@ export class TaskSupportService {
     return id
   }
   private canReadEpisode(actor: User, episode: BlockerEpisode, task: Task) {
-    if (actor.role !== 'manager' && task.ownerId !== actor.id && episode.coordinatorId !== actor.id) throw new HttpError(404, '支持事项不存在或无权访问')
+    if (!isManager(actor) && task.ownerId !== actor.id && episode.coordinatorId !== actor.id) throw new HttpError(404, '支持事项不存在或无权访问')
   }
   private blockerActions(actor: User, episode: BlockerEpisode, task: Task): string[] {
     if (!isActiveTask(task) || episode.managementClosedAt) return []
-    const actions = actor.role === 'manager' ? ['assign', 'record', 'respond', 'defer', 'close'] : episode.coordinatorId === actor.id ? ['record', 'respond'] : []
+    const actions = isManager(actor) ? ['assign', 'record', 'respond', 'defer', 'close'] : episode.coordinatorId === actor.id ? ['record', 'respond'] : []
     return actions
   }
   blockerView(actor: User, id: string): BlockerView {
     actor = businessActor(this.store, actor)
     const episode = this.episode(id), task = this.parent(episode.parentTaskId)
     this.canReadEpisode(actor, episode, task)
-    const minimalContext = actor.role !== 'manager' && task.ownerId !== actor.id
+    const minimalContext = !isManager(actor) && task.ownerId !== actor.id
     const actions = this.store.list<BlockerAction>('blockerActions').filter(row => row.episodeId === id)
     const assignmentIndex = actions.reduce((last, row, index) => row.action === 'assign' ? index : last, -1)
     const visibleActions = minimalContext ? actions.slice(Math.max(0, assignmentIndex)).filter(row => row.actorId === actor.id) : actions
@@ -41,7 +42,7 @@ export class TaskSupportService {
       coordinatorAvailable: coordinatorAvailable(this.store, episode), allowedActions: this.blockerActions(actor, episode, task) }
   }
   private decisionActions(actor: User, request: DecisionRequest, task: Task): string[] {
-    if (!isActiveTask(task) || actor.role !== 'manager') return []
+    if (!isActiveTask(task) || !isManager(actor)) return []
     if (request.status !== 'open') return ['reopen']
     return ['reassign', 'cancel', ...(actor.id === request.decisionOwnerId && decisionOwnerAvailable(this.store, request) ? ['decide'] : [])]
   }
@@ -52,7 +53,7 @@ export class TaskSupportService {
   }
   taskView(actor: User, taskId: string): TaskSupportView {
     actor = businessActor(this.store, actor)
-    const task = ownedTask(this.store, actor, taskId), manager = actor.role === 'manager', active = isActiveTask(task)
+    const task = ownedTask(this.store, actor, taskId), manager = isManager(actor), active = isActiveTask(task)
     return { blockers: this.store.list<BlockerEpisode>('blockerEpisodes').filter(row => row.parentTaskId === taskId).map(row => this.blockerView(actor, row.id)),
       decisions: this.store.list<DecisionRequest>('decisionRequests').filter(row => row.taskId === taskId).map(row => this.decisionView(actor, row.id)),
       eligibleCoordinators: manager ? activePeople(this.store).map(({ id, name }) => ({ id, name })) : [],
@@ -98,7 +99,7 @@ export class TaskSupportService {
       if (!this.blockerActions(actor, before, task).includes(String(input.action))) throw new HttpError(403, '仅当前协调人可以回应，延期复查和管理关闭需要管理者')
       const actionName = input.action as 'record' | 'respond' | 'defer' | 'close', note = requiredText(input.note, '处理说明'), now = this.clock()
       const reviewAt = actionName === 'defer' ? this.due(input.reviewAt) : input.reviewAt ? this.due(input.reviewAt) : null
-      const patch: Partial<BlockerEpisode> = { responseNote: note, managementNote: actor.role === 'manager' ? note : before.managementNote,
+      const patch: Partial<BlockerEpisode> = { responseNote: note, managementNote: isManager(actor) ? note : before.managementNote,
         coordinationState: actionName === 'close' ? 'management_closed' : actionName === 'respond' ? 'responded' : 'in_progress',
         ...(actionName === 'close' ? { managementClosedAt: now.toISOString(), reviewAt: null } : actionName === 'defer' ? { reviewAt } : actionName === 'respond' ? { reviewAt: null } : {}) }
       const episode = this.store.update<BlockerEpisode>('blockerEpisodes', id, before.version, patch)

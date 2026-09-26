@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { Store, HttpError } from './store.ts'
-import { requireManager } from './auth.ts'
+import { requireManager } from './authorization.ts'
 import { exportBusinessData, exportCsv, exportXlsx, previewRestore, restoreBusinessData, type TransferType } from './data-transfer.ts'
 
 export function createDataRouter(store: Store, readOnly = false) {

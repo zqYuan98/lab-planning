@@ -23,6 +23,8 @@ function fixture(t: TestContext) {
   const put = <T extends Entity>(collection: string, data: Omit<T, keyof Entity> & Partial<Entity>): T => store.restoreEntity<T>(collection, { version: 1, createdAt: earlier, updatedAt: earlier, ...data } as T)
   const user = (id: string, role: User['role']) => put<User>('users', { id, role, name: id, email: `${id}@r2.invalid`, position: '', active: true })
   const manager = user('manager', 'manager'), former = user('former', 'member'), current = user('current', 'member'), peer = user('peer', 'member'), observer = user('observer', 'observer')
+  // The store creates a random epoch on open; replace it with the fixed fixture value.
+  store.delete('operationContexts', 'business-commands', store.get<Entity>('operationContexts', 'business-commands')!.version)
   put<Entity & { epoch: string }>('operationContexts', { id: 'business-commands', epoch: 'fixed-r2-epoch' })
   const plan = (id: string, patch: Partial<MonthlyPlan> = {}) => put<MonthlyPlan>('plans', { id, month: '2026-09', title: id, projectId: null, category: '', ownerId: current.id, collaboratorIds: [], expectedOutcome: '个人预期秘密', acceptanceCriteria: '个人验收秘密', dueDate: '2026-09-30', priority: 'medium', status: 'published', reviewComment: '个人审核秘密', publishedVersion: 1, sourcePlanId: null, actualOutcome: '', acceptanceStatus: 'pending', acceptanceNote: '', ...patch })
   const task = (id: string, patch: Partial<Task> = {}) => put<Task>('tasks', { id, title: id, monthlyPlanId: null, ownerId: former.id, description: '', dueDate: '2026-09-30', status: 'doing', isTemporary: false, temporaryReason: '', ...patch })

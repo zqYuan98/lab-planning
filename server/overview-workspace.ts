@@ -8,13 +8,18 @@ import { taskPriority } from '../shared/task-presentation.ts'
 import { HttpError, type Store } from './store.ts'
 import { pageContext, queryKeys, queryText, readPage } from './page-read-common.ts'
 import { planReference, planVisibilityProjector } from './plan-visibility.ts'
+import { isManager } from './authorization.ts'
 
 const metadata = ['id', 'version', 'createdAt', 'updatedAt']
+/** Same ordering as localeCompare(…, 'zh-CN') without building a collator per comparison. */
+const zhCollator = new Intl.Collator('zh-CN')
 const taskFields = [...metadata, 'title', 'monthlyPlanId', 'ownerId', 'dueDate', 'status', 'isTemporary', 'temporaryReason', 'priority']
 const planFields = [...metadata, 'month', 'title', 'projectId', 'ownerId', 'collaboratorIds', 'dueDate', 'priority', 'status', 'publishedVersion', 'sourcePlanId', 'acceptanceStatus', 'mergedFromIds', 'mergedIntoId', 'isTemporary', 'visibility']
 const recordFields = [...metadata, 'taskId', 'monthlyPlanId', 'ownerId', 'weekStart', 'commitment', 'status', 'submitted', 'planApproval']
 function projection(fields: string[], source = 'e.data') {
-  return `json_object(${fields.map(key => `'${key}',CASE json_type(${source},'$.${key}') WHEN 'true' THEN json('true') WHEN 'false' THEN json('false') ELSE json_extract(${source},'$.${key}') END`).join(',')})`
+  // `->` yields each value as JSON (booleans, strings, arrays and objects intact; missing is
+  // NULL), matching a json_type/json_extract CASE with one path lookup instead of two.
+  return `json_object(${fields.map(key => `'${key}',${source} -> '$.${key}'`).join(',')})`
 }
 function snapshotProjection(fields: string[], side: 'before' | 'after') { return `CASE WHEN json_type(e.data,'$.${side}')='object' THEN ${projection(fields, `json_extract(e.data,'$.${side}')`)} ELSE NULL END` }
 function rows<T>(store: Store, collection: string, fields: string[], where = '', values: (string | number)[] = []): T[] {
@@ -36,7 +41,7 @@ function bool(value: unknown) {
 }
 /** Reads only overview facts. Raw reports, audit narratives and task progress are not page data. */
 function overviewFacts(store: Store, actor: User, options: { period: WorkPeriod; date: string; personal?: boolean; search?: boolean }) {
-  const manager = actor.role === 'manager', month = options.date.slice(0, 7)
+  const manager = isManager(actor), month = options.date.slice(0, 7)
   const start = options.personal ? [weekMonday(`${month}-01`), addCalendarDays(weekMonday(options.date), -21)].sort()[0]
     : options.period === 'week' ? weekMonday(options.date) : `${month}-01`
   const end = options.period === 'week' && !options.personal ? addCalendarDays(start, 6) : addCalendarDays(`${shiftCalendarMonth(month, 1)}-01`, -1)
@@ -97,7 +102,7 @@ function overviewFacts(store: Store, actor: User, options: { period: WorkPeriod;
 export class OverviewWorkspaceService {
   constructor(private store: Store, private clock = () => new Date()) {}
   personal(actor: User, input: Record<string, unknown> = {}): PersonalOverviewResponse {
-    return this.store.transaction(() => {
+    return this.store.readTransaction(() => {
       queryKeys(input, [])
       const context = pageContext(this.store, actor); actor = context.actor
       const today = shanghaiToday(this.clock()), data = overviewFacts(this.store, actor, { period: 'month', date: today, personal: true })
@@ -114,9 +119,9 @@ export class OverviewWorkspaceService {
     })
   }
   department(actor: User, input: Record<string, unknown>): DepartmentOverviewResponse {
-    return this.store.transaction(() => {
+    return this.store.readTransaction(() => {
       const context = pageContext(this.store, actor); actor = context.actor
-      if (actor.role !== 'manager') throw new HttpError(403, '只有管理者可以读取部门概览')
+      if (!isManager(actor)) throw new HttpError(403, '只有管理者可以读取部门概览')
       queryKeys(input, ['period', 'date', 'includeInactive', 'ownerId', 'projectId', 'status', 'q', 'riskOnly', 'sort', 'cursor', 'limit'])
       const period = queryText(input.period) || 'all', date = queryText(input.date) || shanghaiToday(this.clock())
       if (!['all', 'month', 'week'].includes(period) || !day(date)) throw new HttpError(400, '统计周期或日期无效')
@@ -128,15 +133,15 @@ export class OverviewWorkspaceService {
       const workspace = buildWorkspace(data, { period: period as WorkPeriod, date, includeInactive }, shanghaiToday(this.clock()))
       const work = filterWorkRows(workspace.rows, { query, ownerId, projectId, riskOnly, status: status === 'unplanned' ? '' : status as WorkFilters['status'] })
         .filter(row => status !== 'unplanned' || row.status === 'draft' || row.status === 'unscheduled')
-        .sort((a, b) => (sort === 'due' ? (a.dueDate || '9999').localeCompare(b.dueDate || '9999') : sort === 'risk' ? Number(b.overdue || ['blocked', 'not_done'].includes(b.status)) - Number(a.overdue || ['blocked', 'not_done'].includes(a.status)) : 0) || a.ownerName.localeCompare(b.ownerName, 'zh-CN') || a.title.localeCompare(b.title, 'zh-CN') || a.id.localeCompare(b.id))
+        .sort((a, b) => (sort === 'due' ? (a.dueDate || '9999').localeCompare(b.dueDate || '9999') : sort === 'risk' ? Number(b.overdue || ['blocked', 'not_done'].includes(b.status)) - Number(a.overdue || ['blocked', 'not_done'].includes(a.status)) : 0) || zhCollator.compare(a.ownerName, b.ownerName) || zhCollator.compare(a.title, b.title) || a.id.localeCompare(b.id))
       const represented = new Set(work.map(row => row.ownerId)), members = workspace.members.filter(member => (!ownerFilter || member.id === ownerId) && (projectFilter || statusFilter || riskOnly ? represented.has(member.id) : !query || represented.has(member.id) || member.name.toLocaleLowerCase().includes(query.toLocaleLowerCase())))
       const memberSummaries: OverviewMember[] = members.map(member => {
         const own = work.filter(row => row.ownerId === member.id)
         return { id: member.id, name: member.name, role: member.role, position: member.position, active: member.active, summary: summary(own), preview: previewWorkRows(own).map(overviewRow), projects: [...new Set(own.map(row => row.projectName))], due: own.map(row => row.dueDate || '9999').sort()[0] || '9999' }
-      }).sort((a, b) => (sort === 'tasks' ? b.summary.total - a.summary.total : sort === 'risk' ? b.summary.risk - a.summary.risk : sort === 'due' ? a.due.localeCompare(b.due) : 0) || a.name.localeCompare(b.name, 'zh-CN') || a.id.localeCompare(b.id))
+      }).sort((a, b) => (sort === 'tasks' ? b.summary.total - a.summary.total : sort === 'risk' ? b.summary.risk - a.summary.risk : sort === 'due' ? a.due.localeCompare(b.due) : 0) || zhCollator.compare(a.name, b.name) || a.id.localeCompare(b.id))
       const groups = (kind: 'status' | 'owner' | 'project'): OverviewGroup[] => {
         const groups = new Map<string, WorkRow[]>()
-        for (const row of work) { const key = kind === 'status' ? row.status : kind === 'owner' ? row.ownerId : row.projectId || '__none__'; groups.set(key, [...(groups.get(key) || []), row]) }
+        for (const row of work) { const key = kind === 'status' ? row.status : kind === 'owner' ? row.ownerId : row.projectId || '__none__'; const entries = groups.get(key); if (entries) entries.push(row); else groups.set(key, [row]) }
         return [...groups].map(([id, entries]) => ({ id, name: kind === 'status' ? id : kind === 'owner' ? entries[0].ownerName : entries[0].projectName, summary: summary(entries), ownerCount: new Set(entries.map(row => row.ownerId)).size, planCount: new Set(entries.map(row => row.planId).filter(Boolean)).size, ownerNames: [...new Set(entries.map(row => row.ownerName))] }))
       }
       return { ...readPage(input, work.map(overviewRow), context, 'overview-department'), operationEpoch: context.operationEpoch, startDate: workspace.startDate, endDate: workspace.endDate, summary: summary(work), members: memberSummaries,

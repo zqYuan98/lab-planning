@@ -8,6 +8,8 @@ import { notifyPublishedPlans } from './notification-events.ts'
 import { HttpError } from './store.ts'
 import { DomainBase, bool, choice, date, manager, month, own, participates, text, type Input } from './domain-common.ts'
 import { assertOperationEpoch } from './operation-context.ts'
+import { isManager } from './authorization.ts'
+import { LIMITS, PRIORITIES, WORK_SOURCES } from '../shared/entity-rules.ts'
 
 interface MonthlyCarryReceipt extends Entity {
   actorId: string; requestId: string; sourcePlanId: string; sourceVersion: number; payloadHash: string; targetPlanId: string
@@ -39,7 +41,7 @@ export class MonthlyService extends DomainBase {
   }
   private editable(actor: User, plan: MonthlyPlan) {
     own(actor, plan.ownerId)
-    if (actor.role === 'manager') return
+    if (isManager(actor)) return
     if (!plan.isTemporary) throw new HttpError(403, '普通月度目标需由管理者维护')
     if (!['draft', 'returned'].includes(plan.status)) throw new HttpError(403, '提交后的临时目标需由管理者退回后修改')
   }
@@ -63,16 +65,16 @@ export class MonthlyService extends DomainBase {
     const dueDate = date(input.dueDate, '截止日期')
     if (!dueDate.startsWith(period)) throw new HttpError(400, '月计划截止日期必须在所属月份内')
     const metadata: Pick<MonthlyPlan, 'workSource' | 'assignedBy' | 'assignedOn'> = {}
-    if (input.workSource !== undefined) metadata.workSource = choice(input.workSource, ['leader', 'self', 'coordination'], '工作来源')
-    if (input.assignedBy !== undefined) metadata.assignedBy = text(input.assignedBy, '交办人', false, 100)
+    if (input.workSource !== undefined) metadata.workSource = choice(input.workSource, WORK_SOURCES, '工作来源')
+    if (input.assignedBy !== undefined) metadata.assignedBy = text(input.assignedBy, '交办人', false, LIMITS.assignedBy)
     if (input.assignedOn !== undefined) metadata.assignedOn = input.assignedOn === '' ? '' : date(input.assignedOn, '交办日期')
     const plan = this.store.insert<MonthlyPlan>('plans', {
       ...(input.annualGoalId !== undefined ? { annualGoalId: this.annualLink(input.annualGoalId, period) } : {}),
-      month: period, title: text(input.title, '计划标题', true, 300), projectId,
+      month: period, title: text(input.title, '计划标题', true, LIMITS.title), projectId,
       category: text(input.category, '工作类别', !projectId, 100), ownerId,
       collaboratorIds: this.collaborators(input.collaboratorIds, ownerId),
       expectedOutcome: text(input.expectedOutcome, '预期成果'), acceptanceCriteria: text(input.acceptanceCriteria, '验收标准'), dueDate,
-      priority: choice(input.priority ?? 'medium', ['high', 'medium', 'low'], '优先级'),
+      priority: choice(input.priority ?? 'medium', PRIORITIES, '优先级'),
       isTemporary, temporaryReason: isTemporary ? text(input.temporaryReason, '临时目标原因') : '',
       status: 'draft', reviewComment: '', publishedVersion: null, sourcePlanId,
       actualOutcome: '', acceptanceStatus: 'pending', acceptanceNote: '', ...metadata,
@@ -93,12 +95,12 @@ export class MonthlyService extends DomainBase {
       const patch: Partial<MonthlyPlan> = {}
       if (input.annualGoalId !== undefined) patch.annualGoalId = this.annualLink(input.annualGoalId, before.month)
       if (before.isTemporary && input.temporaryReason !== undefined) patch.temporaryReason = text(input.temporaryReason, '临时目标原因')
-      if (input.title !== undefined) patch.title = text(input.title, '计划标题', true, 300)
+      if (input.title !== undefined) patch.title = text(input.title, '计划标题', true, LIMITS.title)
       if (input.projectId !== undefined) {
         patch.projectId = input.projectId ? text(input.projectId, '项目') : null
         if (patch.projectId && patch.projectId !== before.projectId) this.activeProject(patch.projectId)
       }
-      if (input.category !== undefined) patch.category = text(input.category, '工作类别', false, 100)
+      if (input.category !== undefined) patch.category = text(input.category, '工作类别', false, LIMITS.category)
       if (input.ownerId !== undefined && input.ownerId !== before.ownerId) {
         manager(actor)
         patch.ownerId = this.activeUser(input.ownerId).id
@@ -112,7 +114,7 @@ export class MonthlyService extends DomainBase {
         patch.dueDate = before.importSource && text(input.dueDate, '截止日期', false, 10) === '' ? '' : date(input.dueDate, '截止日期')
         if (patch.dueDate && !patch.dueDate.startsWith(before.month)) throw new HttpError(400, '截止日期必须在所属月份内')
       }
-      if (input.priority !== undefined) patch.priority = choice(input.priority, ['high', 'medium', 'low'], '优先级')
+      if (input.priority !== undefined) patch.priority = choice(input.priority, PRIORITIES, '优先级')
       const next = { ...before, ...patch }
       if (!next.projectId && !next.category && !before.importSource) throw new HttpError(400, '没有所属项目时需要填写工作类别')
       if (this.store.list<Task>('tasks').some(task => isActiveTask(task) && task.monthlyPlanId === id && !participates(next, task.ownerId))) throw new HttpError(400, '修改责任人前，请先处理仍关联此计划的个人任务，保留任务负责人为协作者')
@@ -185,7 +187,7 @@ export class MonthlyService extends DomainBase {
     if (!Array.isArray(input.planIds) || input.planIds.some(id => typeof id !== 'string')) throw new HttpError(400, '请选择需要合并的提报')
     const ids = [...new Set(input.planIds as string[])]
     if (ids.length < 2 || ids.length > 50) throw new HttpError(400, '请选择 2 至 50 条提报进行合并')
-    const title = text(input.title, '合并后的标题', true, 300)
+    const title = text(input.title, '合并后的标题', true, LIMITS.title)
     const reason = text(input.reason, '合并原因')
     return this.store.transaction(() => {
       const sources = ids.map(id => this.need<MonthlyPlan>('plans', id))
@@ -231,7 +233,7 @@ export class MonthlyService extends DomainBase {
       this.current<MonthlyPlan>('plans', id, input)
       if (before.status !== 'published') throw new HttpError(400, '只有已发布计划可以提交或确认月度成果')
       const status = choice(input.acceptanceStatus, ['submitted', 'accepted', 'not_completed'], '验收状态')
-      if (actor.role !== 'manager' && (status !== 'submitted' || before.acceptanceStatus === 'accepted')) throw new HttpError(403, '月度成果需由管理者确认，已验收成果需由管理者修改')
+      if (!isManager(actor) && (status !== 'submitted' || before.acceptanceStatus === 'accepted')) throw new HttpError(403, '月度成果需由管理者确认，已验收成果需由管理者修改')
       const actualOutcome = text(input.actualOutcome, '实际成果', status !== 'not_completed')
       let acceptanceNote: string
       try { acceptanceNote = text(input.acceptanceNote, status === 'not_completed' ? '未完成原因' : '验收说明', status === 'not_completed') }

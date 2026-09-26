@@ -16,3 +16,9 @@ export function beginRuntimeRun(store: Store, service: Service, now = new Date()
     map!.set(service, { ...previous, running: false, ...(success ? { completedAt: finished.toISOString() } : { failedAt: finished.toISOString() }) })
   }
 }
+/** Mirror a heartbeat reported by another thread (the scheduler runs on its own connection). */
+export function recordRuntimeHeartbeat(store: Store, service: Service, heartbeat: RuntimeHeartbeat) {
+  let map = values.get(store)
+  if (!map) { map = new Map(); values.set(store, map) }
+  map.set(service, { ...heartbeat })
+}

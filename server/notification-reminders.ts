@@ -6,6 +6,7 @@ import { enqueueNotification, notificationId } from './notifications.ts'
 import { Store } from './store.ts'
 import { addWeekDays, shanghaiWeek } from './weekly-submission-clock.ts'
 import { WeeklySubmissionService } from './weekly-submissions.ts'
+import { isManager, isObserver } from './authorization.ts'
 
 export function currentReminderSlot(now: Date, week?: string, deadlineAt?: string | null): '09:00' | '15:00' | '16:05' | undefined {
   if (!Number.isFinite(now.getTime()) || deadlineAt === null) return
@@ -55,8 +56,8 @@ export function runNotificationReminders(store: Store, now: Date = new Date()): 
     const rule = store.get<WeeklyRule>('weeklyRules', 'weekly-submission-rule')
     if (!rule?.enabled || !rule.windows.some(window => week >= window.fromWeek && (!window.toWeek || week < window.toWeek))) return
 
-    const users = store.list<User>('users'), activeUsers = users.filter(user => canUseAccount(user) && user.role !== 'observer')
-    const managers = activeUsers.filter(user => user.role === 'manager')
+    const users = store.list<User>('users'), activeUsers = users.filter(user => canUseAccount(user) && !isObserver(user))
+    const managers = activeUsers.filter(user => isManager(user))
     const actor = managers[0] ?? activeUsers[0]
     if (!actor) return
 

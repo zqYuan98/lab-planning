@@ -58,6 +58,24 @@ const MinimalSupportPanel = retryableLazy(async () => ({ default: (await import(
   fallback: (children, props) => <Modal title="支持事项" onClose={props.onClose}>{children}</Modal>,
 })
 const managerPages = new Set<PageId>(['reports', 'team', 'notification-settings'])
+const pageModules: Record<PageId, { preload: () => void }> = {
+  overview: Overview, monthly: Monthly, weekly: Weekly, projects: Projects, goals: Goals, team: Team, reports: Reports, imports: Imports,
+  messages: Messages, 'notification-settings': NotificationSettings, collaboration: WorkFollowups, 'work-register': WorkRegister,
+  'period-reviews': PeriodReviews, 'authorized-work': AuthorizedWork, feedback: Feedback,
+}
+
+/** Fetch every page the account can open once the browser is idle, so later navigation does not wait on a chunk. */
+function preloadPagesWhenIdle(role: Bootstrap['user']['role']) {
+  if ((navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData) return
+  const pages = (Object.keys(pageModules) as PageId[]).filter(id => role === 'observer' ? id === 'authorized-work' : role === 'manager' || !managerPages.has(id))
+  const run = () => pages.forEach(id => pageModules[id].preload())
+  if (typeof window.requestIdleCallback === 'function') {
+    const handle = window.requestIdleCallback(run, { timeout: 3000 })
+    return () => window.cancelIdleCallback(handle)
+  }
+  const timer = window.setTimeout(run, 1500)
+  return () => window.clearTimeout(timer)
+}
 
 export default function App() {
   const [data, setData] = useState<Bootstrap | null>(null),
@@ -254,6 +272,8 @@ export default function App() {
       if (!identityCurrent(sequence)) return
       setInitialized(status.initialized)
       if (status.initialized) {
+        // Download the entry page's code while identity and workspace requests are in flight.
+        pageModules[entryLocation(window.location).page]?.preload()
         if (isDingTalk()) { await dingTalkLogin(); return }
         try {
           await identityThenWorkspace({ dingTalk: false, verify: exchangeDingTalk, normalSession: () => api('/auth/me'), load: () => loadIdentityWorkspace(sequence) })
@@ -357,6 +377,7 @@ export default function App() {
     document.addEventListener('visibilitychange', update)
     return () => { live = false; window.clearInterval(timer); document.removeEventListener('visibilitychange', update) }
   }, [data?.user.id])
+  useEffect(() => { if (data) return preloadPagesWhenIdle(data.user.role) }, [data?.user.id, data?.user.role])
   useEffect(() => {
     if (!toast) return
     const timer = window.setTimeout(() => setToast(''), 4500)

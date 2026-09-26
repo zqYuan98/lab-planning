@@ -1,7 +1,7 @@
 import 'dotenv/config'
 import { createApp } from './app.ts'
 import { Store } from './store.ts'
-import { startScheduler } from './scheduler.ts'
+import { startSchedulerThread } from './scheduler-thread.ts'
 import { resolve } from 'node:path'
 import { closeImportServices } from './import-routes.ts'
 import { startNotificationWorker } from './notification-worker.ts'
@@ -25,7 +25,7 @@ const app = createApp({ store, dingtalkClient, nativeClient, usageAnalytics })
 const port = Number(process.env.PORT || 4310)
 const host = process.env.HOST || '127.0.0.1'
 const server = app.listen(port, host)
-let stopScheduler = () => {}
+let stopScheduler = async () => {}
 let stopNotifications = async () => {}
 let stopNative = async () => {}
 let stopStream = async () => {}
@@ -33,7 +33,7 @@ let stopReportAgent = async () => {}
 let usageCleanup: NodeJS.Timeout | undefined
 server.once('listening', () => {
   if (stopping) return
-  stopScheduler = startScheduler(store)
+  stopScheduler = startSchedulerThread(store, databasePath)
   stopNotifications = startNotificationWorker(store, dingtalkClient)
   stopNative = startNativeWorker(store, nativeClient)
   stopStream = startNativeStream(store, nativeClient)
@@ -51,12 +51,12 @@ function shutdown() {
   const deadline = setTimeout(() => process.exit(1), SHUTDOWN_TIMEOUT_MS)
   deadline.unref()
   void drainServices({
-    stopScheduling: () => { stopScheduler(); if (usageCleanup) clearInterval(usageCleanup); closeImportServices(store) },
-    stopWorkers: async () => { await Promise.all([stopNotifications(), stopNative(), stopStream(), stopReportAgent()]) },
+    stopScheduling: () => { if (usageCleanup) clearInterval(usageCleanup); closeImportServices(store) },
+    stopWorkers: async () => { await Promise.all([stopScheduler(), stopNotifications(), stopNative(), stopStream(), stopReportAgent()]) },
     closeHttp: () => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())),
     closeStore: () => { usageAnalytics.close(); store.close() },
   }).then(() => { clearTimeout(deadline); process.exitCode = 0 }).catch(() => { console.error('服务退出未完成，保留发送租约供重启核查'); process.exitCode = 1 })
 }
 process.on('SIGINT', shutdown)
 process.on('SIGTERM', shutdown)
-server.on('error', error => { stopScheduler(); if (usageCleanup) clearInterval(usageCleanup); usageAnalytics.close(); store.close(); console.error('服务启动失败：', error.message); process.exitCode = 1 })
+server.on('error', error => { void stopScheduler(); if (usageCleanup) clearInterval(usageCleanup); usageAnalytics.close(); store.close(); console.error('服务启动失败：', error.message); process.exitCode = 1 })

@@ -14,6 +14,7 @@ import { projectWeeklyDuty } from './weekly-duty-view.ts'
 import type { WeeklyDuty } from '../shared/weekly-submissions.ts'
 import type { NotificationDigest } from '../shared/collaboration-notifications.ts'
 import { visibleDigestItems } from './collaboration-content.ts'
+import { isManager, isObserver } from './authorization.ts'
 
 function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical)
@@ -25,7 +26,7 @@ export function nativeClip(value: string, bytes: number) { let result = ''; for 
 export function nativeUrl(notificationId: string) { const origin = appOrigin(); if (!origin || origin.protocol !== 'https:') throw new HttpError(409, '原生渠道需要HTTPS入口'); const url = new URL('/entry', origin); url.searchParams.set('notificationId', notificationId); return url.href }
 export function nativeDesired(store: Store, recipientId: string, action: NativeActionRef): NativeDesiredState | undefined {
   const actor = store.get<User>('users', recipientId)
-  if (!actor || !canUseAccount(actor) || actor.role === 'observer') return
+  if (!actor || !canUseAccount(actor) || isObserver(actor)) return
   let title = '', summary = '', done = false, dueTime: number | undefined, state: unknown
   const note = store.get<Notification>('notifications', action.notificationId)
   if (!note || note.recipientId !== actor.id) return
@@ -45,7 +46,7 @@ export function nativeDesired(store: Store, recipientId: string, action: NativeA
     title = `更新进展：${task.title}`; summary = view.body; done = !!progress; state = [task.version, progress?.id]
   } else if (action.kind === 'review' || action.kind === 'acceptance') {
     const plan = store.get<MonthlyPlan>('plans', action.id)
-    if (!plan || actor.role !== 'manager') return
+    if (!plan || !isManager(actor)) return
     title = `${action.kind === 'review' ? '审核目标' : '验收成果'}：${plan.title}`; summary = plan.expectedOutcome
     done = action.kind === 'review' ? plan.status !== 'submitted' : plan.acceptanceStatus !== 'submitted'; state = plan.version
   } else if (action.kind === 'weekly') {
@@ -56,7 +57,7 @@ export function nativeDesired(store: Store, recipientId: string, action: NativeA
     summary = '进入平台核对完整条目后正式提报。'; done = projected.status === 'exempt' || !!projected.latestSubmission && !projected.changedSinceSubmission; dueTime = Date.parse(duty.deadlineAt); state = [duty.version, projected.latestSubmission?.id, projected.changedSinceSubmission]
   } else if (action.kind === 'blocker') {
     const blocker = store.get<BlockerEpisode>('blockerEpisodes', action.id), task = blocker && store.get<Task>('tasks', blocker.parentTaskId)
-    if (!blocker || !task || task.cancellation || actor.role !== 'manager') return
+    if (!blocker || !task || task.cancellation || !isManager(actor)) return
     title = `核对支持请求：${task.title}`; summary = [blocker.reason, blocker.supportNeeded].filter(Boolean).join('；'); done = !!blocker.resolvedAt || !!blocker.managementClosedAt; state = blocker.version
   } else {
     title = view.content?.items[0]?.title ?? view.title; summary = view.body; done = !!view.acknowledgedAt || !!view.supersededAt; state = [view.version, view.confirmationToken]
@@ -85,7 +86,7 @@ function inferredAction(store: Store, note: Notification): NativeActionRef | und
   if (target.type === 'followup') return { kind: 'followup', id: target.id, notificationId: note.id }
   if (target.type === 'weeklySubmission') return { kind: 'weekly', id: target.id, notificationId: note.id }
   if (target.type === 'task' && note.kind === 'collaboration_risk_member') return { kind: 'progress', id: note.id, taskId: target.id, notificationId: note.id }
-  if (target.type === 'plan' && actor.role === 'manager') {
+  if (target.type === 'plan' && isManager(actor)) {
     const plan = store.get<MonthlyPlan>('plans', target.id)
     if (plan?.status === 'submitted') return { kind: 'review', id: target.id, notificationId: note.id }
     if (plan?.acceptanceStatus === 'submitted') return { kind: 'acceptance', id: target.id, notificationId: note.id }

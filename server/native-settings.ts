@@ -6,9 +6,10 @@ import type { DingTalkIdentity } from './dingtalk.ts'
 import type { DingTalkNativeClient } from './dingtalk-native.ts'
 import { appOrigin } from './auth.ts'
 import { HttpError, Store } from './store.ts'
+import { isManager } from './authorization.ts'
 
 export const nativeCapabilities: NativeCapability[] = ['identity', 'todo', 'card', 'robot', 'orgEvents', 'leaveSync']
-export function nativeManager(store: Store, actor: User) { const current = store.get<User>('users', actor.id); if (!current || !canUseAccount(current) || current.role !== 'manager') throw new HttpError(403, '仅管理者可配置原生能力'); return current }
+export function nativeManager(store: Store, actor: User) { const current = store.get<User>('users', actor.id); if (!current || !canUseAccount(current) || !isManager(current)) throw new HttpError(403, '仅管理者可配置原生能力'); return current }
 export function getNativeSettings(store: Store): NativeSettings {
   return store.get<NativeSettings>('nativeSettings', 'native') ?? { id: 'native', version: 0, createdAt: '', updatedAt: '', todoEnabled: false, cardEnabled: false, robotEnabled: false, orgEventsEnabled: false, leaveSyncEnabled: false, primaryChannel: 'work_notification', pilotUserIds: [], verifiedCapabilities: [], verificationNote: '', enabledAt: null, activationId: '', deploymentId: '', fallbackEnabled: true }
 }

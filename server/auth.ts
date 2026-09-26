@@ -58,7 +58,6 @@ export const requireAuth = (store: Store): RequestHandler => (req, _res, next) =
   req.user = safeUser(user)
   next()
 }
-export const requireManager: RequestHandler = (req, _res, next) => req.user?.role === 'manager' ? next() : next(new HttpError(403, '此操作需要管理者权限'))
 
 /** Validate the canonical origin before accepting requests. */
 export function appOrigin(value = process.env.APP_ORIGIN): URL | undefined {

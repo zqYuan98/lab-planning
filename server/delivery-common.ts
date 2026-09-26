@@ -4,16 +4,17 @@ import { canUseAccount } from '../shared/auth-policy.ts'
 import { isActiveTask } from '../shared/task-state.ts'
 import { collaborationCommand, collaborationId } from './collaboration-store.ts'
 import { HttpError, type Store } from './store.ts'
+import { isManager, isObserver } from './authorization.ts'
 
 export type Input = Record<string, unknown>
 export function businessActor(store: Store, actor: User, managerOnly = false): User {
   const current = store.get<User>('users', actor.id)
-  if (!current || !canUseAccount(current) || current.role === 'observer' || managerOnly && current.role !== 'manager') throw new HttpError(403, '当前账号没有此业务操作权限')
+  if (!current || !canUseAccount(current) || isObserver(current) || managerOnly && !isManager(current)) throw new HttpError(403, '当前账号没有此业务操作权限')
   return current
 }
 export function ownedTask(store: Store, actor: User, id: string, writable = false): Task {
   const task = store.get<Task>('tasks', id)
-  if (!task || actor.role !== 'manager' && task.ownerId !== actor.id) throw new HttpError(404, '任务不存在或无权访问')
+  if (!task || !isManager(actor) && task.ownerId !== actor.id) throw new HttpError(404, '任务不存在或无权访问')
   if (writable) activeTask(task)
   return task
 }
@@ -35,12 +36,12 @@ export function audit(store: Store, actor: User, entityType: string, entityId: s
 export function inbox(store: Store, actor: User, mutationId: string, recipientIds: (string | null | undefined)[], kind: string, title: string, body: string, target: NotificationTarget, now: Date) {
   for (const recipientId of new Set(recipientIds)) {
     const recipient = recipientId ? store.get<User>('users', recipientId) : null
-    if (!recipient || !canUseAccount(recipient) || recipient.role === 'observer' || recipient.id === actor.id) continue
+    if (!recipient || !canUseAccount(recipient) || isObserver(recipient) || recipient.id === actor.id) continue
     const id = collaborationId('delivery-support-inbox', mutationId, recipient.id)
     if (!store.get('notifications', id)) store.insert<Notification>('notifications', { id, eventKey: mutationId, recipientId: recipient.id, kind,
       title, body, targets: [target], actionable: false, openedAt: null, acknowledgedAt: null, supersededAt: null, actorId: actor.id, eventTime: now.toISOString() })
   }
 }
 export function activePeople(store: Store, managerOnly = false) {
-  return store.list<User>('users').filter(user => canUseAccount(user) && user.role !== 'observer' && (!managerOnly || user.role === 'manager'))
+  return store.list<User>('users').filter(user => canUseAccount(user) && !isObserver(user) && (!managerOnly || isManager(user)))
 }
