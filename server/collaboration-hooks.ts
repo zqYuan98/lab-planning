@@ -14,17 +14,17 @@ interface MutationContext {
   actor: User; mutationId: string; now: Date; input: ProgressContent; source: ProgressEvent['source'];
   events: AuditEvent[]; weeklyAssignment?: boolean; result: ProgressEvent | null
 }
-const contexts = new WeakMap<Store, MutationContext>()
+const contexts = storeScope<MutationContext>()
 export function withCollaborationMutation<T>(store: Store, context: Omit<MutationContext, 'events' | 'result'>, operation: () => T): { value: T; event: ProgressEvent | null } {
   const current = contexts.get(store)
   if (current) return { value: operation(), event: current.result }
   const active: MutationContext = { ...context, events: [], result: null }
-  contexts.set(store, active)
-  try {
+  // Audits raised while the batch is processed still join this mutation, as before.
+  return contexts.run(store, active, () => {
     const value = operation()
     active.result = processAudits(store, active)
     return { value, event: active.result }
-  } finally { contexts.delete(store) }
+  })
 }
 export function currentCollaborationMutation(store: Store): ProgressContent | undefined { return contexts.get(store)?.input }
 export function collaborationWorkMutation<T>(store: Store, actor: User, input: Record<string, unknown>, source: ProgressEvent['source'], operation: () => T, weeklyAssignment = false): T {
@@ -115,6 +115,7 @@ function lifecycle(store: Store, context: MutationContext, event: AuditEvent) {
 }
 import { effectiveManagerIds as importManagerIds } from './collaboration-policy.ts'
 import { isManager } from './authorization.ts'
+import { storeScope } from './operation-scope.ts'
 
 function updateBlocker(store: Store, context: MutationContext, event: AuditEvent, task: Task) {
   if (!event.after) return

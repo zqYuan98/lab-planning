@@ -4,16 +4,15 @@ import { enqueueNotification, notificationId } from './notifications.ts'
 import type { Store } from './store.ts'
 import { captureNotificationFacts, notificationEventChanges } from './notification-content.ts'
 import { isSilentImport } from './import-notification-context.ts'
+import { storeScope } from './operation-scope.ts'
 import { collaborationEnabledFor } from './collaboration-policy.ts'
 import { isEffectiveWeeklyRecord } from '../shared/weekly-record-state.ts'
 import { isActiveTask } from '../shared/task-state.ts'
 import { isManager } from './authorization.ts'
 
-const suppressedTasks = new WeakSet<Store>()
+const suppressedTasks = storeScope<true>()
 export function withTaskNotificationSuppressed<T>(store: Store, operation: () => T): T {
-  const already = suppressedTasks.has(store)
-  suppressedTasks.add(store)
-  try { return operation() } finally { if (!already) suppressedTasks.delete(store) }
+  return suppressedTasks.run(store, true, operation)
 }
 const planTarget = (plan: MonthlyPlan): NotificationTarget => ({ type: 'plan', id: plan.id, month: plan.month })
 const changed = (before: unknown, after: unknown, fields: string[]) => fields.some(field => JSON.stringify((before as Record<string, unknown>)[field]) !== JSON.stringify((after as Record<string, unknown>)[field]))

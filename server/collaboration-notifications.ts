@@ -12,6 +12,7 @@ import { addDigestItem, createDigest } from './collaboration-digests.ts'
 import { shanghaiDate } from './collaboration-calendar.ts'
 import { notificationLocalTime, notificationText } from './notification-content.ts'
 import { isManager } from './authorization.ts'
+import { storeScope } from './operation-scope.ts'
 
 const labels: Record<BusinessNotificationKind, string> = {
   followup_requested: '请更新进度', followup_changed: '催办要求有更新', followup_responded: '成员已回应催办', followup_closed: '催办已结束',
@@ -40,13 +41,11 @@ function eventFactValue(field: string, value: unknown) {
   if (field === 'decision' && typeof value === 'string') return ({ approved: '已批准', returned: '已退回' } as Record<string, string>)[value] ?? notificationText(value)
   return notificationText(String(value))
 }
-const publicationDeferred = new WeakSet<Store>()
+const publicationDeferred = storeScope<true>()
 export function withCollaborationPublicationDeferred<T>(store: Store, operation: () => T, now = new Date()): T {
   if (publicationDeferred.has(store)) return operation()
   return store.transaction(() => {
-    publicationDeferred.add(store)
-    let result: T
-    try { result = operation() } finally { publicationDeferred.delete(store) }
+    const result = publicationDeferred.run(store, true, operation)
     publishCollaborationEvents(store, now)
     return result
   })
