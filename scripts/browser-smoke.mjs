@@ -42,6 +42,16 @@ try {
   await send('Page.navigate', { url: `${origin}/` })
   await waitFor(async () => (await evaluate('!!document.querySelector(".arco-layout, .arco-menu, nav")')) === true, 'workspace shell')
   check('workspace shell renders with Arco layout', true)
+  await sleep(3500)
+  const notPreloaded = ['Monthly', 'Reports', 'Team', 'Feedback'].filter(name => !requests.some(u => new RegExp(`/assets/${name}-.*\\.js`).test(u)))
+  check('idle time preloads the other pages', notPreloaded.length === 0, notPreloaded.length ? `missing ${notPreloaded.join(', ')}` : '')
+  const switched = await evaluate(`(async () => {
+    const item = [...document.querySelectorAll('[role="menuitem"]')].find(el => el.textContent.includes('月度目标'))
+    if (!item) return 'no menu item'
+    item.click(); await new Promise(r => requestAnimationFrame(() => r()))
+    return document.querySelector('.page-resource-loading') ? 'loading fallback shown' : 'rendered directly'
+  })()`)
+  check('in-app navigation after preload skips the loading fallback', switched === 'rendered directly', switched)
 
   requests.length = 0
   await send('Page.navigate', { url: `${origin}/work?view=weekly` })

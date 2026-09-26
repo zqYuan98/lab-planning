@@ -11,7 +11,7 @@ export function retryableLazy<Props extends object>(importer: () => Promise<{ de
     const [attempt, setAttempt] = useState(0)
     const onReload = useContext(PageReloadContext)
     const renderFallback = options ? (children: ReactNode) => options.fallback(children, props) : undefined
-    const loading = <div role="status" aria-live="polite"><p>正在加载页面资源…</p></div>
+    const loading = <div className="page-resource-loading" role="status" aria-live="polite"><p>正在加载页面资源…</p></div>
     return <PageErrorBoundary key={attempt} onReload={onReload} renderFallback={renderFallback} onRetry={() => {
       resource.retry()
       setAttempt(value => value + 1)
