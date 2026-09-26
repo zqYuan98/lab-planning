@@ -14,7 +14,7 @@ test('an occupied port exits unsuccessfully without announcing readiness', { tim
   const port = (occupied.address() as AddressInfo).port
   const child = spawn(process.execPath, ['--import', 'tsx', 'server/index.ts'], {
     cwd: resolve('.'),
-    env: { ...process.env, NODE_ENV: 'production', HOST: '127.0.0.1', PORT: String(port),
+    env: { ...process.env, NODE_ENV: 'development', HOST: '127.0.0.1', PORT: String(port),
       APP_ORIGIN: `http://127.0.0.1:${port}`, COOKIE_SECURE: 'false', TRUST_PROXY: 'false',
       DATABASE_PATH: join(directory, 'startup.sqlite') },
     stdio: ['ignore', 'pipe', 'pipe'],
