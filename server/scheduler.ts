@@ -8,6 +8,7 @@ import { runNotificationReminders } from './notification-reminders.ts'
 import { beginRuntimeRun, runtimeHeartbeat } from './runtime-health.ts'
 import { publishCollaborationEvents } from './collaboration-notifications.ts'
 import { runCollaborationDigests } from './collaboration-digests.ts'
+import { isManager } from './authorization.ts'
 
 interface ScheduleRun extends Entity { key: string; type: 'weekly' | 'monthly'; period: string; reportId: string }
 const SCHEDULE_ID = 'report-schedule'
@@ -37,7 +38,7 @@ export function runScheduledReports(store: Store, now = new Date()): string[] {
   const dayOfWeek = new Date(`${date}T00:00:00Z`).getUTCDay() || 7
   const lastDay = new Date(`${shiftMonth(date.slice(0, 7), 1)}-01T00:00:00Z`)
   lastDay.setUTCDate(0)
-  const actor = store.list<User>('users').find(u => u.active && u.role === 'manager')
+  const actor = store.list<User>('users').find(u => u.active && isManager(u))
   if (!actor) return []
   const due: { type: 'weekly' | 'monthly'; period: string }[] = []
   // A reviewed template owns its type even while its scheduler is paused.

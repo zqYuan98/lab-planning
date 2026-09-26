@@ -6,6 +6,7 @@ import { safeUser } from './auth.ts'
 import { HttpError, type Store } from './store.ts'
 import { pageContext, pageWindow, queryKeys, queryText } from './page-read-common.ts'
 import { participates, projectPlan, visiblePlan } from './plan-visibility.ts'
+import { isManager } from './authorization.ts'
 
 const kinds = ['users', 'projects', 'plans', 'tasks'] as const
 const field = (name: string, alias = 'e') => `json_extract(${alias}.data,'$.${name}')`
@@ -26,12 +27,12 @@ export class ImportWorkspaceService {
       if (kind === 'projects') predicates.push(`${field('status')}='active'`)
       if (kind === 'plans') {
         predicates.push(`${field('status')}<>'merged'`, `COALESCE(${field('visibility')},'') NOT IN ('reference','historical')`)
-        if (actor.role !== 'manager') { predicates.push(`(${field('ownerId')}=? OR EXISTS(SELECT 1 FROM json_each(e.data,'$.collaboratorIds') c WHERE c.value=?))`, `(${field('projectId')} IS NULL OR ${field('projectId')}='' OR EXISTS(SELECT 1 FROM entities p WHERE p.collection='projects' AND p.id=${field('projectId')} AND ${field('status', 'p')}='active'))`); values.push(actor.id, actor.id) }
+        if (!isManager(actor)) { predicates.push(`(${field('ownerId')}=? OR EXISTS(SELECT 1 FROM json_each(e.data,'$.collaboratorIds') c WHERE c.value=?))`, `(${field('projectId')} IS NULL OR ${field('projectId')}='' OR EXISTS(SELECT 1 FROM entities p WHERE p.collection='projects' AND p.id=${field('projectId')} AND ${field('status', 'p')}='active'))`); values.push(actor.id, actor.id) }
         if (month) { predicates.push(`${field('month')}=?`); values.push(month) }
       }
       if (kind === 'tasks') {
         predicates.push(`${field('cancellation')} IS NULL`, `EXISTS(SELECT 1 FROM entities u WHERE u.collection='users' AND u.id=${field('ownerId')} AND ${activeUser('u')})`)
-        if (actor.role !== 'manager') { predicates.push(`${field('ownerId')}=?`); values.push(actor.id) }
+        if (!isManager(actor)) { predicates.push(`${field('ownerId')}=?`); values.push(actor.id) }
         if (ownerId) { predicates.push(`${field('ownerId')}=?`); values.push(ownerId) }
       }
       if (q) { predicates.push(`instr(lower(COALESCE(${field(kind === 'users' || kind === 'projects' ? 'name' : 'title')},'')||' '||COALESCE(${field(kind === 'users' ? 'email' : kind === 'plans' ? 'month' : 'code')},'')),lower(?))>0`); values.push(q) }
@@ -54,13 +55,13 @@ export class ImportWorkspaceService {
         return [...new Set(value as string[])]
       }
       const get = <T>(kind: ImportCandidateKind) => ids(kind).flatMap(id => { const row = this.store.get<T>(kind, id); return row ? [row] : [] })
-      const tasks = get<Task>('tasks').filter(row => actor.role === 'manager' || row.ownerId === actor.id)
+      const tasks = get<Task>('tasks').filter(row => isManager(actor) || row.ownerId === actor.id)
       const plans = get<MonthlyPlan>('plans').flatMap(row => {
-        const plan = actor.role === 'manager' || participates(row, actor.id) ? projectPlan(actor, row, this.store) : visiblePlan(this.store, actor, row)
+        const plan = isManager(actor) || participates(row, actor.id) ? projectPlan(actor, row, this.store) : visiblePlan(this.store, actor, row)
         return plan ? [plan] : []
       })
       // Dependencies of an authorized selected item also need their labels outside candidate page one.
-      const users = [...new Map([...get<User>('users'), ...tasks.flatMap(task => { const user = this.store.get<User>('users', task.ownerId); return user ? [user] : [] })].filter(row => actor.role === 'manager' || registrationApproved(row)).map(row => [row.id, safeUser(row)])).values()]
+      const users = [...new Map([...get<User>('users'), ...tasks.flatMap(task => { const user = this.store.get<User>('users', task.ownerId); return user ? [user] : [] })].filter(row => isManager(actor) || registrationApproved(row)).map(row => [row.id, safeUser(row)])).values()]
       const projectIds = [...new Set(plans.flatMap(row => row.projectId ? [row.projectId] : []))]
       const projects = [...new Map([...get<Project>('projects'), ...projectIds.flatMap(id => { const project = this.store.get<Project>('projects', id); return project ? [project] : [] })].map(row => [row.id, row])).values()]
       return { users, projects, plans, tasks }

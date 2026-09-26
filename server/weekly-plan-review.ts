@@ -11,6 +11,7 @@ import { collaborationWorkMutation } from './collaboration-hooks.ts'
 import { endTaskRequests } from './collaboration-tracking.ts'
 import type { BlockerEpisode } from '../shared/collaboration.ts'
 import { assertWholePlanReviewer, wholePlanMatches, wholePlanRows } from './weekly-review-delegation.ts'
+import { isMember } from './authorization.ts'
 
 const RULE = 'weekly-submission-rule'
 const unapproved = (): NonNullable<WeeklyRecord['planApproval']> => ({ required: true, approvedSubmissionId: null, approvedFingerprint: null })
@@ -19,7 +20,7 @@ const unapproved = (): NonNullable<WeeklyRecord['planApproval']> => ({ required:
 export function syncWeeklyPlanReviewPolicy(store: Store, rule: WeeklyRule, fromCycleWeek: string, actorId: string | null = null, now = new Date()): void {
   if (!rule.planReviewEffectiveWeek) return
   const boundary = addWeekDays(fromCycleWeek > rule.planReviewEffectiveWeek ? fromCycleWeek : rule.planReviewEffectiveWeek, 7)
-  const members = new Set(store.list<User>('users').filter(user => user.role === 'member').map(user => user.id))
+  const members = new Set(store.list<User>('users').filter(user => isMember(user)).map(user => user.id))
   for (const row of store.list<WeeklyRecord>('weeklyRecords')) {
     if (!isActiveWeeklyRecord(row) || !members.has(row.ownerId) || row.weekStart < boundary || !row.planApproval && row.workOrigin?.kind === 'assigned' && row.submitted) continue
     const { suspended: _previousSuspension, ...approval } = row.planApproval ?? unapproved()
@@ -52,7 +53,7 @@ export function ensureWeeklyPlanReviewRule(store: Store, now = new Date()): Week
 
 export function weeklyPlanApprovalMetadata(store: Store, ownerId: string, weekStart: string, workOrigin?: WorkOrigin, now = new Date()): WeeklyRecord['planApproval'] {
   const rule = store.get<WeeklyRule>('weeklyRules', RULE)
-  if (!rule?.planReviewEffectiveWeek || store.get<User>('users', ownerId)?.role !== 'member' || workOrigin?.kind === 'assigned' || weekStart < addWeekDays(rule.planReviewEffectiveWeek, 7)) return
+  if (!rule?.planReviewEffectiveWeek || !isMember(store.get<User>('users', ownerId)) || workOrigin?.kind === 'assigned' || weekStart < addWeekDays(rule.planReviewEffectiveWeek, 7)) return
   return { ...unapproved(), ...(isWeeklyPlanReviewCycle(rule, addWeekDays(weekStart, -7)) ? {} : { suspended: true as const }) }
 }
 

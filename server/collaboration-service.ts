@@ -13,6 +13,7 @@ import { endTaskRequests, enrollTaskTracking } from './collaboration-tracking.ts
 import { withCollaborationMutation } from './collaboration-hooks.ts'
 import { TaskSupportService } from './task-support.ts'
 import { scheduleWeeklyCalendarChange } from './weekly-calendar-service.ts'
+import { isManager } from './authorization.ts'
 
 export { readCollaborationSettings, effectiveManagerIds, taskTrackingEligible } from './collaboration-policy.ts'
 type Input = Record<string, unknown>
@@ -41,12 +42,12 @@ export class CollaborationService {
     const row = this.store.get<FollowupRequest>('followupRequests', id)
     if (!row) throw new HttpError(404, '催办请求不存在')
     const task = this.task(actor, row.taskId)
-    if (actor.role !== 'manager' && row.ownerId !== actor.id || task.ownerId !== row.ownerId) throw new HttpError(404, '催办请求不存在或负责人已变更')
+    if (!isManager(actor) && row.ownerId !== actor.id || task.ownerId !== row.ownerId) throw new HttpError(404, '催办请求不存在或负责人已变更')
     return row
   }
   taskView(actor: User, taskId: string, options: { includeProgress?: boolean } = {}): CollaborationTaskView {
     const viewer = liveCollaborationActor(this.store, actor)
-    const task = this.task(viewer, taskId, false), manager = viewer.role === 'manager'
+    const task = this.task(viewer, taskId, false), manager = isManager(viewer)
     const rows = <T extends { taskId?: string; parentTaskId?: string; ownerId: string }>(collection: string): T[] => this.store.selectJson<T>("SELECT data FROM entities WHERE collection=? AND COALESCE(json_extract(data,'$.taskId'),json_extract(data,'$.parentTaskId'))=? AND (?=1 OR json_extract(data,'$.ownerId')=?) ORDER BY rowid", [collection, task.id, manager ? 1 : 0, actor.id])
     return { task, ...summarizeCollaborationTask(task, this.store.selectJson<WeeklyRecord>("SELECT data FROM entities WHERE collection='weeklyRecords' AND json_extract(data,'$.taskId')=? ORDER BY rowid", [task.id]), viewer, this.clock()), tracking: this.store.get<TaskTracking>('taskTrackings', task.id) ?? null,
       progressEvents: options.includeProgress === false ? [] : rows('progressEvents'), followups: rows('followupRequests'), responses: rows('followupResponses'), blockerEpisodes: rows('blockerEpisodes'), blockerActions: rows('blockerActions'), deadlineRequests: rows('deadlineChangeRequests'),

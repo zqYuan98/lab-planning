@@ -5,6 +5,7 @@ import type { BusinessCollections } from './data-transfer-schema.ts'
 import { assertBusinessActor } from './object-access.ts'
 import { planReference, planVisibilityProjector } from './plan-visibility.ts'
 import type { Store } from './store.ts'
+import { isManager } from './authorization.ts'
 
 export type BusinessExportSources = Pick<BusinessCollections, 'users' | 'projects' | 'annualGoals' | 'plans' | 'tasks' | 'weeklyRecords' | 'publications' | 'reports'>
 
@@ -14,7 +15,7 @@ export type BusinessExportSources = Pick<BusinessCollections, 'users' | 'project
  */
 export function readBusinessExportSources(store: Store, actor: User): BusinessExportSources {
   actor = assertBusinessActor(store, actor)
-  const manager = actor.role === 'manager'
+  const manager = isManager(actor)
   const storedPlans = store.list<MonthlyPlan>('plans'), storedPublications = store.list<Publication>('publications')
   const projector = planVisibilityProjector(store, actor, {
     plans: storedPlans, publications: storedPublications, events: manager ? [] : store.entityTypeEvents(['plan']),

@@ -8,6 +8,7 @@ import { callAiJson, readAiSettings, type AiMessage } from './ai-service.ts'
 import { reportBlocksNarrative, validateFactText, validateReportBlocks } from './report-agent-evidence.ts'
 import { reportAgentAsset } from './report-agent-service.ts'
 import { runReportAgentSchedule } from './report-agent-schedule.ts'
+import { isManager } from './authorization.ts'
 
 export interface ReportAgentWorkerOptions {
   now?: () => Date
@@ -41,7 +42,7 @@ export function retryReportAgentJob(store: Store, actorId: string, id: string, e
     return store.update<ReportAgentJob>('reportAgentJobs', id, job.version, { actorId, status: 'queued', error: '', leaseToken: null, leaseUntil: null, progress: '已重新入队；保留已完成章节', expectedReportVersion: report?.version || null, templateVersion: job.kind === 'learn' ? row.version : job.templateVersion, finishedAt: null })
   })
 }
-function activeManager(store: Store, actorId: string) { const actor = store.get<User>('users', actorId); return !!actor && actor.role === 'manager' && canUseAccount(actor) }
+function activeManager(store: Store, actorId: string) { const actor = store.get<User>('users', actorId); return !!actor && isManager(actor) && canUseAccount(actor) }
 function held(store: Store, id: string, token: string, now: Date): ReportAgentJob {
   const job = store.get<ReportAgentJob>('reportAgentJobs', id)
   if (!job || job.status !== 'running' || job.leaseToken !== token || !job.leaseUntil || job.leaseUntil <= now.toISOString()) throw new HttpError(409, '作业租约已失效，旧进程停止提交。')

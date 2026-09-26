@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { Router, type RequestHandler } from 'express'
 import type { User } from '../shared/types.ts'
 import type { UsageAction } from '../shared/usage-analytics.ts'
-import { requireManager } from './authorization.ts'
+import { isMember, requireManager } from './authorization.ts'
 import { getOperationEpoch } from './operation-context.ts'
 import type { Store } from './store.ts'
 import { exactUsageFields, usageDay, UsageAnalyticsStore } from './usage-analytics.ts'
@@ -67,7 +67,7 @@ export function usageOperationForResponse(method: string, path: string, _request
 /** Install after session auth and before business routers. No listener is attached while disabled. */
 export function usageAnalyticsSuccessMiddleware(store: Store, analytics: UsageAnalyticsStore): RequestHandler {
   return (req, res, next) => {
-    if (!analytics.configuredEnabled || req.user.role !== 'member' || !['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) || req.path.startsWith('/usage-analytics')) return next()
+    if (!analytics.configuredEnabled || !isMember(req.user) || !['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) || req.path.startsWith('/usage-analytics')) return next()
     let operation: Operation | null = null
     const path = req.path, method = req.method
     const original = res.json

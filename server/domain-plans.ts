@@ -8,6 +8,7 @@ import { notifyPublishedPlans } from './notification-events.ts'
 import { HttpError } from './store.ts'
 import { DomainBase, bool, choice, date, manager, month, own, participates, text, type Input } from './domain-common.ts'
 import { assertOperationEpoch } from './operation-context.ts'
+import { isManager } from './authorization.ts'
 
 interface MonthlyCarryReceipt extends Entity {
   actorId: string; requestId: string; sourcePlanId: string; sourceVersion: number; payloadHash: string; targetPlanId: string
@@ -39,7 +40,7 @@ export class MonthlyService extends DomainBase {
   }
   private editable(actor: User, plan: MonthlyPlan) {
     own(actor, plan.ownerId)
-    if (actor.role === 'manager') return
+    if (isManager(actor)) return
     if (!plan.isTemporary) throw new HttpError(403, '普通月度目标需由管理者维护')
     if (!['draft', 'returned'].includes(plan.status)) throw new HttpError(403, '提交后的临时目标需由管理者退回后修改')
   }
@@ -231,7 +232,7 @@ export class MonthlyService extends DomainBase {
       this.current<MonthlyPlan>('plans', id, input)
       if (before.status !== 'published') throw new HttpError(400, '只有已发布计划可以提交或确认月度成果')
       const status = choice(input.acceptanceStatus, ['submitted', 'accepted', 'not_completed'], '验收状态')
-      if (actor.role !== 'manager' && (status !== 'submitted' || before.acceptanceStatus === 'accepted')) throw new HttpError(403, '月度成果需由管理者确认，已验收成果需由管理者修改')
+      if (!isManager(actor) && (status !== 'submitted' || before.acceptanceStatus === 'accepted')) throw new HttpError(403, '月度成果需由管理者确认，已验收成果需由管理者修改')
       const actualOutcome = text(input.actualOutcome, '实际成果', status !== 'not_completed')
       let acceptanceNote: string
       try { acceptanceNote = text(input.acceptanceNote, status === 'not_completed' ? '未完成原因' : '验收说明', status === 'not_completed') }

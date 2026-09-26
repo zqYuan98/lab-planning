@@ -8,6 +8,7 @@ import { taskPriority } from '../shared/task-presentation.ts'
 import { HttpError, type Store } from './store.ts'
 import { pageContext, queryKeys, queryText, readPage } from './page-read-common.ts'
 import { planReference, planVisibilityProjector } from './plan-visibility.ts'
+import { isManager } from './authorization.ts'
 
 const metadata = ['id', 'version', 'createdAt', 'updatedAt']
 /** Same ordering as localeCompare(…, 'zh-CN') without building a collator per comparison. */
@@ -40,7 +41,7 @@ function bool(value: unknown) {
 }
 /** Reads only overview facts. Raw reports, audit narratives and task progress are not page data. */
 function overviewFacts(store: Store, actor: User, options: { period: WorkPeriod; date: string; personal?: boolean; search?: boolean }) {
-  const manager = actor.role === 'manager', month = options.date.slice(0, 7)
+  const manager = isManager(actor), month = options.date.slice(0, 7)
   const start = options.personal ? [weekMonday(`${month}-01`), addCalendarDays(weekMonday(options.date), -21)].sort()[0]
     : options.period === 'week' ? weekMonday(options.date) : `${month}-01`
   const end = options.period === 'week' && !options.personal ? addCalendarDays(start, 6) : addCalendarDays(`${shiftCalendarMonth(month, 1)}-01`, -1)
@@ -120,7 +121,7 @@ export class OverviewWorkspaceService {
   department(actor: User, input: Record<string, unknown>): DepartmentOverviewResponse {
     return this.store.readTransaction(() => {
       const context = pageContext(this.store, actor); actor = context.actor
-      if (actor.role !== 'manager') throw new HttpError(403, '只有管理者可以读取部门概览')
+      if (!isManager(actor)) throw new HttpError(403, '只有管理者可以读取部门概览')
       queryKeys(input, ['period', 'date', 'includeInactive', 'ownerId', 'projectId', 'status', 'q', 'riskOnly', 'sort', 'cursor', 'limit'])
       const period = queryText(input.period) || 'all', date = queryText(input.date) || shanghaiToday(this.clock())
       if (!['all', 'month', 'week'].includes(period) || !day(date)) throw new HttpError(400, '统计周期或日期无效')

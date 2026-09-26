@@ -14,12 +14,13 @@ import { ExistingPlanWriter, importMetadataIssues, importWorkMetadata, temporary
 import { participates, visiblePlan } from './plan-visibility.ts'
 import { withSilentImport } from './import-notification-context.ts'
 import { readImportDirectory } from './import-context.ts'
+import { isManager } from './authorization.ts'
 
 interface ImportSource extends Entity { ownerId: string; fileName: string; mimeType: string; base64: string; hash: string; parsed: ParsedImportFile }
 export interface HistoricalRecord extends Entity { importedBy: string; batchId: string; sourceId: string; row: ImportRow }
 
 function projectImportRow(store: Store, actor: User, row: ImportRow): ImportRow {
-  if (actor.role === 'manager') return row
+  if (isManager(actor)) return row
   const safe = { ...row }
   const canRead = (collection: string, id: string) => {
     if (collection === 'plans') {
@@ -42,7 +43,7 @@ function projectImportRow(store: Store, actor: User, row: ImportRow): ImportRow 
 export function visibleImportHistory(store: Store, actor: User): HistoricalRecord[] {
   actor = assertBusinessActor(store, actor)
   return store.list<HistoricalRecord>('historicalRecords')
-    .filter(record => actor.role === 'manager' || record.row.ownerId === actor.id || (!record.row.ownerId && record.importedBy === actor.id))
+    .filter(record => isManager(actor) || record.row.ownerId === actor.id || (!record.row.ownerId && record.importedBy === actor.id))
     .map(record => ({ ...record, row: projectImportRow(store, actor, record.row) }))
 }
 interface ImportLink extends Entity { batchId: string; rowId: string; result: { collection: string; id: string }; rowFingerprint: string; mode?: ImportMode; executionFingerprint?: string; archiveDeletedAt?: string }
@@ -84,7 +85,7 @@ export class ImportService {
   private batch(actor: User, id: string): ImportBatch {
     const batch = this.store.get<ImportBatch>('importBatches', id)
     if (!batch) throw new HttpError(404, '导入批次不存在')
-    if (actor.role !== 'manager' && batch.ownerId !== actor.id) throw new HttpError(403, '无权查看此导入批次')
+    if (!isManager(actor) && batch.ownerId !== actor.id) throw new HttpError(403, '无权查看此导入批次')
     const job = this.store.get<ImportJob>('importJobs', id)
     return job ? { ...batch, analysis: { status: job.status, completedChunks: job.completedChunks, totalChunks: job.totalChunks, ...(job.error ? { error: job.error } : {}) } } : batch
   }
@@ -92,14 +93,14 @@ export class ImportService {
     actor = assertBusinessActor(this.store, actor)
     const batch = this.batch(actor, id)
     const counts = (value: ImportBatch) => ({ ...value, requiresCompletionReview: this.requiresReview(value), excludedCount: value.rows.filter(row => !row.selected && !row.result).length, pendingCount: value.rows.filter(row => row.selected && !row.result).length })
-    if (actor.role === 'manager') return counts(batch)
+    if (isManager(actor)) return counts(batch)
     const rows = batch.rows.filter(row => !row.ownerId || row.ownerId === actor.id).map(row => projectImportRow(this.store, actor, row))
     const selected = rows.filter(row => row.selected)
     return counts({ ...batch, rows, ...(batch.status === 'parsed' && selected.length > 0 && selected.every(row => row.result) ? { status: 'committed' as const } : {}) })
   }
   list(actor: User): ImportBatchSummary[] {
     actor = assertBusinessActor(this.store, actor)
-    return this.store.list<ImportBatch>('importBatches').filter(b => actor.role === 'manager' || b.ownerId === actor.id)
+    return this.store.list<ImportBatch>('importBatches').filter(b => isManager(actor) || b.ownerId === actor.id)
       .reverse().map(batch => { const { rows, ...rest } = this.get(actor, batch.id); return { ...rest, rowCount: rows.length } })
   }
   source(actor: User, id: string) {
@@ -174,7 +175,7 @@ export class ImportService {
     actor = assertBusinessActor(this.store, actor)
     return this.store.transaction(() => {
       const before = this.store.get<HistoricalRecord>('historicalRecords', id)
-      if (!before || (actor.role !== 'manager' && before.importedBy !== actor.id && before.row.ownerId !== actor.id)) throw new HttpError(404, '历史记录不存在或无权删除')
+      if (!before || (!isManager(actor) && before.importedBy !== actor.id && before.row.ownerId !== actor.id)) throw new HttpError(404, '历史记录不存在或无权删除')
       if (before.version !== input.version) throw new HttpError(409, '历史记录已变化，请刷新后重试')
       this.assertNotAnalyzing(before.batchId)
       this.removeHistory(before)
@@ -284,7 +285,7 @@ export class ImportService {
     return rows.map(row => {
       const matched = { ...row }
       const users = visible.users.filter(u => canUseAccount(u) && (u.name === row.ownerName || u.email === row.ownerName))
-      if (!row.ownerId && users.length === 1 && (actor.role === 'manager' || users[0].id === actor.id)) matched.ownerId = users[0].id
+      if (!row.ownerId && users.length === 1 && (isManager(actor) || users[0].id === actor.id)) matched.ownerId = users[0].id
       const projects = visible.projects.filter(p => p.status === 'active' && (p.name === row.projectName || p.code === row.projectName))
       if (!row.projectId && row.projectName && projects.length === 1) matched.projectId = projects[0].id
       if (row.collaboratorNames?.length && row.collaboratorIds === undefined) {
@@ -301,7 +302,7 @@ export class ImportService {
     const issues: string[] = importMetadataIssues(this.store, row)
     const owner = this.store.get<User>('users', row.ownerId)
     if (!owner || !canUseAccount(owner)) issues.push('请选择有效负责人')
-    else if (actor.role !== 'manager' && owner.id !== actor.id) issues.push('成员只能为自己创建计划草稿')
+    else if (!isManager(actor) && owner.id !== actor.id) issues.push('成员只能为自己创建计划草稿')
     if (!row.title) issues.push('缺少工作标题')
     if (row.projectId) {
       const project = this.store.get<Project>('projects', row.projectId)
@@ -310,7 +311,7 @@ export class ImportService {
     try { date(row.dueDate) } catch { issues.push('缺少有效截止日期') }
     if (row.kind === 'monthly') {
       issues.push(...temporaryImportIssues(row))
-      if (actor.role !== 'manager' && row.isTemporary !== true) issues.push('普通月度目标须由管理者创建；本人临时事项可加入月度草稿')
+      if (!isManager(actor) && row.isTemporary !== true) issues.push('普通月度目标须由管理者创建；本人临时事项可加入月度草稿')
       if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(row.month)) issues.push('缺少所属月份')
       else if (!row.dueDate.startsWith(row.month)) issues.push('截止日期须在所属月份内')
       if (!row.projectId && !row.category) issues.push('请选择项目或填写工作类别')
@@ -320,12 +321,12 @@ export class ImportService {
       try { date(row.weekStart) } catch { issues.push('缺少有效所属周') }
       if (!row.expectedOutcome) issues.push('缺少本周承诺')
       const candidate = row.taskId ? this.store.get<Task>('tasks', row.taskId) : undefined
-      const task = candidate && (actor.role === 'manager' || candidate.ownerId === actor.id) ? candidate : undefined
+      const task = candidate && (isManager(actor) || candidate.ownerId === actor.id) ? candidate : undefined
       issues.push(...temporaryImportIssues(row, task))
       if (row.taskId && (!task || task.cancellation || task.ownerId !== row.ownerId)) issues.push('关联任务无效、已作废或负责人不一致')
       const planId = task?.monthlyPlanId || row.monthlyPlanId
       const candidatePlan = planId ? this.store.get<MonthlyPlan>('plans', planId) : undefined
-      const plan = candidatePlan && (actor.role === 'manager' || participates(candidatePlan, actor.id)) ? candidatePlan : undefined
+      const plan = candidatePlan && (isManager(actor) || participates(candidatePlan, actor.id)) ? candidatePlan : undefined
       if (planId && !plan) issues.push('关联月计划不存在或无权使用')
       if (plan?.visibility === 'reference') issues.push('历史目标引用不能用于新增任务')
       const linked = rows.find(r => r.id === row.linkedRowId && r.kind === 'monthly' && r.selected)
@@ -459,7 +460,7 @@ export class ImportService {
       const before = this.mutable(actor, id, input.version)
       const mode = input.mode ?? before.mode
       if (!['history', 'draft', 'existing'].includes(String(mode))) throw new HttpError(400, '导入方式无效')
-      const authorizedRows = before.rows.filter(row => actor.role === 'manager' || !row.ownerId || row.ownerId === actor.id)
+      const authorizedRows = before.rows.filter(row => isManager(actor) || !row.ownerId || row.ownerId === actor.id)
       if (authorizedRows.length !== before.rows.length && mode !== before.mode) throw new HttpError(403, '包含其他成员资料的批次需由管理员调整整体保存方式')
       if (!Array.isArray(input.rows) || input.rows.length < authorizedRows.length || input.rows.length > 3000) throw new HttpError(400, '请保留原始解析记录，使用勾选决定是否导入；补录后最多3000条')
       const seen = new Set<string>()
@@ -476,8 +477,8 @@ export class ImportService {
           newIds.set(row.id, normalized.id)
           normalized.manuallyAdded = true
         }
-        if (actor.role !== 'manager' && normalized.ownerId && normalized.ownerId !== actor.id) throw new HttpError(403, '成员不能将资料归到其他成员名下')
-        if (actor.role !== 'manager' && normalized.monthlyResult === 'accepted' && original?.monthlyResult !== 'accepted') throw new HttpError(403, '月度成果确认需要管理者权限')
+        if (!isManager(actor) && normalized.ownerId && normalized.ownerId !== actor.id) throw new HttpError(403, '成员不能将资料归到其他成员名下')
+        if (!isManager(actor) && normalized.monthlyResult === 'accepted' && original?.monthlyResult !== 'accepted') throw new HttpError(403, '月度成果确认需要管理者权限')
         return normalized
       })
       if (authorizedRows.some(row => !seen.has(row.id))) throw new HttpError(400, '请保留原始解析记录，使用勾选决定是否导入')
@@ -522,7 +523,7 @@ export class ImportService {
         if (identity) row.id = identity.rowIds[index]
         return row
       }))
-      if (actor.role !== 'manager' && rows.some(row => row.monthlyResult === 'accepted')) throw new HttpError(403, '月度成果确认需要管理者权限')
+      if (!isManager(actor) && rows.some(row => row.monthlyResult === 'accepted')) throw new HttpError(403, '月度成果确认需要管理者权限')
       const parsed: ParsedImportFile = { kind: 'text', fileName: `${sourceKey}.json`, mimeType: 'application/json', text: JSON.stringify(input.rows), warnings: [] }
       this.store.insert<ImportSource>('importSources', { id: sourceId, ownerId: actor.id, fileName: parsed.fileName, mimeType: parsed.mimeType, base64: Buffer.from(parsed.text!).toString('base64'), hash: fingerprint, parsed })
       const batch = this.store.insert<ImportBatch>('importBatches', { ownerId: actor.id, sourceId, fileName: parsed.fileName, kind: 'text', status: 'parsed', sourceSheets: [], warnings: [], rows: this.checked(actor, rows, mode as ImportMode), mode: mode as ImportMode })
@@ -541,7 +542,7 @@ export class ImportService {
     return this.store.transaction(() => {
       const batch = this.mutable(actor, id, input.version)
       if (batch.mode !== 'existing' || batch.status !== 'parsed') throw new HttpError(400, '请先解析并选择导入已有计划')
-      const selected = this.checked(actor, batch.rows.filter(row => actor.role === 'manager' || !row.ownerId || row.ownerId === actor.id), 'existing').filter(row => row.selected)
+      const selected = this.checked(actor, batch.rows.filter(row => isManager(actor) || !row.ownerId || row.ownerId === actor.id), 'existing').filter(row => row.selected)
       if (!batch.rows.length) throw new HttpError(400, '请先解析或补录至少一条候选，再交管理员核对')
       const result = this.store.update<ImportBatch>('importBatches', id, batch.version, { reviewRequestedAt: new Date().toISOString() })
       this.audit(actor, id, 'request_import_confirmation', { count: selected.length })
@@ -556,7 +557,7 @@ export class ImportService {
       if (before.version !== input.version) throw new HttpError(409, '历史记录已变化，请刷新后重试')
       const reason = text(input.reason, '纠正原因', true, 1000)
       const row = this.normalizeRow(input.row, 0, before.row)
-      if (actor.role !== 'manager' && row.ownerId && row.ownerId !== actor.id) throw new HttpError(403, '成员不能将资料归到其他成员名下')
+      if (!isManager(actor) && row.ownerId && row.ownerId !== actor.id) throw new HttpError(403, '成员不能将资料归到其他成员名下')
       const after = this.store.update<HistoricalRecord>('historicalRecords', id, before.version, { row: { ...row, issues: this.issues(actor, row, [row]) } })
       this.store.insert<AuditEvent>('events', { entityType: 'historicalRecord', entityId: id, actorId: actor.id, action: 'correct', reason, before, after })
       return after
@@ -571,18 +572,18 @@ export class ImportService {
     return this.store.transaction(() => {
       const batch = this.batch(actor, id)
       if (this.get(actor, id).status === 'committed') return this.get(actor, id) // An uncertain response can safely be retried.
-      if (batch.mode === 'existing' && actor.role !== 'manager') throw new HttpError(403, '已有计划请交管理员确认后直接生效，无需重新提报')
+      if (batch.mode === 'existing' && !isManager(actor)) throw new HttpError(403, '已有计划请交管理员确认后直接生效，无需重新提报')
       this.mutable(actor, id, input.version)
       if (batch.status !== 'parsed') throw new HttpError(400, '请先解析并核对资料')
       this.assertCompletionReview(batch)
-      const authorizedRows = batch.rows.filter(row => actor.role === 'manager' || !row.ownerId || row.ownerId === actor.id)
+      const authorizedRows = batch.rows.filter(row => isManager(actor) || !row.ownerId || row.ownerId === actor.id)
       const unexplained = authorizedRows.find(row => !row.selected && !row.exclusionReason?.trim())
       if (unexplained) throw new HttpError(400, `第${unexplained.sourceRow}行未选择，请填写排除理由`)
       if (!authorizedRows.length && batch.rows.length) throw new HttpError(403, '没有可提交的本人资料')
       const checked = this.checked(actor, authorizedRows, batch.mode)
       const rows = batch.rows.map(row => checked.find(value => value.id === row.id) ?? row), selected = checked.filter(r => r.selected)
       if (!selected.length) throw new HttpError(400, '请至少选择一条记录')
-      if (actor.role !== 'manager' && batch.mode !== 'history' && selected.some(row => row.kind === 'monthly' && row.isTemporary !== true)) throw new HttpError(403, '普通月度目标须由管理者创建；本人临时事项可加入月度草稿')
+      if (!isManager(actor) && batch.mode !== 'history' && selected.some(row => row.kind === 'monthly' && row.isTemporary !== true)) throw new HttpError(403, '普通月度目标须由管理者创建；本人临时事项可加入月度草稿')
       if (batch.mode !== 'history') {
         const invalid = selected.find(r => r.issues.length)
         if (invalid) throw new HttpError(400, `${invalid.sourceSheet || '资料'}第${invalid.sourceRow}行：${invalid.issues.join('；')}`)
@@ -621,7 +622,7 @@ export class ImportService {
           }
         }
         if (batch.mode === 'history') {
-          if (actor.role !== 'manager' && row.ownerId && row.ownerId !== actor.id) throw new HttpError(403, '成员不能将资料归到其他成员名下')
+          if (!isManager(actor) && row.ownerId && row.ownerId !== actor.id) throw new HttpError(403, '成员不能将资料归到其他成员名下')
           const history = this.store.insert<HistoricalRecord>('historicalRecords', { importedBy: actor.id, batchId: id, sourceId: batch.sourceId, row: { ...row, result: undefined } })
           row.result = { collection: 'historicalRecords', id: history.id }
         } else if (row.kind === 'monthly') {

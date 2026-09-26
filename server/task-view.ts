@@ -8,6 +8,7 @@ import { ObjectAccessService, activeGrant, canReadObject, assertBusinessActor, l
 import { HttpError, type Store } from './store.ts'
 import { getOperationEpoch } from './operation-context.ts'
 import { planReference, visiblePlan } from './plan-visibility.ts'
+import { isManager, isObserver } from './authorization.ts'
 
 const taskFields = ['title', 'description', 'dueDate', 'status', 'completionNote', 'evidenceUrl', 'blockerReason', 'blockerImpact', 'supportNeeded', 'nextAction', 'workSource', 'assignedBy', 'assignedOn', 'requestedOutcome', 'priority', 'estimatedEffort', 'remainingEffortDays', 'currentProgress', 'decisionNeeded', 'waitingForFeedback']
 const weeklyFields = ['plannedEffortDays', 'actualEffortDays', 'commitment', 'actualOutcome', 'evidenceUrl', 'blocker', 'nextAction', 'status', 'submitted', 'blockerImpact', 'supportNeeded']
@@ -18,14 +19,14 @@ export class TaskViewService {
   private task(actor: User, id: string): Task {
     actor = assertBusinessActor(this.store, actor)
     const task = this.store.get<Task>('tasks', id)
-    if (!task || actor.role !== 'manager' && task.ownerId !== actor.id) throw new HttpError(404, '任务不存在或无权访问')
+    if (!task || !isManager(actor) && task.ownerId !== actor.id) throw new HttpError(404, '任务不存在或无权访问')
     return task
   }
   view(actor: User, id: string, input: { section?: unknown; weeklyRecordId?: unknown } = {}): TaskView {
     actor = liveObjectActor(this.store, actor)
     if (input.section !== undefined && !taskSections.includes(input.section as typeof taskSections[number])) throw new HttpError(400, '任务详情区域无效')
     if (input.weeklyRecordId !== undefined && typeof input.weeklyRecordId !== 'string') throw new HttpError(400, '周记录定位无效')
-    if (actor.role === 'observer') {
+    if (isObserver(actor)) {
       const view = new ObjectAccessService(this.store).taskView(actor, id)
       if (input.weeklyRecordId && !view.weeklyRecords.some(row => row.id === input.weeklyRecordId)) throw new HttpError(404, '周记录不存在或无权访问')
       const task = view.task
@@ -38,13 +39,13 @@ export class TaskViewService {
         taskHistory: this.history(actor, id) }
     }
     const task = this.task(actor, id), view = new CollaborationService(this.store).taskView(actor, id, { includeProgress: false })
-    const weeklyRecords = this.store.selectJson<WeeklyRecord>(`SELECT data FROM entities WHERE collection='weeklyRecords' AND json_extract(data,'$.taskId')=? AND (?=1 OR json_extract(data,'$.ownerId')=?) ORDER BY rowid`, [id, actor.role === 'manager' ? 1 : 0, actor.id])
+    const weeklyRecords = this.store.selectJson<WeeklyRecord>(`SELECT data FROM entities WHERE collection='weeklyRecords' AND json_extract(data,'$.taskId')=? AND (?=1 OR json_extract(data,'$.ownerId')=?) ORDER BY rowid`, [id, isManager(actor) ? 1 : 0, actor.id])
     if (input.weeklyRecordId && !weeklyRecords.some(row => row.id === input.weeklyRecordId)) throw new HttpError(404, '周记录不存在或不属于当前任务')
     const rawPlan = task.monthlyPlanId ? this.store.get<MonthlyPlan>('plans', task.monthlyPlanId) : null
     const plan = rawPlan ? visiblePlan(this.store, actor, rawPlan) ?? planReference(rawPlan) : null
     return { ...view, task, ownerName: this.store.get<User>('users', task.ownerId)?.name || '成员', weeklyRecords: weeklyRecords.sort((a, b) => b.weekStart.localeCompare(a.weekStart) || a.id.localeCompare(b.id)),
-      monthlyPlan: plan ? { id: plan.id, title: plan.title, month: plan.month } : null, progress: this.store.workspaceTaskProgress([task], actor.id, actor.role === 'manager', new Date(Date.now() + 8 * 3_600_000).toISOString().slice(0, 10))[task.id],
-      allowedActions: isActiveTask(task) ? ['edit_task', 'update_weekly', 'submit_delivery', ...(actor.role === 'manager' ? ['manage_support', 'manage_grants'] : [])] : [],
+      monthlyPlan: plan ? { id: plan.id, title: plan.title, month: plan.month } : null, progress: this.store.workspaceTaskProgress([task], actor.id, isManager(actor), new Date(Date.now() + 8 * 3_600_000).toISOString().slice(0, 10))[task.id],
+      allowedActions: isActiveTask(task) ? ['edit_task', 'update_weekly', 'submit_delivery', ...(isManager(actor) ? ['manage_support', 'manage_grants'] : [])] : [],
       readOnlyReason: isActiveTask(task) ? null : '任务已作废，历史内容保留且不可继续编辑', taskHistory: this.history(actor, id) }
   }
   history(actor: User, taskId: string, input: { cursor?: unknown; limit?: unknown } = {}): TaskHistoryPage {
@@ -63,13 +64,13 @@ export class TaskViewService {
           after = { createdAt: cursor.createdAt, id: cursor.id }
         } catch { throw new HttpError(409, '历史数据或读取范围已变化，请重新加载', 'ACCESS_SCOPE_CHANGED') }
       }
-      const observer = actor.role === 'observer'
+      const observer = isObserver(actor)
       if (observer ? !canReadObject(this.store, actor, 'task', taskId) : !this.task(actor, taskId)) throw new HttpError(404, '任务不存在或无权访问')
       const grant = observer ? activeGrant(this.store, actor, 'task', taskId) : undefined
       if (observer && !grant) throw new HttpError(404, '任务不存在或无权访问')
-      const rows = this.store.taskHistoryPage(taskId, actor.id, actor.role === 'manager', limit + 1, after, grant), selected = rows.slice(0, limit)
+      const rows = this.store.taskHistoryPage(taskId, actor.id, isManager(actor), limit + 1, after, grant), selected = rows.slice(0, limit)
       const titles: Record<string, string> = { task: '任务', weeklyRecord: '周执行', deliverySeries: '交付项', taskDelivery: '成果提交', deliveryDecision: '验收决定', blockerEpisode: '支持事项', blockerAction: '支持处理', decisionRequest: '决策事项' }
-      const items: TaskHistoryItem[] = selected.map(event => ({ id: event.id, kind: event.action, at: event.createdAt, actorId: observer ? '' : event.actorId, title: observer ? event.action : `${titles[event.entityType]} · ${event.action}`, detail: observer ? this.store.get<User>('users', event.actorId)?.name ?? '成员' : actor.role !== 'manager' && event.entityType === 'taskDelivery' ? '' : event.reason || '' }))
+      const items: TaskHistoryItem[] = selected.map(event => ({ id: event.id, kind: event.action, at: event.createdAt, actorId: observer ? '' : event.actorId, title: observer ? event.action : `${titles[event.entityType]} · ${event.action}`, detail: observer ? this.store.get<User>('users', event.actorId)?.name ?? '成员' : !isManager(actor) && event.entityType === 'taskDelivery' ? '' : event.reason || '' }))
       const last = selected.at(-1)
       return { items, nextCursor: rows.length > limit && last ? Buffer.from(JSON.stringify({ scope, createdAt: last.createdAt, id: last.id })).toString('base64url') : null }
     })
@@ -82,7 +83,7 @@ export class TaskViewService {
   editableWeekly(actor: User, recordId: string): EditableObject {
     actor = assertBusinessActor(this.store, actor)
     const record = this.store.get<WeeklyRecord>('weeklyRecords', recordId)
-    if (!record || actor.role !== 'manager' && record.ownerId !== actor.id) throw new HttpError(404, '周记录不存在或无权访问')
+    if (!record || !isManager(actor) && record.ownerId !== actor.id) throw new HttpError(404, '周记录不存在或无权访问')
     const task = this.editableTask(actor, record.taskId)
     if (!isActiveWeeklyRecord(record)) throw new HttpError(409, '周安排已删除，本地内容仅可复制', 'WEEKLY_RECORD_DELETED')
     return { version: record.version, values: pick(record, weeklyFields), operationEpoch: getOperationEpoch(this.store),

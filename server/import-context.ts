@@ -6,11 +6,12 @@ import { assertBusinessActor } from './object-access.ts'
 import { projectPlan } from './plan-visibility.ts'
 import type { Store } from './store.ts'
 import { workOriginProjector } from './work-origin.ts'
+import { isManager } from './authorization.ts'
 
 /** Import name matching uses only the account/project directory, never work or reports. */
 export function readImportDirectory(store: Store, actor: User): { users: User[]; projects: Project[] } {
   actor = assertBusinessActor(store, actor)
-  const manager = actor.role === 'manager'
+  const manager = isManager(actor)
   const users = store.list<User>('users').filter(user => manager || registrationApproved(user))
     .map(user => ({ ...safeUser(user), ...(manager && user.registrationStatus ? { registrationReviewComment: user.registrationReviewComment ?? '' } : {}) }))
   return { users, projects: store.list<Project>('projects') }
@@ -22,7 +23,7 @@ export function readImportDirectory(store: Store, actor: User): { users: User[];
 export function readImportContext(store: Store, actor: User) {
   return store.transaction(() => {
     actor = assertBusinessActor(store, actor)
-    const manager = actor.role === 'manager', directory = readImportDirectory(store, actor)
+    const manager = isManager(actor), directory = readImportDirectory(store, actor)
     const plans = store.selectJson<MonthlyPlan>(`SELECT p.data FROM entities p WHERE p.collection='plans'
       ${manager ? '' : `AND (json_extract(p.data,'$.ownerId')=? OR EXISTS (SELECT 1 FROM json_each(p.data,'$.collaboratorIds') c WHERE c.value=?))
       AND COALESCE(json_extract(p.data,'$.visibility'),'')<>'reference' AND json_extract(p.data,'$.status')<>'merged' AND (json_extract(p.data,'$.projectId') IS NULL OR json_extract(p.data,'$.projectId')='' OR EXISTS (

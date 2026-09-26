@@ -3,7 +3,7 @@ import type { MonthlyPlan, Project, Task, User } from '../shared/types.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
 import { isActiveTask } from '../shared/task-state.ts'
 import { HttpError, type Store } from './store.ts'
-import { businessActor, managerActor } from './authorization.ts'
+import { businessActor, isManager, isObserver, managerActor } from './authorization.ts'
 import { readWorkCalendar, workingDay } from './work-calendar.ts'
 
 export const COLLABORATION_SETTINGS_ID = 'collaboration'
@@ -25,14 +25,14 @@ export function liveCollaborationActor(store: Store, actor: User, managerOnly = 
 }
 export function collaborationTask(store: Store, actor: User, id: string): Task {
   const current = liveCollaborationActor(store, actor), task = store.get<Task>('tasks', id)
-  if (!task || current.role !== 'manager' && task.ownerId !== current.id) throw new HttpError(404, '任务不存在或无权访问')
+  if (!task || !isManager(current) && task.ownerId !== current.id) throw new HttpError(404, '任务不存在或无权访问')
   return task
 }
 export function validManagerIds(store: Store, value: unknown): string[] {
   if (!Array.isArray(value) || value.length > 3 || value.some(id => typeof id !== 'string') || new Set(value).size !== value.length) throw new HttpError(400, '管理接收人须为一位主接收人及最多两位抄送，且不能重复')
   for (const id of value as string[]) {
     const user = store.get<User>('users', id)
-    if (!user || !canUseAccount(user) || user.role !== 'manager') throw new HttpError(400, '管理接收人必须是有效管理者')
+    if (!user || !canUseAccount(user) || !isManager(user)) throw new HttpError(400, '管理接收人必须是有效管理者')
   }
   return value as string[]
 }
@@ -40,7 +40,7 @@ export function effectiveManagerIds(store: Store, task: Task): string[] {
   const tracking = store.get<TaskTracking>('taskTrackings', task.id)
   const live = (ids: string[]) => [...new Set(ids)].filter(id => {
     const user = store.get<User>('users', id)
-    return !!user && canUseAccount(user) && user.role === 'manager'
+    return !!user && canUseAccount(user) && isManager(user)
   }).slice(0, 3)
   const configured = live(tracking?.managerRecipientIds ?? [])
   if (configured.length) return configured
@@ -51,7 +51,7 @@ export function effectiveManagerIds(store: Store, task: Task): string[] {
 export function taskTrackingEligible(store: Store, task: Task, _now = new Date()): boolean {
   if (!isActiveTask(task) || !collaborationEnabledFor(store, task.ownerId) || task.status === 'done') return false
   const owner = store.get<User>('users', task.ownerId)
-  if (!owner || !canUseAccount(owner) || owner.role === 'observer') return false
+  if (!owner || !canUseAccount(owner) || isObserver(owner)) return false
   if (task.monthlyPlanId) {
     const plan = store.get<MonthlyPlan>('plans', task.monthlyPlanId)
     if (!plan || plan.status !== 'published' || plan.visibility) return false

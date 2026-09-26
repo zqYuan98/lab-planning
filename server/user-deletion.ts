@@ -5,6 +5,7 @@ import { safeUser } from './auth.ts'
 import { businessEventCollections, collectionNames, rowReferences, storedCollection, type TransferCollection } from './data-transfer-schema.ts'
 import type { Store } from './store.ts'
 import type { Feedback, FeedbackAttachment, FeedbackEvent } from '../shared/feedback.ts'
+import { isManager } from './authorization.ts'
 
 export interface UserDeletionBlocker { key: string; label: string; count: number }
 export interface UserDeletionPreview { user: User; canDelete: boolean; blockers: UserDeletionBlocker[]; retainedHistory: true }
@@ -25,8 +26,8 @@ export function userDeletionPreview(store: Store, actor: User, user: User): User
   const blockers: UserDeletionBlocker[] = []
   const add = (key: string, label: string, count: number) => { if (count) blockers.push({ key, label, count }) }
   add('self', '不能删除当前登录账号', Number(actor.id === user.id))
-  add('lastManager', '必须保留至少一位可登录的管理者', Number(user.role === 'manager' && canUseAccount(user)
-    && !store.list<User>('users').some(other => other.id !== user.id && other.role === 'manager' && canUseAccount(other))))
+  add('lastManager', '必须保留至少一位可登录的管理者', Number(isManager(user) && canUseAccount(user)
+    && !store.list<User>('users').some(other => other.id !== user.id && isManager(other) && canUseAccount(other))))
   const referencesUser = (collection: TransferCollection, row: unknown) => rowReferences(collection, row).some(ref => ref.collection === 'users' && ref.id === user.id)
   for (const collection of collectionNames) {
     if (collection === 'users' || collection === 'events') continue

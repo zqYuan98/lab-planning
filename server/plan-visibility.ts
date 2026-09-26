@@ -1,5 +1,6 @@
 import type { AuditEvent, MonthlyPlan, Publication, User } from '../shared/types.ts'
 import type { Store } from './store.ts'
+import { isManager, isMember, isObserver } from './authorization.ts'
 
 export function participates(plan: MonthlyPlan, userId: string): boolean {
   return plan.ownerId === userId || plan.collaboratorIds.includes(userId)
@@ -26,7 +27,7 @@ export function planHasMergedSource(plan: MonthlyPlan, store?: PlanSourceReader)
 
 /** Never split legacy merged prose by strings: the source ownership is not recoverable that way. */
 export function projectPlan(actor: User, plan: MonthlyPlan, store?: PlanSourceReader): MonthlyPlan {
-  if (actor.role === 'manager') return plan
+  if (isManager(actor)) return plan
   const mergedSource = planHasMergedSource(plan, store)
   const { mergedFromIds: _merged, mergedIntoId: _target, ...safe } = plan
   return {
@@ -53,8 +54,8 @@ export function planReference(plan: MonthlyPlan): MonthlyPlan {
 
 /** A past membership grants only the snapshots actually visible during that membership. */
 export function visiblePlan(store: Store, actor: User, current: MonthlyPlan): MonthlyPlan | undefined {
-  if (actor.role === 'observer') return undefined
-  if (actor.role === 'manager' || participates(current, actor.id)) return projectPlan(actor, current, store)
+  if (isObserver(actor)) return undefined
+  if (isManager(actor) || participates(current, actor.id)) return projectPlan(actor, current, store)
   const snapshots = store.entityEvents('plan', current.id)
     .flatMap(event => [event.before, event.after])
     .concat(store.selectJson<MonthlyPlan>(`SELECT p.value AS data FROM entities e,json_each(e.data,'$.plans') p WHERE e.collection='publications' AND json_extract(p.value,'$.id')=? ORDER BY e.rowid,CAST(p.key AS INTEGER)`, [current.id]))
@@ -81,7 +82,7 @@ export function planVisibilityProjector(store: Store, actor: User, sources: { pl
     const previous = historical.get(id)
     if (!previous || plan.version > previous.version) historical.set(id, plan)
   }
-  if (actor.role === 'member') {
+  if (isMember(actor)) {
     for (const event of sources.events) if (event.entityType === 'plan') { add(event.before, event.entityId); add(event.after, event.entityId) }
     for (const publication of sources.publications) for (const plan of publication.plans) add(plan, plan.id)
     // Old nested snapshots were not version-validated. Preserve the original
@@ -90,8 +91,8 @@ export function planVisibilityProjector(store: Store, actor: User, sources: { pl
   }
   return {
     visible: (current: MonthlyPlan): MonthlyPlan | undefined => {
-      if (actor.role === 'observer') return undefined
-      if (actor.role === 'manager' || participates(current, actor.id)) return projectPlan(actor, current, reader)
+      if (isObserver(actor)) return undefined
+      if (isManager(actor) || participates(current, actor.id)) return projectPlan(actor, current, reader)
       const snapshot = historical.get(current.id)
       return snapshot ? { ...projectPlan(actor, snapshot, reader), visibility: 'historical' } : undefined
     },
@@ -100,9 +101,9 @@ export function planVisibilityProjector(store: Store, actor: User, sources: { pl
 }
 
 export function visiblePlanHistory(actor: User, id: string, events: AuditEvent[], store?: Store): AuditEvent[] {
-  if (actor.role === 'observer') return []
+  if (isObserver(actor)) return []
   const selected = events.filter(event => event.entityType === 'plan' && event.entityId === id)
-  if (actor.role === 'manager') return selected
+  if (isManager(actor)) return selected
   return selected.flatMap(event => {
     const project = (value: unknown) => {
       const snapshot = planSnapshot(value, id)
@@ -115,8 +116,8 @@ export function visiblePlanHistory(actor: User, id: string, events: AuditEvent[]
 }
 
 export function visiblePublications(actor: User, publications: Publication[], store?: PlanSourceReader): Publication[] {
-  if (actor.role === 'observer') return []
-  if (actor.role === 'manager') return publications
+  if (isObserver(actor)) return []
+  if (isManager(actor)) return publications
   return publications.map(item => ({ ...item, reason: '', plans: item.plans.filter(plan => participates(plan, actor.id)).map(plan => projectPlan(actor, plan, store)) }))
     .filter(item => item.plans.length)
 }

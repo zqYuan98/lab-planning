@@ -10,6 +10,7 @@ import { notificationText } from './notification-content.ts'
 import { readCollaborationSettings, effectiveManagerIds } from './collaboration-policy.ts'
 import { automaticRiskCandidates, evaluateWorkRisks, riskTitle } from './collaboration-rules.ts'
 import { shanghaiDate, shanghaiTime, weekOf, workdayCount, workingDay } from './collaboration-calendar.ts'
+import { isManager } from './authorization.ts'
 
 export const digestTitles: Record<NotificationDigest['type'], string> = {
   risk_member: '今日工作提醒', risk_manager: '需要关注的工作风险', critical_manager: '成员工作有重要更新',
@@ -89,7 +90,7 @@ export function runCollaborationDigests(store: Store, now = new Date()): void {
         }
       }
       for (const [recipientId, risks] of perRecipient) {
-        const manager = store.get<User>('users', recipientId)?.role === 'manager' && risks.some(risk => risk.ownerId !== recipientId || risk.managerOnly)
+        const manager = isManager(store.get<User>('users', recipientId)) && risks.some(risk => risk.ownerId !== recipientId || risk.managerOnly)
         const grouped = new Map<string, WorkRisk[]>()
         for (const risk of risks) grouped.set(risk.taskId, [...(grouped.get(risk.taskId) ?? []), risk])
         const items = [...grouped.values()].map(values => riskItem(store, recipientId, values, now))
@@ -107,7 +108,7 @@ export function runCollaborationDigests(store: Store, now = new Date()): void {
     if (!workingDay(day, settings.calendarOverrides)) return
     const pending = store.list<DigestItem>('digestItems').filter(item => !item.consumedBy && itemTaskActive(store, item))
     if (time >= '09:00' && time < '17:30') {
-      for (const recipient of store.list<User>('users').filter(user => canUseAccount(user) && user.role === 'manager')) {
+      for (const recipient of store.list<User>('users').filter(user => canUseAccount(user) && isManager(user))) {
         const carryover = pending.filter(item => item.recipientId === recipient.id && shanghaiDate(new Date(item.occurredAt)) < day)
         if (carryover.length) createDigest(store, recipient.id, 'risk_manager', '09:00', carryover, now)
       }
@@ -115,7 +116,7 @@ export function runCollaborationDigests(store: Store, now = new Date()): void {
     if (time < '17:30') return
     const friday = new Date(`${day}T00:00:00Z`).getUTCDay() === 5
     for (const recipient of store.list<User>('users').filter(canUseAccount)) {
-      const manager = recipient.role === 'manager'
+      const manager = isManager(recipient)
       if (!manager && (!settings.memberActionsEnabled || store.get<CollaborationPreference>('collaborationPreferences', recipient.id)?.memberActionsEnabled === false)) continue
       const fullManagerDigest = manager && (friday && settings.weeklyManagerEnabled || settings.dailyManagerEnabled)
       const type = manager ? friday && settings.weeklyManagerEnabled ? 'weekly_manager' : 'daily_manager' : 'member_actions'

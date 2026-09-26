@@ -10,6 +10,7 @@ import { readCollaborationSettings } from './collaboration-policy.ts'
 import { risksForActor } from './collaboration-rules.ts'
 import { historicalPlanDataSql } from './workspace-plan-snapshot.ts'
 import { weekOf, shanghaiDate } from './collaboration-calendar.ts'
+import { isManager } from './authorization.ts'
 
 const taskField = (name: string) => `json_extract(t.data,'$.${name}')`
 // Pinned: without statistics SQLite picks the generic status index and scans every open request per task.
@@ -25,8 +26,8 @@ export function collaborationDashboard(store: Store, actor: User, input: Record<
     if (!['all', 'unfinished', 'done', 'risk', 'followup', 'active', 'paused'].includes(filter)) throw new HttpError(400, '工作事项筛选无效')
     const window = pageWindow(input, context, 'collaboration'), risks = risksForActor(store, actor, now)
     const riskIds = [...new Set(risks.map(row => row.taskId))]
-    const base = `t.collection='tasks' AND ${taskField('cancellation')} IS NULL${actor.role === 'manager' ? '' : ` AND ${taskField('ownerId')}=?`}`
-    const baseValues = actor.role === 'manager' ? [] : [actor.id]
+    const base = `t.collection='tasks' AND ${taskField('cancellation')} IS NULL${isManager(actor) ? '' : ` AND ${taskField('ownerId')}=?`}`
+    const baseValues = isManager(actor) ? [] : [actor.id]
     const counts = store.selectRows(`SELECT COUNT(*) AS allCount,SUM(CASE WHEN ${taskField('status')}<>'done' THEN 1 ELSE 0 END) AS unfinished,SUM(CASE WHEN ${taskField('status')}='done' THEN 1 ELSE 0 END) AS done,SUM(CASE WHEN ${openFollowup} THEN 1 ELSE 0 END) AS followup,SUM(CASE WHEN ${trackingState}='active' THEN 1 ELSE 0 END) AS active,SUM(CASE WHEN ${trackingState}='paused' THEN 1 ELSE 0 END) AS paused FROM entities t WHERE ${base}`, baseValues)[0]
     let where = base; const values: (string | number)[] = [...baseValues]
     if (q) { where += ` AND instr(lower(${taskField('title')}),lower(?))>0`; values.push(q) }
@@ -41,7 +42,7 @@ export function collaborationDashboard(store: Store, actor: User, input: Record<
       const followup = store.selectJson<FollowupRequest>(`SELECT data FROM entities WHERE collection='followupRequests' AND json_extract(data,'$.taskId')=? AND json_extract(data,'$.ownerId')=? AND json_extract(data,'$.status')='open' ORDER BY rowid LIMIT 1`, [task.id, task.ownerId])[0] ?? null
       const record = store.selectJson<WeeklyRecord>(`SELECT r.data AS data FROM entities r WHERE r.collection='weeklyRecords' AND json_extract(r.data,'$.taskId')=? AND json_extract(r.data,'$.ownerId')=? AND json_extract(r.data,'$.deletion') IS NULL AND json_extract(r.data,'$.weekStart')<=? AND (?=json_extract(r.data,'$.ownerId') OR (json_extract(r.data,'$.submitted')=1 AND (NOT COALESCE(json_extract(r.data,'$.planApproval.required'),0) OR json_extract(r.data,'$.planApproval.suspended')=1 OR (COALESCE(json_extract(r.data,'$.planApproval.approvedSubmissionId'),'')<>'' AND json_extract(r.data,'$.planApproval.approvedFingerprint')=json_array(json_extract(r.data,'$.taskId'),json_extract(r.data,'$.ownerId'),json_extract(r.data,'$.weekStart'),json_extract(r.data,'$.monthlyPlanId'),json_extract(r.data,'$.commitment')))))) ORDER BY json_extract(r.data,'$.weekStart') DESC,json_extract(r.data,'$.updatedAt') DESC,json_extract(r.data,'$.version') DESC,r.id LIMIT 1`, [task.id, task.ownerId, weekOf(shanghaiDate(now)), actor.id])
       const owner = store.selectJson<DirectoryAccount>(`SELECT json_object('id',id,'name',json_extract(data,'$.name'),'role',json_extract(data,'$.role'),'position',json_extract(data,'$.position'),'active',json_extract(data,'$.active'),'registrationStatus',COALESCE(json_extract(data,'$.registrationStatus'),'approved')) AS data FROM entities WHERE collection='users' AND id=?`, [task.ownerId])[0] ?? null
-      const plan = !task.monthlyPlanId ? null : store.selectJson<CollaborationTaskRow['plan']>(`WITH viewer AS (SELECT ? AS actorId), source AS (SELECT CASE WHEN ?=1 OR json_extract(p.data,'$.ownerId')=viewer.actorId OR EXISTS(SELECT 1 FROM json_each(p.data,'$.collaboratorIds') c WHERE c.value=viewer.actorId) THEN p.data ELSE ${historicalPlanDataSql('p.id', 'viewer.actorId')} END AS data FROM entities p,viewer WHERE p.collection='plans' AND p.id=?) SELECT json_object('id',json_extract(data,'$.id'),'priority',json_extract(data,'$.priority'),'isTemporary',COALESCE(json_extract(data,'$.isTemporary'),0)) AS data FROM source WHERE data IS NOT NULL`, [actor.id, Number(actor.role === 'manager'), task.monthlyPlanId])[0] ?? null
+      const plan = !task.monthlyPlanId ? null : store.selectJson<CollaborationTaskRow['plan']>(`WITH viewer AS (SELECT ? AS actorId), source AS (SELECT CASE WHEN ?=1 OR json_extract(p.data,'$.ownerId')=viewer.actorId OR EXISTS(SELECT 1 FROM json_each(p.data,'$.collaboratorIds') c WHERE c.value=viewer.actorId) THEN p.data ELSE ${historicalPlanDataSql('p.id', 'viewer.actorId')} END AS data FROM entities p,viewer WHERE p.collection='plans' AND p.id=?) SELECT json_object('id',json_extract(data,'$.id'),'priority',json_extract(data,'$.priority'),'isTemporary',COALESCE(json_extract(data,'$.isTemporary'),0)) AS data FROM source WHERE data IS NOT NULL`, [actor.id, Number(isManager(actor)), task.monthlyPlanId])[0] ?? null
       return { task, tracking, openFollowup: followup, owner, plan, ...summarizeCollaborationTask(task, record, actor, now) }
     })
     const ids = new Set(tasks.map(row => row.id))

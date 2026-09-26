@@ -7,6 +7,7 @@ import { participates, planHasMergedSource, projectPlan } from './plan-visibilit
 import { projectWeeklyDuty } from './weekly-duty-view.ts'
 import { projectCollaborationContent } from './collaboration-content.ts'
 import { feedbackStatusLabels, type Feedback } from '../shared/feedback.ts'
+import { isManager, isObserver } from './authorization.ts'
 
 export const targetKey = (target: NotificationTarget) => `${target.type}:${target.id}`
 /** Plain business fragments only; evidence URLs belong behind the authenticated detail page. */
@@ -23,7 +24,7 @@ export function notificationSubject(store: Store, target: NotificationTarget, ac
     const blocker = target.type === 'blocker' ? store.get<import('../shared/collaboration.ts').BlockerEpisode>('blockerEpisodes', target.id) : null
     const decision = target.type === 'decisionRequest' ? store.get<import('../shared/support.ts').DecisionRequest>('decisionRequests', target.id) : null
     const task = store.get<Task>('tasks', blocker?.parentTaskId ?? decision?.taskId ?? '')
-    if (!task || actor.role === 'observer' || actor.role !== 'manager' && actor.id !== task.ownerId && actor.id !== blocker?.coordinatorId) return
+    if (!task || isObserver(actor) || !isManager(actor) && actor.id !== task.ownerId && actor.id !== blocker?.coordinatorId) return
     return { target, title: notificationText(task.title), ownerId: task.ownerId, ownerName: name(store, task.ownerId), context: blocker ? '支持事项' : '决策事项',
       requirement: notificationText(blocker ? [blocker.reason, blocker.impact, blocker.supportNeeded].filter(Boolean).join('；') : decision?.question),
       dueDate: blocker?.responseDueAt ?? decision?.responseDueAt ?? '', status: blocker?.coordinationState ?? decision?.status }
@@ -48,7 +49,7 @@ export function notificationSubject(store: Store, target: NotificationTarget, ac
 
 export function captureNotificationFacts(store: Store, targets: NotificationTarget[], actor: User | undefined, changes: NotificationChange[] = [], reason?: string): NotificationFacts {
   if (!actor) return { subjects: [], changes: [] }
-  const maySeeReason = actor.role === 'manager' || !targets.some(target => target.type === 'plan')
+  const maySeeReason = isManager(actor) || !targets.some(target => target.type === 'plan')
   return { subjects: targets.flatMap(target => { const value = notificationSubject(store, target, actor); return value ? [value] : [] }),
     changes, ...(reason && maySeeReason ? { reason: notificationText(reason) } : {}) }
 }
@@ -59,7 +60,7 @@ export function notificationEventChanges(store: Store, event: AuditEvent, target
   let before = event.before as Record<string, unknown>, after = event.after as Record<string, unknown>
   const recipient = store.get<User>('users', recipientId)
   if (!recipient) return []
-  const wasVisible = recipient?.role === 'manager' || before.ownerId === recipientId
+  const wasVisible = isManager(recipient) || before.ownerId === recipientId
     || event.entityType === 'plan' && Array.isArray(before.collaboratorIds) && before.collaboratorIds.includes(recipientId)
   if (event.entityType === 'plan') {
     before = projectPlan(recipient, event.before as MonthlyPlan, store) as unknown as Record<string, unknown>
@@ -108,7 +109,7 @@ export function projectNotificationContent(store: Store, actor: User, row: Notif
     const content: NotificationContent = { heading: notificationText(row.title), intro: notificationText(row.body), items: targets.flatMap(target => {
       if (target.type !== 'feedback') return []
       const feedback = store.get<Feedback>('feedback', target.id)
-      if (!feedback || actor.role !== 'manager' && feedback.reporterId !== actor.id) return []
+      if (!feedback || !isManager(actor) && feedback.reporterId !== actor.id) return []
       const closure = feedback.closure?.kind === 'confirmed' ? '提报人已验证并确认解决' : feedback.closure?.kind === 'manager' ? '管理者已结案；并非提报人确认解决' : ''
       return [{ target, title: notificationText(feedback.description).slice(0, 100), lines: [`当前状态：${feedbackStatusLabels[feedback.status]}`, `受理人：${name(store, feedback.assigneeId)}`,
         ...(feedback.status === 'verification' ? [`可验证版本：${notificationText(feedback.releaseVersion)}`, '请到反馈详情实际验证，再确认解决或重新打开。'] : []), ...(closure ? [closure] : [])] }]
@@ -133,7 +134,7 @@ export function projectNotificationContent(store: Store, actor: User, row: Notif
     let pendingCount = 0
     content.items = targets.flatMap(target => {
       const duty = store.get<WeeklyDuty>('weeklyDuties', target.id)
-      if (!duty || duty.ownerId !== actor.id && actor.role !== 'manager') return []
+      if (!duty || duty.ownerId !== actor.id && !isManager(actor)) return []
       const current = projectWeeklyDuty(duty, data, now), records = current.records
       const pending = current.status !== 'exempt' && (!current.latestSubmission || current.changedSinceSubmission)
       if (pending) pendingCount++
@@ -162,8 +163,8 @@ export function projectNotificationContent(store: Store, actor: User, row: Notif
       if (subject.acceptance) lines.push(`验收标准：${subject.acceptance}`)
       const rawPlan = target.type === 'plan' ? store.get<MonthlyPlan>('plans', target.id) : undefined
       const changes = (facts?.changes ?? []).filter(change => targetKey(change.target) === targetKey(target)
-        && (actor.role === 'manager' || change.memberVisibleAfter === true && !(rawPlan && planHasMergedSource(rawPlan, store) && ['expectedOutcome', 'acceptanceCriteria'].includes(change.field))))
-        .map(change => actor.role === 'manager' || change.memberVisibleBefore === true ? change : { ...change, before: undefined })
+        && (isManager(actor) || change.memberVisibleAfter === true && !(rawPlan && planHasMergedSource(rawPlan, store) && ['expectedOutcome', 'acceptanceCriteria'].includes(change.field))))
+        .map(change => isManager(actor) || change.memberVisibleBefore === true ? change : { ...change, before: undefined })
       for (const change of changes) lines.push(`${differs ? '通知时变更 · ' : ''}${change.label}：${change.before === undefined ? '已更新为 ' : `${change.before || '未设置'} → `}${change.after || '已清空'}`)
       if (['proposal_result', 'proposal_review'].includes(row.kind)) {
         if (subject.reviewComment && row.kind === 'proposal_result') lines.push(`审核意见：${subject.reviewComment}`)
@@ -187,7 +188,7 @@ export function projectNotificationContent(store: Store, actor: User, row: Notif
     else if (row.kind === 'monthly_published') { content.intro = `与你相关的目标共 ${content.items.length} 项；确认仅适用于本人负责的当前安排。`; buttonText = '查看本月安排' }
     else if (row.kind === 'proposal_review') { content.intro = actorName ? `提报人：${actorName}` : '请审核目标要求。'; buttonText = '查看并审核' }
     else if (row.kind === 'proposal_result') buttonText = '查看审核结果'
-    if (facts?.reason && ['work_changed', 'plan_changed'].includes(options.manualSource?.kind ?? row.kind) && (actor.role === 'manager' || !targets.some(target => target.type === 'plan'))) content.footer = `变更原因：${notificationText(facts.reason)}`
+    if (facts?.reason && ['work_changed', 'plan_changed'].includes(options.manualSource?.kind ?? row.kind) && (isManager(actor) || !targets.some(target => target.type === 'plan'))) content.footer = `变更原因：${notificationText(facts.reason)}`
   }
   if (!row.contentSchemaVersion && !options.manualSource && !['weekly_reminder', 'weekly_summary'].includes(row.kind)) content.footer = [content.footer, '旧通知：以下为当前可访问的事项内容，不代表当时的完整快照。'].filter(Boolean).join('\n')
   if (contentUpdated) content.intro = [`通知发生于 ${notificationLocalTime(new Date(row.eventTime ?? row.createdAt))}；当前事项已有更新，请以当前要求为准。`, content.intro].filter(Boolean).join('\n')

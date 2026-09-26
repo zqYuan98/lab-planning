@@ -7,6 +7,7 @@ import { bool, choice, date, manager, monday, month, participates, text } from '
 import { HttpError, Store } from './store.ts'
 import { isActiveWeeklyRecord } from '../shared/weekly-record-state.ts'
 import { isActiveTask } from '../shared/task-state.ts'
+import { isManager } from './authorization.ts'
 
 function overlaps(weekStart: string, period: string) {
   const end = new Date(`${weekStart}T00:00:00Z`)
@@ -88,7 +89,7 @@ export function validateExistingRow(store: Store, actor: User, row: ImportRow, r
   check(() => text(row.category, '工作类别', false, 100))
   check(() => text(row.sourceText, '来源原文', false, 20000))
   for (const field of ['sourceStatus', 'expectedOutcome', 'acceptanceCriteria', 'actualOutcome', 'blocker', 'nextAction'] as const) check(() => text(row[field], field, false))
-  if (actor.role !== 'manager' && row.ownerId !== actor.id) issues.push('成员只能准备自己的既有计划，生效须由管理者确认')
+  if (!isManager(actor) && row.ownerId !== actor.id) issues.push('成员只能准备自己的既有计划，生效须由管理者确认')
   const owner = typeof row.ownerId === 'string' && row.ownerId ? store.get<User>('users', row.ownerId) : undefined
   if (!owner || !canUseAccount(owner)) issues.push('请选择有效负责人')
   if (row.projectId) check(() => {
@@ -109,7 +110,7 @@ export function validateExistingRow(store: Store, actor: User, row: ImportRow, r
     check(() => { weekStart = monday(row.weekStart) })
     check(() => choice(importedWeeklyStatus(row), ['planned', 'doing', 'blocked', 'done', 'not_done'], '周状态'))
     const candidate = typeof row.taskId === 'string' && row.taskId ? store.get<Task>('tasks', row.taskId) : undefined
-    const task = candidate && (actor.role === 'manager' || candidate.ownerId === actor.id) ? candidate : undefined
+    const task = candidate && (isManager(actor) || candidate.ownerId === actor.id) ? candidate : undefined
     issues.push(...temporaryImportIssues(row, task))
     if (row.taskId && (!task || !isActiveTask(task) || task.ownerId !== row.ownerId)) issues.push('关联任务不存在、已作废或负责人不一致')
     const linked = row.linkedRowId ? rows.find(item => item.id === row.linkedRowId && item.kind === 'monthly' && item.selected) : undefined
@@ -117,7 +118,7 @@ export function validateExistingRow(store: Store, actor: User, row: ImportRow, r
     const planId = row.monthlyPlanId || (!linked ? task?.monthlyPlanId : '')
     if (planId) {
       const candidatePlan = store.get<MonthlyPlan>('plans', planId)
-      const plan = candidatePlan && (actor.role === 'manager' || participates(candidatePlan, actor.id)) ? candidatePlan : undefined
+      const plan = candidatePlan && (isManager(actor) || participates(candidatePlan, actor.id)) ? candidatePlan : undefined
       if (!plan || plan.status !== 'published') issues.push('关联月计划必须已生效')
       else {
         if (plan.visibility === 'reference') issues.push('历史目标引用不能用于新增任务')
@@ -145,7 +146,7 @@ export class ExistingPlanWriter {
   private authorize() {
     manager(this.actor)
     const live = this.store.get<User>('users', this.actor.id)
-    if (!live || !canUseAccount(live) || live.role !== 'manager') throw new HttpError(403, '只有有效管理者可以确认既有计划生效')
+    if (!live || !canUseAccount(live) || !isManager(live)) throw new HttpError(403, '只有有效管理者可以确认既有计划生效')
     if (this.finished) throw new HttpError(409, '该导入写入器已完成，请重新开始导入事务')
   }
   private provenance(row: ImportRow): ImportProvenance {

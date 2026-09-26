@@ -5,6 +5,7 @@ import { checkPassword, hashPassword, safeUser, type StoredUser } from './auth.t
 import { HttpError } from './store.ts'
 import { DomainBase, bool, choice, manager, number, text, type Input } from './domain-common.ts'
 import { userDeletionPreview } from './user-deletion.ts'
+import { isManager } from './authorization.ts'
 
 function email(value: unknown) {
   const address = text(value, '邮箱', true, 254).toLowerCase()
@@ -27,7 +28,7 @@ export class AdminService extends DomainBase {
   register(input: Input) {
     const data = { name: text(input.name, '姓名', true, 100), email: email(input.email), position: text(input.position, '岗位', false, 100), passwordHash: hashPassword(input.password) }
     return this.store.transaction(() => {
-      if (!this.store.list<User>('users').some(user => canUseAccount(user) && user.role === 'manager')) throw new HttpError(409, '请先由部门负责人初始化工作空间')
+      if (!this.store.list<User>('users').some(user => canUseAccount(user) && isManager(user))) throw new HttpError(409, '请先由部门负责人初始化工作空间')
       if (this.store.list<User>('users').some(user => user.email === data.email)) throw new HttpError(409, '该邮箱已注册或已提交申请，请登录或联系管理员')
       const user = this.store.insert<StoredUser>('users', { ...data, role: 'member', active: false, credentialVersion: 1, registrationStatus: 'pending', registrationReviewComment: '' })
       this.audit(user, 'user', user.id, 'register', null, safeUser(user))
@@ -85,7 +86,7 @@ export class AdminService extends DomainBase {
       if (patch.active === false && before.active) patch.credentialVersion = before.credentialVersion + 1
       if (patch.role !== undefined && patch.role !== before.role) patch.credentialVersion = before.credentialVersion + 1
       const next = { ...before, ...patch }
-      if (before.active && before.role === 'manager' && (!next.active || next.role !== 'manager') && !this.store.list<User>('users').some(user => user.id !== id && user.active && user.role === 'manager')) throw new HttpError(400, '必须保留至少一位启用的管理者')
+      if (before.active && isManager(before) && (!next.active || !isManager(next)) && !this.store.list<User>('users').some(user => user.id !== id && user.active && isManager(user))) throw new HttpError(400, '必须保留至少一位启用的管理者')
       const user = this.store.update<StoredUser>('users', id, before.version, patch)
       this.audit(actor, 'user', id, passwordHash ? 'update_credentials' : 'update', safeUser(before), safeUser(user))
       return safeUser(user)

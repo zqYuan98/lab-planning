@@ -2,13 +2,14 @@ import { Router, type RequestHandler } from 'express'
 import { HttpError, type Store } from './store.ts'
 import { liveObjectActor, ObjectAccessService, projectObject } from './object-access.ts'
 import { ObjectGrantService } from './object-grants.ts'
+import { isObserver } from './authorization.ts'
 
 /** A deny-by-default fence around legacy routes, including exports and private attachments. */
 export function observerRouteGuard(store: Store): RequestHandler {
   return (req, _res, next) => {
     try {
       req.user = liveObjectActor(store, req.user)
-      if (req.user.role !== 'observer') return next()
+      if (!isObserver(req.user)) return next()
       const path = req.path.toLowerCase().replace(/\/+$/, '')
       if (req.method === 'POST' && path === '/auth/logout') return next()
       if (['GET', 'HEAD'].includes(req.method) && (/^\/(?:auth\/me|workspace|my-actions|authorized-work(?:\/[^/]+)?|tasks\/[^/]+\/(?:view|history)|scoped-reports\/[^/]+(?:\/export)?)$/.test(path))) return next()

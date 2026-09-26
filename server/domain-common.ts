@@ -3,7 +3,7 @@ import { Store, HttpError } from './store.ts'
 import { visiblePlan } from './plan-visibility.ts'
 export { participates } from './plan-visibility.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
-import { requireManagerRole, requireOwnerOrManager } from './authorization.ts'
+import { isObserver, requireManagerRole, requireOwnerOrManager } from './authorization.ts'
 
 export type Input = Record<string, unknown>
 export function text(value: unknown, label: string, required = true, max = 12000): string {
@@ -67,7 +67,7 @@ export class DomainBase {
   }
   protected activeUser(value: unknown): User {
     const user = this.need<User>('users', text(value, '负责人'))
-    if (!canUseAccount(user) || user.role === 'observer') throw new HttpError(400, '不能分配给观察者、已停用或未通过注册审核的成员')
+    if (!canUseAccount(user) || isObserver(user)) throw new HttpError(400, '不能分配给观察者、已停用或未通过注册审核的成员')
     return user
   }
   protected activeProject(id: string): Project {

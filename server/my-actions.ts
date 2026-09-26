@@ -15,13 +15,14 @@ import { collaborationEnabledFor, readCollaborationSettings } from './collaborat
 import { deliveryReviewerAvailable } from './task-deliveries.ts'
 import { coordinatorAvailable, decisionOwnerAvailable } from './task-support.ts'
 import { getOperationEpoch } from './operation-context.ts'
+import { isManager, isObserver } from './authorization.ts'
 
 const deadline = (day: string): string | null => day ? new Date(Date.parse(`${day}T00:00:00+08:00`) + 86400000).toISOString() : null
 export class MyActionsService {
   constructor(private store: Store, private clock = () => new Date()) {}
   list(actor: User, input: { kind?: unknown; cursor?: unknown; limit?: unknown } = {}): MyActions {
     actor = liveObjectActor(this.store, actor)
-    const now = this.clock().toISOString(), manager = actor.role === 'manager', kind = input.kind === undefined || input.kind === '' || input.kind === 'all' ? undefined : input.kind as ActionKind
+    const now = this.clock().toISOString(), manager = isManager(actor), kind = input.kind === undefined || input.kind === '' || input.kind === 'all' ? undefined : input.kind as ActionKind
     if (kind && !actionKinds.includes(kind)) throw new HttpError(400, '待办类别无效')
     const limit = input.limit === undefined ? 30 : Number(input.limit)
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new HttpError(400, '待办分页大小须为 1 至 100')
@@ -34,9 +35,9 @@ export class MyActionsService {
     }
     const items: ActionItem[] = []
     const add = (row: Omit<ActionItem, 'key'>) => { items.push({ ...row, key: `${row.kind}/${row.sourceId}/${row.businessGeneration}` }) }
-    if (actor.role !== 'observer') {
+    if (!isObserver(actor)) {
       const tasks = new Map(this.store.list<Task>('tasks').filter(isActiveTask).map(task => [task.id, task]))
-      const managers = this.store.list<User>('users').filter(user => user.role === 'manager' && canUseAccount(user)).map(user => user.id)
+      const managers = this.store.list<User>('users').filter(user => isManager(user) && canUseAccount(user)).map(user => user.id)
       const assign = (sourceId: string, sourceVersion: number, task: Task, createdAt: string, reason: string, section: 'deliveries' | 'support' | 'followups', generation: string) => {
         if (manager) add({ kind: 'assignment', sourceId, sourceVersion, taskId: task.id, businessGeneration: generation, assigneeIds: managers, title: task.title, requiredAction: reason, blockedReason: reason, dueAt: null, createdAt, sharedQueue: true, actionTarget: { page: 'task', id: task.id, section } })
       }

@@ -17,8 +17,10 @@ import { HttpError, type Store } from './store.ts'
  * Module-specific helpers keep their own error messages and delegate the decision here.
  * tests/route-permission-matrix.test.ts pins the resulting status of every browser route.
  */
-export const isManager = (actor: Pick<User, 'role'>) => actor.role === 'manager'
-export const isObserver = (actor: Pick<User, 'role'>) => actor.role === 'observer'
+type RoleHolder = Pick<User, 'role'> | null | undefined
+export const isManager = (actor: RoleHolder) => actor?.role === 'manager'
+export const isMember = (actor: RoleHolder) => actor?.role === 'member'
+export const isObserver = (actor: RoleHolder) => actor?.role === 'observer'
 
 /** The stored account when it can still sign in and act; undefined otherwise. */
 export function usableAccount(store: Store, actorId: string): User | undefined {

@@ -8,6 +8,7 @@ import { DomainBase, manager, type Input } from './domain-common.ts'
 import { HttpError, type Store } from './store.ts'
 import { cycleWeek } from './weekly-submission-clock.ts'
 import { weeklyDutyHistory } from './weekly-duty-view.ts'
+import { isManager, isMember } from './authorization.ts'
 
 export const WEEKLY_REVIEW_DELEGATION_SETTINGS_ID = 'weekly-review-delegation'
 interface DelegationAudit extends Entity { actorId: string; settingsId: string; beforeVersion: number; afterVersion: number; beforeOwnerIds: string[]; afterOwnerIds: string[] }
@@ -27,13 +28,13 @@ export function resolveWholePlanReviewer(store: Store, duty: WeeklyDuty, receipt
   if (duty.kind !== 'plan' || receipt.dutyId !== duty.id || receipt.ownerId !== duty.ownerId || receipt.kind !== 'plan'
     || !readWeeklyReviewDelegation(store).enabledOwnerIds.includes(duty.ownerId) || !rows.length || !wholePlanMatches(receipt, rows)) return fallback
   const submitter = store.get<User>('users', duty.ownerId)
-  if (!submitter || submitter.role !== 'member' || !canUseAccount(submitter)) return fallback
+  if (!submitter || !isMember(submitter) || !canUseAccount(submitter)) return fallback
   const goalId = rows[0].monthlyPlanId
   if (!goalId || rows.some(row => row.monthlyPlanId !== goalId)) return fallback
   const goal = store.get<MonthlyPlan>('plans', goalId)
   if (!goal || goal.status === 'merged' || goal.mergedIntoId || goal.visibility) return fallback
   const owner = store.get<User>('users', goal.ownerId)
-  if (!owner || owner.role !== 'member' || !canUseAccount(owner) || owner.id === duty.ownerId) return fallback
+  if (!owner || !isMember(owner) || !canUseAccount(owner) || owner.id === duty.ownerId) return fallback
   for (const row of rows) {
     const task = store.get<Task>('tasks', row.taskId)
     if (row.ownerId !== duty.ownerId || !task || task.cancellation || task.monthlyPlanId !== goal.id || task.ownerId !== duty.ownerId || task.ownerId === owner.id) return fallback
@@ -42,14 +43,14 @@ export function resolveWholePlanReviewer(store: Store, duty: WeeklyDuty, receipt
 }
 export function assertWholePlanReviewer(store: Store, actor: User, duty: WeeklyDuty, receipt: WeeklySubmission, rows: WeeklyRecord[]) {
   const reviewer = resolveWholePlanReviewer(store, duty, receipt, rows)
-  if (actor.role !== 'manager' && (reviewer.kind !== 'goal_owner' || reviewer.reviewerId !== actor.id)) throw new HttpError(403, '当前未获委托审核此整份计划，请由管理者处理', 'ACCESS_REVOKED')
+  if (!isManager(actor) && (reviewer.kind !== 'goal_owner' || reviewer.reviewerId !== actor.id)) throw new HttpError(403, '当前未获委托审核此整份计划，请由管理者处理', 'ACCESS_REVOKED')
   return reviewer
 }
 
 export class WeeklyReviewDelegationService extends DomainBase {
   settings(actor: User): WeeklyReviewDelegationView {
     actor = assertBusinessActor(this.store, actor); manager(actor)
-    return { settings: readWeeklyReviewDelegation(this.store), members: this.store.list<User>('users').filter(user => user.role === 'member').map(user => ({ id: user.id, name: user.name, available: canUseAccount(user) })) }
+    return { settings: readWeeklyReviewDelegation(this.store), members: this.store.list<User>('users').filter(user => isMember(user)).map(user => ({ id: user.id, name: user.name, available: canUseAccount(user) })) }
   }
   updateSettings(actor: User, input: Input): WeeklyReviewDelegationSettings {
     actor = assertBusinessActor(this.store, actor); manager(actor)
@@ -60,7 +61,7 @@ export class WeeklyReviewDelegationService extends DomainBase {
       if (!Array.isArray(ids) || ids.length > 1000 || ids.some(id => typeof id !== 'string') || new Set(ids).size !== ids.length) throw new HttpError(400, '请选择不重复的提交成员')
       for (const id of ids) {
         const user = this.store.get<User>('users', id)
-        if (!user || user.role !== 'member' || !canUseAccount(user)) throw new HttpError(400, '只能为当前有效成员启用审核委托')
+        if (!user || !isMember(user) || !canUseAccount(user)) throw new HttpError(400, '只能为当前有效成员启用审核委托')
       }
       const enabledOwnerIds = [...ids].sort()
       const after = before.version ? this.store.update<WeeklyReviewDelegationSettings>('settings', before.id, before.version, { enabledOwnerIds })
@@ -86,7 +87,7 @@ export class WeeklyReviewDelegationService extends DomainBase {
       const rows = wholePlanRows(this.store, duty)
       if (!wholePlanMatches(receipt, rows)) continue
       const reviewer = resolveWholePlanReviewer(this.store, duty, receipt, rows)
-      if (actor.role !== 'manager' && (reviewer.kind !== 'goal_owner' || reviewer.reviewerId !== actor.id)) continue
+      if (!isManager(actor) && (reviewer.kind !== 'goal_owner' || reviewer.reviewerId !== actor.id)) continue
       items.push({ dutyId: duty.id, version: duty.version, ownerId: duty.ownerId, ownerName: this.store.get<User>('users', duty.ownerId)?.name ?? '成员', contentWeek: duty.contentWeek,
         submissionId: receipt.id, submittedAt: receipt.submittedAt, reviewer, retainedDraftCount: receipt.retainedDraftIds.length,
         items: receipt.records.map(snapshot => {

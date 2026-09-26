@@ -6,6 +6,7 @@ import { canUseAccount } from '../shared/auth-policy.ts'
 import type { User } from '../shared/types.ts'
 import { usageActions, usagePages, type UsageAction, type UsagePage, type UsagePolicy, type UsageSettings, type UsageSettingsView, type UsageSummary } from '../shared/usage-analytics.ts'
 import { HttpError } from './store.ts'
+import { isMember } from './authorization.ts'
 
 interface StoredSettings extends UsageSettings { operationEpoch: string; observedVersion: string; observationStartedAt: string | null; observationEndedAt: string | null }
 export const usageDay = (date: Date) => new Date(date.getTime() + 8 * 3_600_000).toISOString().slice(0, 10)
@@ -60,7 +61,7 @@ export class UsageAnalyticsStore {
   /** Fast disabled gate for middleware; it does not query either database. */
   get configuredEnabled() { return !this.unavailable && this.settings.enabled }
   private key(...parts: string[]) { return createHmac('sha256', this.secret).update(JSON.stringify(parts)).digest('hex') }
-  private eligible(actor: User) { return actor.role === 'member' && canUseAccount(actor) && !this.excluded.has(actor.id) }
+  private eligible(actor: User) { return isMember(actor) && canUseAccount(actor) && !this.excluded.has(actor.id) }
   view(epoch: string): UsageSettingsView {
     const { operationEpoch, observedVersion: _version, observationStartedAt: _start, observationEndedAt: _end, ...settings } = this.settings
     return { settings: structuredClone(settings), effectiveEnabled: !this.unavailable && settings.enabled && operationEpoch === epoch, activationRequired: settings.enabled && operationEpoch !== epoch, buildVersion: this.version, ...(this.unavailable ? { storageUnavailable: true } : {}) }
@@ -70,7 +71,7 @@ export class UsageAnalyticsStore {
     if (this.unavailable) throw new HttpError(503, '统计存储不可用，请先恢复统计存储后重试；业务功能不受影响')
     exactUsageFields(input, ['version', 'enabled', 'retentionDays', 'excludedUserIds'])
     if (input.version !== this.settings.version) throw new HttpError(409, '使用率设置已变化，请刷新后重试')
-    if (typeof input.enabled !== 'boolean' || ![30, 90].includes(input.retentionDays as number) || !Array.isArray(input.excludedUserIds) || input.excludedUserIds.length > 10_000 || input.excludedUserIds.some(id => typeof id !== 'string' || !users.some(user => user.id === id && user.role === 'member'))) throw new HttpError(400, '使用率设置无效')
+    if (typeof input.enabled !== 'boolean' || ![30, 90].includes(input.retentionDays as number) || !Array.isArray(input.excludedUserIds) || input.excludedUserIds.length > 10_000 || input.excludedUserIds.some(id => typeof id !== 'string' || !users.some(user => user.id === id && isMember(user)))) throw new HttpError(400, '使用率设置无效')
     const now = this.clock().toISOString(), freshWindow = input.enabled && (!this.settings.enabled || this.settings.operationEpoch !== epoch)
     const next: StoredSettings = { version: this.settings.version + 1, enabled: input.enabled, retentionDays: input.retentionDays as 30 | 90, excludedUserIds: [...new Set(input.excludedUserIds as string[])].sort(), operationEpoch: epoch,
       observedVersion: this.version, observationStartedAt: freshWindow ? now : this.settings.observationStartedAt,

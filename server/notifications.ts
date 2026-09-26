@@ -8,6 +8,7 @@ import { appOrigin } from './auth.ts'
 import { HttpError, Store } from './store.ts'
 import { captureNotificationFacts, contentAsText, mergeNotificationChanges, notificationSubject, projectNotificationContent, targetKey } from './notification-content.ts'
 import { collaborationTargetAccessible } from './collaboration-content.ts'
+import { isManager, isObserver } from './authorization.ts'
 
 interface Identity extends Entity { provider: string; corpId: string; userid: string; userId: string }
 interface Obligation extends Entity { recipientId: string; target: NotificationTarget; eventKey: string; acknowledgedAt: string | null }
@@ -35,34 +36,34 @@ function cancelledTaskTarget(store: Store, target: NotificationTarget): boolean 
 }
 export function targetAccessible(store: Store, actor: User, target: NotificationTarget): boolean {
   const current = store.get<User>('users', actor.id)
-  if (!current || !canUseAccount(current) || current.role === 'observer') return false
+  if (!current || !canUseAccount(current) || isObserver(current)) return false
   actor = current
   if (cancelledTaskTarget(store, target)) return false
   if (target.type === 'blocker') {
     const row = store.get<{ parentTaskId: string; coordinatorId?: string | null }>('blockerEpisodes', target.id)
     const task = row && store.get<Task>('tasks', row.parentTaskId)
-    return !!task && isActiveTask(task) && (actor.role === 'manager' || task.ownerId === actor.id || row?.coordinatorId === actor.id)
+    return !!task && isActiveTask(task) && (isManager(actor) || task.ownerId === actor.id || row?.coordinatorId === actor.id)
   }
   if (target.type === 'decisionRequest') {
     const row = store.get<{ taskId: string }>('decisionRequests', target.id), task = row && store.get<Task>('tasks', row.taskId)
-    return !!task && isActiveTask(task) && (actor.role === 'manager' || task.ownerId === actor.id)
+    return !!task && isActiveTask(task) && (isManager(actor) || task.ownerId === actor.id)
   }
   if (target.type === 'feedback') {
     const row = store.get<{ reporterId: string }>('feedback', target.id)
-    return !!row && (actor.role === 'manager' || row.reporterId === actor.id)
+    return !!row && (isManager(actor) || row.reporterId === actor.id)
   }
   if (['followup', 'digest', 'deadlineRequest', 'report'].includes(target.type)) return collaborationTargetAccessible(store, actor, target)
-  if (target.type === 'summary') return actor.role === 'manager'
+  if (target.type === 'summary') return isManager(actor)
   if (target.type === 'weeklySubmission') {
     const duty = store.get<{ ownerId: string }>('weeklyDuties', target.id)
-    return !!duty && (actor.role === 'manager' || duty.ownerId === actor.id)
+    return !!duty && (isManager(actor) || duty.ownerId === actor.id)
   }
   if (target.type === 'plan') {
     const row = store.get<MonthlyPlan>('plans', target.id)
-    return !!row && row.status !== 'merged' && (actor.role === 'manager' || row.ownerId === actor.id || row.collaboratorIds.includes(actor.id))
+    return !!row && row.status !== 'merged' && (isManager(actor) || row.ownerId === actor.id || row.collaboratorIds.includes(actor.id))
   }
   const row = store.get<Task | WeeklyRecord>(target.type === 'task' ? 'tasks' : 'weeklyRecords', target.id)
-  return !!row && (target.type !== 'weeklyRecord' || isActiveWeeklyRecord(row as WeeklyRecord)) && (actor.role === 'manager' || row.ownerId === actor.id)
+  return !!row && (target.type !== 'weeklyRecord' || isActiveWeeklyRecord(row as WeeklyRecord)) && (isManager(actor) || row.ownerId === actor.id)
 }
 function targetOwned(store: Store, actor: User, target: NotificationTarget): boolean {
   if (!['plan', 'task', 'weeklyRecord'].includes(target.type) || !targetAccessible(store, actor, target)) return false
@@ -77,7 +78,7 @@ function targetOwned(store: Store, actor: User, target: NotificationTarget): boo
 export function enqueueNotification(store: Store, input: Input, now = new Date()): Notification | null {
   return store.transaction(() => {
     const actor = store.get<User>('users', input.recipientId)
-    if (!actor || !canUseAccount(actor) || actor.role === 'observer') return null
+    if (!actor || !canUseAccount(actor) || isObserver(actor)) return null
     const id = notificationId(input.eventKey, input.recipientId)
     const previous = store.get<Notification>('notifications', id)
     if (previous) return previous
@@ -137,7 +138,7 @@ export function sourceNotification(store: Store, actor: User, row: Notification)
 }
 export function notificationView(store: Store, actor: User, row: Notification, now = new Date()): NotificationView {
   const current = store.get<User>('users', actor.id)
-  if (!current || !canUseAccount(current) || current.role === 'observer') throw new HttpError(403, '当前账号不能读取业务消息')
+  if (!current || !canUseAccount(current) || isObserver(current)) throw new HttpError(403, '当前账号不能读取业务消息')
   actor = current
   if (row.recipientId !== actor.id) throw new HttpError(404, '消息不存在')
   let targets = row.targets.filter(target => targetAccessible(store, actor, target))

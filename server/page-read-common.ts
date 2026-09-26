@@ -4,11 +4,12 @@ import type { WorkspacePage } from '../shared/workspace-query.ts'
 import { liveObjectActor, readScopeVersion } from './object-access.ts'
 import { getOperationEpoch } from './operation-context.ts'
 import { HttpError, type Store } from './store.ts'
+import { isObserver } from './authorization.ts'
 
 export interface PageReadContext { actor: User; accessScopeVersion: string; operationEpoch: string; revision: string }
 export function pageContext(store: Store, actor: User): PageReadContext {
   actor = liveObjectActor(store, actor)
-  if (actor.role === 'observer') throw new HttpError(403, '观察者仅能读取明确授权的内容', 'READ_ONLY_OBSERVER')
+  if (isObserver(actor)) throw new HttpError(403, '观察者仅能读取明确授权的内容', 'READ_ONLY_OBSERVER')
   return { actor, accessScopeVersion: readScopeVersion(store, actor), operationEpoch: getOperationEpoch(store), revision: store.workspaceRevision() }
 }
 export function queryKeys(input: Record<string, unknown>, allowed: readonly string[]) {

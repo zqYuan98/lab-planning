@@ -15,6 +15,7 @@ import { weeklyPlanApprovalMetadata } from './weekly-plan-review.ts'
 import { cancelTaskCollaboration, endTaskRequests } from './collaboration-tracking.ts'
 import type { BlockerEpisode } from '../shared/collaboration.ts'
 import { validateWorkChange } from './work-validation.ts'
+import { isManager, isMember } from './authorization.ts'
 
 function progressInput(store: Store, input: Input, type: 'task' | 'weeklyRecord'): Input {
   const context = currentCollaborationMutation(store)
@@ -304,11 +305,11 @@ export class WorkService extends DomainBase {
       if (planApproval) patch.planApproval = planApproval
       const planChanged = weeklyPlanFingerprint(before) !== weeklyPlanFingerprint({ ...before, ...patch })
       // An owner's revision of an administrator's assignment is a new proposal, not another administrator decision.
-      if (actor.role === 'member' && planChanged) {
+      if (isMember(actor) && planChanged) {
         const revisedApproval = weeklyPlanApprovalMetadata(this.store, before.ownerId, before.weekStart, { kind: 'self', actorId: actor.id, reason: '' })
         if (revisedApproval) patch.planApproval ??= revisedApproval
       }
-      if (!options.formalSubmission && actor.role === 'manager' && actor.id !== before.ownerId && before.workOrigin?.kind === 'assigned'
+      if (!options.formalSubmission && isManager(actor) && actor.id !== before.ownerId && before.workOrigin?.kind === 'assigned'
         && patch.submitted && (!before.submitted || planChanged)) patch.planApproval = undefined
       const completeTask = input.completeTask === undefined ? false : bool(input.completeTask, '同时完成整个任务')
       let completionTask: Task | undefined

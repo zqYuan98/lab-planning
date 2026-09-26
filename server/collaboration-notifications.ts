@@ -11,6 +11,7 @@ import { readCollaborationSettings } from './collaboration-policy.ts'
 import { addDigestItem, createDigest } from './collaboration-digests.ts'
 import { shanghaiDate } from './collaboration-calendar.ts'
 import { notificationLocalTime, notificationText } from './notification-content.ts'
+import { isManager } from './authorization.ts'
 
 const labels: Record<BusinessNotificationKind, string> = {
   followup_requested: '请更新进度', followup_changed: '催办要求有更新', followup_responded: '成员已回应催办', followup_closed: '催办已结束',
@@ -114,13 +115,13 @@ export function publishCollaborationEvents(store: Store, now = new Date()): void
           title: eventTitle(store, event), lines, occurredAt: event.occurredAt, generation: event.generation, actionable: approvals.has(event.kind) || ['followup_requested', 'followup_changed'].includes(event.kind) })
         if (item.consumedBy) continue
         if (['followup_requested', 'followup_changed'].includes(event.kind)) { manual.set(recipientId, [...(manual.get(recipientId) ?? []), item]); continue }
-        if (event.kind === 'progress_recorded' || event.kind === 'tracking_changed' || event.kind === 'weekly_submitted' && recipient.role === 'manager' && recipientId !== event.ownerId) continue
-        if (recipient.role === 'manager' && critical.has(event.kind)) {
+        if (event.kind === 'progress_recorded' || event.kind === 'tracking_changed' || event.kind === 'weekly_submitted' && isManager(recipient) && recipientId !== event.ownerId) continue
+        if (isManager(recipient) && critical.has(event.kind)) {
           const bucket = String(Math.floor(now.getTime() / (5 * 60000))), count = store.list<NotificationDigest>('notificationDigests').filter(row => row.recipientId === recipientId && row.day === day && row.type === 'critical_manager')
           if (count.length < 3 || count.some(row => row.slot === bucket)) createDigest(store, recipientId, 'critical_manager', bucket, [item], now)
           continue // Overflow remains a digest item for the next manager summary.
         }
-        if (recipient.role === 'manager' && approvals.has(event.kind)) { createDigest(store, recipientId, 'approval_manager', 'pending', [item], now); continue }
+        if (isManager(recipient) && approvals.has(event.kind)) { createDigest(store, recipientId, 'approval_manager', 'pending', [item], now); continue }
         const notification = enqueueNotification(store, { eventKey: `collaboration:event:${event.id}`, recipientId, kind: `collaboration_${event.kind}`, title: `${labels[event.kind]}：${item.title}`,
           body: lines.join('\n'), targets: [target], actionable: false, actorId: event.actorId, eventTime: event.occurredAt }, now)
         if (notification) {

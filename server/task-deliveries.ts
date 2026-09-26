@@ -6,6 +6,7 @@ import { HttpError, type Store } from './store.ts'
 import { collaborationId, requiredText } from './collaboration-store.ts'
 import { activePeople, audit, businessActor, cas, command, inbox, ownedTask, type Input } from './delivery-common.ts'
 import { WorkService } from './domain-work.ts'
+import { isManager } from './authorization.ts'
 
 export function effectiveDeliveryDecision(store: Store, deliveryId: string): DeliveryDecision | null {
   const rows = store.list<DeliveryDecision>('deliveryDecisions').filter(row => row.deliveryId === deliveryId)
@@ -41,8 +42,8 @@ export class TaskDeliveryService {
       const allowedActions: string[] = []
       if (active) {
         if (series.status !== 'pending_review') allowedActions.push('submit')
-        if (actor.role === 'manager') allowedActions.push('reassign')
-        if (series.status === 'pending_review' && (actor.role === 'manager' || actor.id === current.delivery.submittedBy)) allowedActions.push('withdraw')
+        if (isManager(actor)) allowedActions.push('reassign')
+        if (series.status === 'pending_review' && (isManager(actor) || actor.id === current.delivery.submittedBy)) allowedActions.push('withdraw')
         if (reviewerAvailable && actor.id === series.reviewerId) {
           if (series.status === 'pending_review') allowedActions.push('review')
           if (this.store.list<DeliveryDecision>('deliveryDecisions').some(row => row.seriesId === series.id)) allowedActions.push('correct')
@@ -115,10 +116,10 @@ export class TaskDeliveryService {
       } else if (before.headSubmissionId !== deliveryId || before.status !== 'pending_review' || previous) throw new HttpError(409, '该成果版本已经处理或不是当前待验收版本', 'VERSION_CONFLICT')
       let conclusion: DeliveryDecision['conclusion']
       if (action === 'withdraw') {
-        if (actor.role !== 'manager' && actor.id !== delivery.submittedBy) throw new HttpError(403, '只有提交人或管理者可以撤回')
+        if (!isManager(actor) && actor.id !== delivery.submittedBy) throw new HttpError(403, '只有提交人或管理者可以撤回')
         conclusion = 'withdrawn'
       } else {
-        if (actor.role !== 'manager' || actor.id !== before.reviewerId || actor.id === delivery.ownerId || !deliveryReviewerAvailable(this.store, before, delivery)) throw new HttpError(403, '仅当前有效指定验收人可以验收或更正，且不能自验收')
+        if (!isManager(actor) || actor.id !== before.reviewerId || actor.id === delivery.ownerId || !deliveryReviewerAvailable(this.store, before, delivery)) throw new HttpError(403, '仅当前有效指定验收人可以验收或更正，且不能自验收')
         if (!['accepted', 'returned'].includes(String(input.conclusion))) throw new HttpError(400, '请选择通过或退回')
         conclusion = input.conclusion as 'accepted' | 'returned'
       }

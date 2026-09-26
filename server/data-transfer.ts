@@ -10,6 +10,7 @@ import { reportAgentTransferCollections, emptyReportAgentCollections } from './r
 import { deliveryCollectionNames, emptyDeliveryCollections } from './delivery-transfer.ts'
 import { periodReviewCollectionNames, emptyPeriodReviewCollections } from './period-review-transfer.ts'
 import { assertBusinessActor } from './object-access.ts'
+import { isManager } from './authorization.ts'
 
 export type { BusinessDataPacket, BusinessCollections, TransferType } from './data-transfer-schema.ts'
 export { previewRestore, restoreBusinessData } from './data-restore.ts'
@@ -34,10 +35,10 @@ export function exportBusinessData(store: Store, actor: User, options: ExportOpt
     const visible = readBusinessExportSources(store, actor)
     const visibleTasks = new Map(visible.tasks.map(task => [task.id, task]))
     const visibleTask = (id: unknown) => typeof id === 'string' ? visibleTasks.get(id) : undefined
-    const isManager = actor.role === 'manager'
+    const manager = isManager(actor)
     // Historical task snapshots preserve weekly dependencies; they do not grant
     // access to raw deliveries or decisions created under a later owner.
-    const deliveryTaskIds = isManager ? new Set(visibleTasks.keys()) : new Set(store.selectRows(
+    const deliveryTaskIds = manager ? new Set(visibleTasks.keys()) : new Set(store.selectRows(
       "SELECT id FROM entities WHERE collection='tasks' AND json_extract(data,'$.ownerId')=?", [actor.id],
     ).map(row => String(row.id)))
     const complete = type === 'all' && !options.month && !options.ownerId && !options.projectId
@@ -50,20 +51,20 @@ export function exportBusinessData(store: Store, actor: User, options: ExportOpt
       history: visibleImportHistory(store, actor),
       publications: visible.publications, reports: visible.reports,
       // Authentication, API connections and tokens are deliberately outside a business-data packet.
-      events: isManager ? store.list<BusinessCollections['events'][number]>('events').filter(event => Object.hasOwn(businessEventCollections, event.entityType)) : [],
-      weeklyRules: isManager ? store.list('weeklyRules') : [],
-      weeklyCycles: isManager ? store.list('weeklyCycles') : [],
-      weeklyDuties: store.list<BusinessCollections['weeklyDuties'][number]>('weeklyDuties').filter(row => isManager || row.ownerId === actor.id),
-      weeklySubmissions: store.list<BusinessCollections['weeklySubmissions'][number]>('weeklySubmissions').filter(row => isManager || row.ownerId === actor.id),
-      weeklyMissing: store.list<BusinessCollections['weeklyMissing'][number]>('weeklyMissing').filter(row => isManager || row.ownerId === actor.id),
-      weeklyAdjustments: store.list<BusinessCollections['weeklyAdjustments'][number]>('weeklyAdjustments').filter(row => isManager || row.ownerId === actor.id),
-      weeklyPlanReviews: store.list<BusinessCollections['weeklyPlanReviews'][number]>('weeklyPlanReviews').filter(row => isManager || row.ownerId === actor.id),
+      events: manager ? store.list<BusinessCollections['events'][number]>('events').filter(event => Object.hasOwn(businessEventCollections, event.entityType)) : [],
+      weeklyRules: manager ? store.list('weeklyRules') : [],
+      weeklyCycles: manager ? store.list('weeklyCycles') : [],
+      weeklyDuties: store.list<BusinessCollections['weeklyDuties'][number]>('weeklyDuties').filter(row => manager || row.ownerId === actor.id),
+      weeklySubmissions: store.list<BusinessCollections['weeklySubmissions'][number]>('weeklySubmissions').filter(row => manager || row.ownerId === actor.id),
+      weeklyMissing: store.list<BusinessCollections['weeklyMissing'][number]>('weeklyMissing').filter(row => manager || row.ownerId === actor.id),
+      weeklyAdjustments: store.list<BusinessCollections['weeklyAdjustments'][number]>('weeklyAdjustments').filter(row => manager || row.ownerId === actor.id),
+      weeklyPlanReviews: store.list<BusinessCollections['weeklyPlanReviews'][number]>('weeklyPlanReviews').filter(row => manager || row.ownerId === actor.id),
     }
-    if (isManager) for (const name of reportAgentTransferCollections) (sources[name] as Entity[]) = store.list<Entity>(name)
+    if (manager) for (const name of reportAgentTransferCollections) (sources[name] as Entity[]) = store.list<Entity>(name)
     // Department frozen facts have their own member projection API. Raw migration is manager-only.
-    if (isManager) for (const name of periodReviewCollectionNames) (sources[name] as Entity[]) = store.list<Entity>(name)
+    if (manager) for (const name of periodReviewCollectionNames) (sources[name] as Entity[]) = store.list<Entity>(name)
     for (const name of collaborationCollectionNames) (sources[name] as Entity[]) = store.list<Entity & { ownerId: string; taskId?: string; parentTaskId?: string }>(name)
-      .filter(row => (isManager || row.ownerId === actor.id) && !!visibleTask(row.taskId ?? row.parentTaskId))
+      .filter(row => (manager || row.ownerId === actor.id) && !!visibleTask(row.taskId ?? row.parentTaskId))
     const deliveryTaskId = (row: Record<string, unknown>) => row.taskId ?? store.get<{ id: string; taskId: string }>('deliverySeries', String(row.seriesId))?.taskId
     for (const name of deliveryCollectionNames) (sources[name] as Entity[]) = store.list<Entity>(name).filter(row => {
       const taskId = deliveryTaskId(row as unknown as Record<string, unknown>)
@@ -124,7 +125,7 @@ export function exportBusinessData(store: Store, actor: User, options: ExportOpt
         const plan = row as MonthlyPlan
         for (const publication of sources.publications) if (publication.month === plan.month && publication.revision === plan.publishedVersion) add('publications', publication.id)
       }
-      if (isManager && !['users', 'events', 'publications'].includes(name)) {
+      if (manager && !['users', 'events', 'publications'].includes(name)) {
         for (const event of sources.events) if (businessEventCollections[event.entityType] === name && event.entityId === row.id) add('events', event.id)
       }
     }

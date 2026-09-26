@@ -7,6 +7,7 @@ import type { WeeklyRule, WeeklyCycle, WeeklyDuty, WeeklySubmission, WeeklyMissi
 import { HttpError } from './store.ts'
 import { collaborationCollectionNames, collaborationCollectionsShape, collaborationReferences, collaborationSchemas, emptyCollaborationCollections, emptyCollaborationCollectionsShape, remapCollaborationUsers, type CollaborationCollections } from './collaboration-transfer.ts'
 import { reportAgentTransferCollections, reportAgentCollectionsShape, reportAgentReferences, reportAgentTransferSchemas, reportAgentPayloadSchema, emptyReportAgentCollections, emptyReportAgentCollectionsShape, remapReportAgentUsers, type ReportAgentCollections } from './report-agent-transfer.ts'
+import { isMember } from './authorization.ts'
 
 export const collectionNames = ['users', 'projects', 'annualGoals', 'plans', 'tasks', 'weeklyRecords', 'history', 'publications', 'reports', 'events', 'weeklyRules', 'weeklyCycles', 'weeklyDuties', 'weeklySubmissions', 'weeklyMissing', 'weeklyAdjustments', 'weeklyPlanReviews', ...collaborationCollectionNames, ...reportAgentTransferCollections, ...deliveryCollectionNames, ...periodReviewCollectionNames] as const
 export type TransferCollection = typeof collectionNames[number]
@@ -170,7 +171,7 @@ export function hasR4BusinessFields(collections: BusinessCollections): boolean {
     if (row.schemaVersion === 'monthly-v1' || row.type === 'monthly' && ('bindings' in row || 'targetWeek' in row)) return true
     return Object.entries(row).some(([key, child]) => child !== undefined && (fields.has(key) || visit(child)))
   }
-  const members = new Set(collections.users.filter(user => user.role === 'member').map(user => user.id))
+  const members = new Set(collections.users.filter(user => isMember(user)).map(user => user.id))
   const delegated = (value: unknown): boolean => {
     if (Array.isArray(value)) return value.some(delegated)
     if (!value || typeof value !== 'object') return false
