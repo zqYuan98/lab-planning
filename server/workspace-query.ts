@@ -12,6 +12,7 @@ import { projectPlan, planReference, participates } from './plan-visibility.ts'
 import type { WorkspaceSqlFilter } from './workspace-query-sql.ts'
 import { workOriginProjector } from './work-origin.ts'
 import { isManager, isObserver } from './authorization.ts'
+import { PRIORITIES } from '../shared/entity-rules.ts'
 
 type Query = Record<string, unknown>
 const cursorSecret = randomBytes(32)
@@ -106,7 +107,7 @@ export class WorkspaceQueryService {
       keys(input, ['view', 'q', 'priority', 'kind', 'cursor', 'limit'])
       const today = workRegisterToday(), base = buildWorkRegister({ user: actor, tasks: [], weeklyRecords: [] }, { today })
       const view = choice(input.view, Object.keys(workRegisterViewLabels) as WorkRegisterView[], '工作范围') ?? 'active'
-      const filter = { actorId: actor.id, manager: isManager(actor), weekStart: base.weekStart, view, q: str(input.q, '搜索词', 120), priority: choice(input.priority, ['high', 'medium', 'low'], '优先级'), kind: choice(input.kind, ['monthly', 'temporary', 'routine'], '工作类型') }
+      const filter = { actorId: actor.id, manager: isManager(actor), weekStart: base.weekStart, view, q: str(input.q, '搜索词', 120), priority: choice(input.priority, PRIORITIES, '优先级'), kind: choice(input.kind, ['monthly', 'temporary', 'routine'], '工作类型') }
       const limit = pageSize(input), binding = digest(['register', filter, limit, context.accessScopeVersion, context.epoch, context.revision]), cursor = parseCursor(input.cursor, binding)
       const page = this.store.registerPage(filter, limit + 1, cursor), selected = page.rows.slice(0, limit)
       const tasks = selected.filter(row => row.kind === 'task').map(row => { const task = row.entity as Task; return task.workOrigin || task.importSource ? task : workOriginProjector(this.store.initialTaskEvents(task.id))(task, 'task') }), plans = selected.filter(row => row.kind === 'plan').map(row => row.entity as MonthlyPlan)

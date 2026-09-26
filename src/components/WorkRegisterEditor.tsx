@@ -1,3 +1,4 @@
+import { LIMITS } from '../../shared/entity-rules'
 import { effortInput } from '../../shared/effort'
 import { useRef, useState, type FormEvent } from 'react'
 import { LoaderCircle } from 'lucide-react'
@@ -92,18 +93,18 @@ export default function WorkRegisterEditor({ userId, task, onClose, onSaved }: E
       <p className="wr-modal-intro">维护整件工作的交付与进展。每周的具体承诺在周计划中安排。</p>
       {completionReview && <div className="wr-refresh-note"><p>旧导入将此任务标为已完成，但没有整体完成说明。若仍需推进，请改为进行中；若已全部完成，请保留已完成并补充最终交付说明。</p><button type="button" className="button secondary" disabled={busy} onClick={() => setStatus('doing')}>仍需推进</button></div>}
       <fieldset className="form-fields" disabled={busy || saved.current || writeUnavailable || !!comparison}>
-        <Field label="事项名称"><input name="title" defaultValue={task.title} required maxLength={300} /></Field>
+        <Field label="事项名称"><input name="title" defaultValue={task.title} required maxLength={LIMITS.title} /></Field>
         <div className="wr-form-grid">
           <Field label="事项来源"><select value={source} onChange={event => setSource(event.target.value as typeof source)}>
             {!task.workSource && <option value="">未注明</option>}
             <option value="leader">领导交办</option><option value="self">自主安排</option><option value="coordination">协同事项</option>
           </select></Field>
-          <Field label="交办人 / 对接人"><input name="assignedBy" defaultValue={task.assignedBy || ''} maxLength={100} /></Field>
+          <Field label="交办人 / 对接人"><input name="assignedBy" defaultValue={task.assignedBy || ''} maxLength={LIMITS.assignedBy} /></Field>
           <Field label="交办日期"><input type="date" name="assignedOn" defaultValue={task.assignedOn || ''} /></Field>
           <Field label="截止日期" hint="尚未明确时留空，清单显示待确认。"><input type="date" name="dueDate" defaultValue={task.dueDate} /></Field>
         </div>
-        <Field label="预期交付"><textarea name="requestedOutcome" defaultValue={task.requestedOutcome || ''} rows={2} maxLength={12000} placeholder="例如：一份可供评审的三年规划初稿，含方向、预算与实施步骤" /></Field>
-        <Field label="承诺变更原因" hint="修改事项名称、背景说明、预期交付或截止日期时填写。只更新执行进展时可留空。"><textarea name="reason" rows={2} maxLength={12000} placeholder="说明为何调整，以便历史复盘核对原承诺和变更依据" /></Field>
+        <Field label="预期交付"><textarea name="requestedOutcome" defaultValue={task.requestedOutcome || ''} rows={2} maxLength={LIMITS.text} placeholder="例如：一份可供评审的三年规划初稿，含方向、预算与实施步骤" /></Field>
+        <Field label="承诺变更原因" hint="修改事项名称、背景说明、预期交付或截止日期时填写。只更新执行进展时可留空。"><textarea name="reason" rows={2} maxLength={LIMITS.text} placeholder="说明为何调整，以便历史复盘核对原承诺和变更依据" /></Field>
         <details className="wr-details"><summary>补充背景与原始要求</summary><Field label="背景说明"><textarea name="description" defaultValue={task.description} rows={3} maxLength={task.importSource ? 20000 : 12000} /></Field></details>
         <div className="wr-form-grid">
           <Field label="总体状态"><select value={status} onChange={event => setStatus(event.target.value as Task['status'])}>
@@ -114,16 +115,16 @@ export default function WorkRegisterEditor({ userId, task, onClose, onSaved }: E
           </select></Field>
         </div>
         {status !== 'done' && <label className="checkbox-label wr-waiting-toggle"><input type="checkbox" checked={waiting} onChange={event => setWaiting(event.target.checked)} />正在等待反馈或确认</label>}
-        <Field label="当前进展"><textarea name="currentProgress" defaultValue={task.currentProgress || ''} rows={3} maxLength={12000} placeholder="已经完成什么，现在推进到哪一步" /></Field>
-        <Field label="下一步行动"><textarea name="nextAction" defaultValue={task.nextAction || ''} rows={2} maxLength={12000} placeholder="写清楚接下来要推进的具体一步" /></Field>
+        <Field label="当前进展"><textarea name="currentProgress" defaultValue={task.currentProgress || ''} rows={3} maxLength={LIMITS.text} placeholder="已经完成什么，现在推进到哪一步" /></Field>
+        <Field label="下一步行动"><textarea name="nextAction" defaultValue={task.nextAction || ''} rows={2} maxLength={LIMITS.text} placeholder="写清楚接下来要推进的具体一步" /></Field>
         <div className="wr-form-grid">
           <Field label="预计剩余投入（人日）" hint="0.5 人日为一步，空值表示未估算，不会复制到每周。"><input type="number" name="remainingEffortDays" min="0" step="0.5" defaultValue={task.remainingEffortDays ?? ''} /></Field>
           <Field label="投入备注" hint="原预计投入文本作为补充说明保留。"><input name="estimatedEffort" defaultValue={task.estimatedEffort || ''} maxLength={300} placeholder="例如：约 2 个工作日，或还需 3 次讨论" /></Field>
-          <Field label="需领导决策 / 协调"><textarea name="decisionNeeded" defaultValue={task.decisionNeeded || ''} rows={2} maxLength={12000} placeholder="例如：确认 A 与 B 的先后顺序，或确定预算范围" /></Field>
+          <Field label="需领导决策 / 协调"><textarea name="decisionNeeded" defaultValue={task.decisionNeeded || ''} rows={2} maxLength={LIMITS.text} placeholder="例如：确认 A 与 B 的先后顺序，或确定预算范围" /></Field>
         </div>
-        <Field label="需要的支持"><textarea name="supportNeeded" required={status === 'blocked'} defaultValue={task.supportNeeded || ''} rows={2} maxLength={12000} placeholder="需要谁提供什么支持；暂不需要支持时请明确说明" /></Field>
-        {status === 'done' && <section className="wr-editor-state"><h3>记录完成结果</h3><Field label="完成说明"><textarea required name="completionNote" defaultValue={task.completionNote || ''} rows={3} maxLength={12000} /></Field><Field label="成果链接（选填）"><input type="url" name="evidenceUrl" defaultValue={task.evidenceUrl || ''} maxLength={2000} placeholder="https://" /></Field></section>}
-        {status === 'blocked' && <section className="wr-editor-state"><h3>说明受阻情况</h3><Field label="受阻原因"><textarea required name="blockerReason" defaultValue={task.blockerReason || ''} rows={2} maxLength={12000} /></Field><Field label="影响范围"><textarea required name="blockerImpact" defaultValue={task.blockerImpact || ''} rows={2} maxLength={12000} /></Field><p className="form-hint">报告受阻时，请填写原因、影响范围和需要的支持；这些要求不受协作开关影响。</p></section>}
+        <Field label="需要的支持"><textarea name="supportNeeded" required={status === 'blocked'} defaultValue={task.supportNeeded || ''} rows={2} maxLength={LIMITS.text} placeholder="需要谁提供什么支持；暂不需要支持时请明确说明" /></Field>
+        {status === 'done' && <section className="wr-editor-state"><h3>记录完成结果</h3><Field label="完成说明"><textarea required name="completionNote" defaultValue={task.completionNote || ''} rows={3} maxLength={LIMITS.text} /></Field><Field label="成果链接（选填）"><input type="url" name="evidenceUrl" defaultValue={task.evidenceUrl || ''} maxLength={LIMITS.url} placeholder="https://" /></Field></section>}
+        {status === 'blocked' && <section className="wr-editor-state"><h3>说明受阻情况</h3><Field label="受阻原因"><textarea required name="blockerReason" defaultValue={task.blockerReason || ''} rows={2} maxLength={LIMITS.text} /></Field><Field label="影响范围"><textarea required name="blockerImpact" defaultValue={task.blockerImpact || ''} rows={2} maxLength={LIMITS.text} /></Field><p className="form-hint">报告受阻时，请填写原因、影响范围和需要的支持；这些要求不受协作开关影响。</p></section>}
       </fieldset>
       {error && <p className="error" role="alert">{error}</p>}
       {writeUnavailable&&<button type="button" className="button secondary" onClick={()=>void navigator.clipboard.writeText(JSON.stringify(draft.snapshot(),null,2))}>复制保留的本地输入</button>}

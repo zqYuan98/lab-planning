@@ -1,3 +1,4 @@
+import { LIMITS } from '../../shared/entity-rules'
 import { useEffect, useRef, useState } from 'react'
 import WorkflowGuide from '../components/WorkflowGuide'
 import AnnualGoalPicker from '../components/AnnualGoalPicker'
@@ -2607,7 +2608,7 @@ export default function Imports({
                 <Field label="工作事项">
                   <input
                     value={editing.title}
-                    maxLength={300}
+                    maxLength={LIMITS.title}
                     onChange={(event) =>
                       setEditing({ ...editing, title: event.target.value })
                     }
@@ -2689,7 +2690,7 @@ export default function Imports({
                     <option value="">来源待核对</option><option value="leader">领导交办</option><option value="self">自主安排</option><option value="coordination">协同事项</option>
                   </select>
                 </Field>
-                <Field label="交办人" hint={editingTaskLocked ? '沿用已有任务；需更正时请到原任务处理。' : undefined}><input maxLength={100} disabled={editingTaskLocked} value={editingTask ? editingTask.assignedBy || '' : editing.assignedBy || ''} onChange={event => setEditing({ ...editing, assignedBy: event.target.value })} /></Field>
+                <Field label="交办人" hint={editingTaskLocked ? '沿用已有任务；需更正时请到原任务处理。' : undefined}><input maxLength={LIMITS.assignedBy} disabled={editingTaskLocked} value={editingTask ? editingTask.assignedBy || '' : editing.assignedBy || ''} onChange={event => setEditing({ ...editing, assignedBy: event.target.value })} /></Field>
                 <Field label="交办日期"><input type="date" disabled={editingTaskLocked} value={editingTask ? editingTask.assignedOn || '' : editing.assignedOn || ''} onChange={event => setEditing({ ...editing, assignedOn: event.target.value })} /></Field>
                 <Field label="原文协作人" hint={editing.kind === 'monthly' ? '用顿号或逗号分隔；在下方明确匹配系统成员。' : '周任务由个人负责；原文有多人协作时请分别拆项或改为月目标，名单不要直接作为个人责任。'}>
                   <input value={(editing.collaboratorNames || []).join('、')} onChange={event => setEditing({ ...editing, collaboratorNames: event.target.value.split(/[、,，;；\n]/) })} />

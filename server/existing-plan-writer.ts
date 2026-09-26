@@ -8,6 +8,7 @@ import { HttpError, Store } from './store.ts'
 import { isActiveWeeklyRecord } from '../shared/weekly-record-state.ts'
 import { isActiveTask } from '../shared/task-state.ts'
 import { isManager } from './authorization.ts'
+import { LIMITS, WEEKLY_STATUSES, WORK_SOURCES } from '../shared/entity-rules.ts'
 
 function overlaps(weekStart: string, period: string) {
   const end = new Date(`${weekStart}T00:00:00Z`)
@@ -33,7 +34,7 @@ export function importMetadataIssues(store: Store, row: ImportRow): string[] {
     if (row.kind !== 'weekly') issues.push('投入人日请填写在周任务行')
   }
   if (row.taskId && row.remainingEffortDays !== undefined) { const task = store.get<Task>('tasks', row.taskId); if (task && row.remainingEffortDays !== (task.remainingEffortDays ?? null)) issues.push('导入不改变已有任务的剩余投入，请在原任务中修改') }
-  if (row.workSource !== undefined) check(() => choice(row.workSource, ['leader', 'self', 'coordination'], '工作来源'))
+  if (row.workSource !== undefined) check(() => choice(row.workSource, WORK_SOURCES, '工作来源'))
   if (row.assignedBy !== undefined) check(() => text(row.assignedBy, '交办人', false, 100))
   if (row.assignedOn) check(() => date(row.assignedOn, '交办日期'))
   if (row.taskCompleted !== undefined) check(() => bool(row.taskCompleted, '整个任务已完成'))
@@ -108,7 +109,7 @@ export function validateExistingRow(store: Store, actor: User, row: ImportRow, r
   } else if (row.kind === 'weekly') {
     let weekStart = ''
     check(() => { weekStart = monday(row.weekStart) })
-    check(() => choice(importedWeeklyStatus(row), ['planned', 'doing', 'blocked', 'done', 'not_done'], '周状态'))
+    check(() => choice(importedWeeklyStatus(row), WEEKLY_STATUSES, '周状态'))
     const candidate = typeof row.taskId === 'string' && row.taskId ? store.get<Task>('tasks', row.taskId) : undefined
     const task = candidate && (isManager(actor) || candidate.ownerId === actor.id) ? candidate : undefined
     issues.push(...temporaryImportIssues(row, task))
@@ -178,7 +179,7 @@ export class ExistingPlanWriter {
       const revision = this.revisions.get(period) ?? this.store.list<Publication>('publications').filter(item => item.month === period).reduce((max, item) => Math.max(max, item.revision), 0) + 1
       const fields: Omit<MonthlyPlan, keyof import('../shared/types.ts').Entity> = {
         ...(row.annualGoalId !== undefined ? { annualGoalId: row.annualGoalId } : {}),
-        month: period, title: text(row.title, '计划标题', true, 300), projectId: text(row.projectId, '项目', false, 200) || null,
+        month: period, title: text(row.title, '计划标题', true, LIMITS.title), projectId: text(row.projectId, '项目', false, 200) || null,
         category: text(row.category, '工作类别', false, 100), ownerId: row.ownerId, collaboratorIds: row.collaboratorIds ?? before?.collaboratorIds ?? [], ...importWorkMetadata(row),
         expectedOutcome: text(row.expectedOutcome, '预期成果', false), acceptanceCriteria: text(row.acceptanceCriteria, '验收标准', false), dueDate: optionalDate(row.dueDate, '截止日期'),
         priority: before?.priority ?? 'medium', status: 'published', reviewComment: before?.reviewComment ?? '', publishedVersion: revision, sourcePlanId: before?.sourcePlanId ?? null,
@@ -212,7 +213,7 @@ export class ExistingPlanWriter {
       if (task && this.store.list<WeeklyRecord>('weeklyRecords').some(record => isActiveWeeklyRecord(record) && record.id !== before?.id && record.taskId === task!.id && record.weekStart === weekStart)) throw new HttpError(409, '此任务本周已有记录，请核对后修改原记录')
       if (!task) {
         const taskStatus = { planned: 'todo', doing: 'doing', blocked: 'blocked', done: 'doing', not_done: 'todo' } as const
-        task = this.store.insert<Task>('tasks', { ...(row.remainingEffortDays !== undefined ? { remainingEffortDays: row.remainingEffortDays } : {}), title: text(row.title, '任务标题', true, 300), monthlyPlanId: planId || null, ownerId: row.ownerId,
+        task = this.store.insert<Task>('tasks', { ...(row.remainingEffortDays !== undefined ? { remainingEffortDays: row.remainingEffortDays } : {}), title: text(row.title, '任务标题', true, LIMITS.title), monthlyPlanId: planId || null, ownerId: row.ownerId,
           description: text(row.sourceText, '来源原文', false, 20000), dueDate: optionalDate(row.dueDate, '任务截止日期'), status: row.taskCompleted ? 'done' : taskStatus[status], isTemporary: row.isTemporary === true, temporaryReason: row.isTemporary === true ? text(row.temporaryReason, '临时事项原因') : '', importSource, ...importWorkMetadata(row), ...(row.taskCompleted ? { completionNote: text(row.completionNote, '整体完成说明') } : {}) })
         this.audit('task', task.id, null, task)
       }

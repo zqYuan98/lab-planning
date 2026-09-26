@@ -1,3 +1,4 @@
+import { LIMITS } from '../../shared/entity-rules'
 import AnnualGoalPicker from '../components/AnnualGoalPicker'
 import { periodScope } from '../period-workspace'
 import { useState } from 'react'
@@ -107,7 +108,7 @@ export default function MergeProposals({
         <label className="checkbox-label"><input type="checkbox" checked={explicitAnnualLink} onChange={event => setExplicitAnnualLink(event.target.checked)} />明确选择合并后的年度关联（不同关联时必选）</label>
         {explicitAnnualLink && <AnnualGoalPicker year={Number(month.slice(0,4))} value={annualGoalId} onChange={setAnnualGoalId} scope={periodScope(data)} />}
         <Field label="合并后的成果名称">
-          <input name="title" required maxLength={200} />
+          <input name="title" required maxLength={LIMITS.title} />
         </Field>
         <Field label="合并原因">
           <textarea

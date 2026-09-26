@@ -1,3 +1,4 @@
+import { LIMITS } from '../../shared/entity-rules'
 import { useState } from 'react'
 import type { ProjectsPage } from '../../shared/directory-workspace'
 import DirectoryAccountPicker, { directoryAccountName } from '../components/DirectoryAccountPicker'
@@ -193,7 +194,7 @@ export default function Projects({ data, notify, intent }: PageProps) {
               <input
                 name="name"
                 required
-                maxLength={200}
+                maxLength={LIMITS.projectName}
                 defaultValue={project?.name}
               />
             </Field>
@@ -201,7 +202,7 @@ export default function Projects({ data, notify, intent }: PageProps) {
               <input
                 name="code"
                 required
-                maxLength={50}
+                maxLength={LIMITS.projectCode}
                 defaultValue={project?.code}
                 placeholder="例如 LAB-2026-01"
               />

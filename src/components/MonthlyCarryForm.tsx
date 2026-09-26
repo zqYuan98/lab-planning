@@ -1,3 +1,4 @@
+import { LIMITS } from '../../shared/entity-rules'
 import { useEffect, useRef, useState } from 'react'
 import type { Bootstrap, MonthlyPlan } from '../../shared/types'
 import { api, ApiError, json } from '../api'
@@ -110,7 +111,7 @@ export default function MonthlyCarryForm({ plan, data, refresh, onSaved, onCance
           <Field label="承接月份"><input type="month" name="month" value={month} onChange={event => { setMonth(event.target.value); setSplit(false) }} required /></Field>
           <Field label="新的截止日期"><input type="date" name="dueDate" value={dueDate} onChange={event => setDueDate(event.target.value)} required /></Field>
         </div>
-        <Field label="承接原因"><textarea name="reason" value={reason} onChange={event => setReason(event.target.value)} maxLength={12000} required rows={3} /></Field>
+        <Field label="承接原因"><textarea name="reason" value={reason} onChange={event => setReason(event.target.value)} maxLength={LIMITS.text} required rows={3} /></Field>
         {!!matching.length && <label className="checkbox-label"><input type="checkbox" checked={split} onChange={event => setSplit(event.target.checked)} required />明确拆分：本次在同月另建一个承接目标</label>}
       </fieldset>
     </Form>

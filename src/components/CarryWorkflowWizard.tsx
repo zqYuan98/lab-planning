@@ -1,3 +1,4 @@
+import { LIMITS } from '../../shared/entity-rules'
 import { useEffect, useRef, useState } from 'react'
 import type { MonthlyPlan } from '../../shared/types'
 import type { CarryApplyPreview, CarryPreview, CarryWorkflowView } from '../../shared/carry-workflows'
@@ -117,8 +118,8 @@ export default function CarryWorkflowWizard({ sourcePlan, actorId, operationEpoc
         <Field label="承接目标"><select value={targetId} onChange={event => setTargetId(event.target.value)}>{sourcePreview.candidates.map(target => <option key={target.id} value={target.id}>{target.title} · {labels[target.status]} · {target.id.slice(0, 8)}</option>)}<option value="">明确新建承接草稿</option></select></Field>
         {!targetId && <Field label="承接目标截止日期"><input type="date" required value={dueDate} onChange={event => setDueDate(event.target.value)} /></Field>}
         {!targetId && sourcePreview.candidates.length > 0 && <label className="checkbox-label"><input type="checkbox" required checked={split} onChange={event => setSplit(event.target.checked)} />明确拆分：在同一来源、同一月份另建目标</label>}
-        <Field label="剩余工作"><textarea required rows={3} maxLength={12000} value={remainingWork} onChange={event => setRemainingWork(event.target.value)} /></Field>
-        <Field label="跨期处理原因"><textarea required rows={2} maxLength={12000} value={reason} onChange={event => setReason(event.target.value)} /></Field>
+        <Field label="剩余工作"><textarea required rows={3} maxLength={LIMITS.text} value={remainingWork} onChange={event => setRemainingWork(event.target.value)} /></Field>
+        <Field label="跨期处理原因"><textarea required rows={2} maxLength={LIMITS.text} value={reason} onChange={event => setReason(event.target.value)} /></Field>
         <p className="form-hint">新草稿沿用原目标责任与验收字段；可在月度目标中调整后审核发布。任务会沿用原编号。</p>
         <div className="carry-actions"><button type="button" className="button secondary" onClick={() => setStep(1)}>返回核对来源</button><button type="submit" className="button primary">{targetId ? '使用已有目标，建立流程' : '建立流程与承接草稿'}</button></div>
       </form>}

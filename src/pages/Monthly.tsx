@@ -1,3 +1,4 @@
+import { LIMITS } from '../../shared/entity-rules'
 import AnnualGoalPicker from '../components/AnnualGoalPicker'
 import GoalOwnerWork from '../components/GoalOwnerWork'
 import { draftText } from '../draft-recovery'
@@ -534,10 +535,10 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
           if (intent?.action === 'create-task' && navigate) navigate('weekly', { action: 'create', id: task.id, ownerId: task.ownerId, weekStart: intent.weekStart })
         }}>
           <fieldset className="form-fields" disabled={!!createdPersonalTask}>
-          <Field label="个人任务名称"><input name="title" defaultValue={selected.title} required maxLength={300} /></Field>
+          <Field label="个人任务名称"><input name="title" defaultValue={selected.title} required maxLength={LIMITS.title} /></Field>
           <Field label="个人交付说明"><textarea name="description" defaultValue={selected.expectedOutcome} rows={3} /></Field>
           <Field label="事项来源" hint="按明确交办背景填写，临时目标不会自动当作领导交办。"><select name="workSource" defaultValue={selected.workSource || ''}><option value="">来源待核对</option><option value="leader">领导交办</option><option value="self">自主安排</option><option value="coordination">协同事项</option></select></Field>
-          <Field label="交办人 / 对接人"><input name="assignedBy" defaultValue={selected.assignedBy || ''} maxLength={100} /></Field>
+          <Field label="交办人 / 对接人"><input name="assignedBy" defaultValue={selected.assignedBy || ''} maxLength={LIMITS.assignedBy} /></Field>
           <Field label="交办日期"><input name="assignedOn" type="date" defaultValue={selected.assignedOn || ''} /></Field>
           <Field label="截止日期" hint="尚未确定时可留空，工作清单显示待确认。"><input name="dueDate" type="date" defaultValue={selected.dueDate} /></Field>
           </fieldset>
@@ -934,12 +935,12 @@ function PlanEditor({
             name="title"
             defaultValue={plan?.title}
             required
-            maxLength={200}
+            maxLength={LIMITS.title}
             placeholder="例如：完成模型评测平台首版交付"
           />
         </Field>
         {temporary && <Field label="临时目标原因" hint="说明新增事项的背景；长期事项可同时描述整体目标及本月推进范围。">
-          <textarea name="temporaryReason" defaultValue={plan?.temporaryReason} rows={3} required maxLength={12000} placeholder="例如：新增专项研究，预计持续三个月，本月完成方案验证" />
+          <textarea name="temporaryReason" defaultValue={plan?.temporaryReason} rows={3} required maxLength={LIMITS.text} placeholder="例如：新增专项研究，预计持续三个月，本月完成方案验证" />
         </Field>}
         <div className="form-grid">
           <Field label="所属项目">

@@ -1,3 +1,4 @@
+import { LIMITS } from '../../shared/entity-rules'
 import { useState } from 'react'
 import type { AnnualGoalDetail, GoalsPage } from '../../shared/directory-workspace'
 import DirectoryAccountPicker, { directoryAccountName } from '../components/DirectoryAccountPicker'
@@ -170,7 +171,7 @@ export default function Goals({ data, notify }: PageProps) {
               <input
                 name="title"
                 required
-                maxLength={200}
+                maxLength={LIMITS.title}
                 defaultValue={goal?.title}
               />
             </Field>

@@ -1,3 +1,4 @@
+import { LIMITS } from '../../shared/entity-rules'
 import { useEffect, useState } from 'react'
 import { Plus, Users, Search } from 'lucide-react'
 import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from '../../shared/auth-policy'
@@ -202,7 +203,7 @@ export default function Team({ data, notify, intent }: PageProps) {
               <input
                 name="name"
                 required
-                maxLength={80}
+                maxLength={LIMITS.personName}
                 defaultValue={user?.name}
               />
             </Field>

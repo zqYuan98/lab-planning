@@ -1,3 +1,4 @@
+import { LIMITS } from '../../shared/entity-rules'
 import { useState } from 'react'
 import type { MonthlyPlan } from '../../shared/types'
 import { api, json } from '../api'
@@ -29,7 +30,7 @@ export default function MonthlyResultForm({ plan, manager, userId, onSaved, onCa
       {manager && <Field label="验收结论"><select name="acceptanceStatus" value={status} onChange={event => setStatus(event.target.value)}>
         <option value="accepted">达到验收标准，确认完成</option><option value="not_completed">未完成，保留本月结果</option>
       </select></Field>}
-      <Field label={incomplete ? '未完成原因（必填）' : manager ? '验收说明' : '补充说明'}><textarea name="acceptanceNote" defaultValue={plan.acceptanceNote} required={incomplete} maxLength={12000} rows={3} /></Field>
+      <Field label={incomplete ? '未完成原因（必填）' : manager ? '验收说明' : '补充说明'}><textarea name="acceptanceNote" defaultValue={plan.acceptanceNote} required={incomplete} maxLength={LIMITS.text} rows={3} /></Field>
     </Form>
   </>
 }

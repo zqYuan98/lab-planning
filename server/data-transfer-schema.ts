@@ -8,6 +8,7 @@ import { HttpError } from './store.ts'
 import { collaborationCollectionNames, collaborationCollectionsShape, collaborationReferences, collaborationSchemas, emptyCollaborationCollections, emptyCollaborationCollectionsShape, remapCollaborationUsers, type CollaborationCollections } from './collaboration-transfer.ts'
 import { reportAgentTransferCollections, reportAgentCollectionsShape, reportAgentReferences, reportAgentTransferSchemas, reportAgentPayloadSchema, emptyReportAgentCollections, emptyReportAgentCollectionsShape, remapReportAgentUsers, type ReportAgentCollections } from './report-agent-transfer.ts'
 import { isMember } from './authorization.ts'
+import { ACCEPTANCE_STATUSES, ANNUAL_GOAL_STATUSES, LIMITS, PLAN_STATUSES, PLAN_VISIBILITIES, PRIORITIES, PROGRESS_MODES, PROJECT_STATUSES, ROLES, TASK_STATUSES, WEEKLY_STATUSES, WORK_ORIGIN_KINDS, WORK_SOURCES } from '../shared/entity-rules.ts'
 
 export const collectionNames = ['users', 'projects', 'annualGoals', 'plans', 'tasks', 'weeklyRecords', 'history', 'publications', 'reports', 'events', 'weeklyRules', 'weeklyCycles', 'weeklyDuties', 'weeklySubmissions', 'weeklyMissing', 'weeklyAdjustments', 'weeklyPlanReviews', ...collaborationCollectionNames, ...reportAgentTransferCollections, ...deliveryCollectionNames, ...periodReviewCollectionNames] as const
 export type TransferCollection = typeof collectionNames[number]
@@ -29,8 +30,8 @@ export const businessEventCollections: Record<string, TransferCollection> = {
   reportTemplate: 'reportTemplates',
   deliverySeries: 'deliverySeries', taskDelivery: 'taskDeliveries', deliveryDecision: 'deliveryDecisions', decisionRequest: 'decisionRequests',
 }
-const id = z.string().min(1).max(200)
-const line = z.string().max(12000)
+const id = z.string().min(1).max(LIMITS.id)
+const line = z.string().max(LIMITS.text)
 const timestamp = z.string().max(40).regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/).refine(v => Number.isFinite(Date.parse(v)))
 // The weekly submission service orders these values lexically. One canonical
 // representation is mandatory; legacy business timestamps retain their schema.
@@ -50,45 +51,45 @@ const cancellationSchema = z.object({ cancelledAt: timestamp, cancelledBy: id, r
 const planApprovalSchema = z.object({ required: z.literal(true), approvedSubmissionId: id.nullable(), approvedFingerprint: planFingerprint.nullable(), suspended: z.literal(true).optional() }).strict()
   .refine(row => (row.approvedSubmissionId === null) === (row.approvedFingerprint === null), '批准回执和指纹必须同时存在')
 const entity = { id, version: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER), createdAt: timestamp, updatedAt: timestamp }
-const workOriginSchema = z.object({ kind: z.enum(['self', 'assigned', 'proxy']), actorId: id, reason: line }).strict().refine(row => row.kind !== 'proxy' || !!row.reason.trim(), '代录需要原因')
+const workOriginSchema = z.object({ kind: z.enum(WORK_ORIGIN_KINDS), actorId: id, reason: line }).strict().refine(row => row.kind !== 'proxy' || !!row.reason.trim(), '代录需要原因')
 const importSourceSchema = z.object({ batchId: id, sourceId: id, rowId: id, sourceStatus: line, mode: z.enum(['draft', 'existing']).optional(), notificationMode: z.literal('silent').optional() }).strict()
-export const userSchema = z.object({ ...entity, name: z.string().min(1).max(100), email: z.string().min(3).max(254), role: z.enum(['manager', 'member', 'observer']), position: z.string().max(100), active: z.boolean() }).strict()
-const projectSchema = z.object({ ...entity, name: z.string().min(1).max(200), code: z.string().min(1).max(50), description: line, ownerId: id, status: z.enum(['active', 'archived']) }).strict()
+export const userSchema = z.object({ ...entity, name: z.string().min(1).max(LIMITS.personName), email: z.string().min(3).max(LIMITS.email), role: z.enum(ROLES), position: z.string().max(LIMITS.position), active: z.boolean() }).strict()
+const projectSchema = z.object({ ...entity, name: z.string().min(1).max(LIMITS.projectName), code: z.string().min(1).max(LIMITS.projectCode), description: line, ownerId: id, status: z.enum(PROJECT_STATUSES) }).strict()
 const effortSchema = z.number().nonnegative().multipleOf(0.5).nullable().optional()
-const goalSchema = z.object({ ...entity, title: z.string().min(1).max(300), year: z.number().int().min(1900).max(2200), target: line.min(1), progress: z.number().min(0).max(100), progressMode: z.enum(['manual', 'linked']).optional(), description: line, ownerId: id, status: z.enum(['active', 'completed']) }).strict()
-const planSchema = z.object({ ...entity, annualGoalId: id.nullable().optional(), month, title: z.string().min(1).max(300), projectId: id.nullable(), category: z.string().max(100), ownerId: id, collaboratorIds: z.array(id).max(100),
-  expectedOutcome: line, acceptanceCriteria: line, dueDate: z.union([day, z.literal('')]), priority: z.enum(['high', 'medium', 'low']), status: z.enum(['draft', 'submitted', 'approved', 'returned', 'published', 'merged']),
-  reviewComment: line, publishedVersion: z.number().int().positive().nullable(), sourcePlanId: id.nullable(), actualOutcome: line, acceptanceStatus: z.enum(['pending', 'submitted', 'accepted', 'not_completed']), acceptanceNote: line,
-  mergedFromIds: z.array(id).max(50).optional(), mergedIntoId: id.optional(), importSource: importSourceSchema.optional(), visibility: z.enum(['reference', 'historical']).optional(),
+const goalSchema = z.object({ ...entity, title: z.string().min(1).max(LIMITS.title), year: z.number().int().min(1900).max(2200), target: line.min(1), progress: z.number().min(0).max(100), progressMode: z.enum(PROGRESS_MODES).optional(), description: line, ownerId: id, status: z.enum(ANNUAL_GOAL_STATUSES) }).strict()
+const planSchema = z.object({ ...entity, annualGoalId: id.nullable().optional(), month, title: z.string().min(1).max(LIMITS.title), projectId: id.nullable(), category: z.string().max(LIMITS.category), ownerId: id, collaboratorIds: z.array(id).max(100),
+  expectedOutcome: line, acceptanceCriteria: line, dueDate: z.union([day, z.literal('')]), priority: z.enum(PRIORITIES), status: z.enum(PLAN_STATUSES),
+  reviewComment: line, publishedVersion: z.number().int().positive().nullable(), sourcePlanId: id.nullable(), actualOutcome: line, acceptanceStatus: z.enum(ACCEPTANCE_STATUSES), acceptanceNote: line,
+  mergedFromIds: z.array(id).max(50).optional(), mergedIntoId: id.optional(), importSource: importSourceSchema.optional(), visibility: z.enum(PLAN_VISIBILITIES).optional(),
   isTemporary: z.boolean().optional(), temporaryReason: line.optional(),
-  workSource: z.enum(['leader', 'self', 'coordination']).optional(), assignedBy: z.string().max(100).optional(), assignedOn: z.union([day, z.literal('')]).optional(),
+  workSource: z.enum(WORK_SOURCES).optional(), assignedBy: z.string().max(LIMITS.assignedBy).optional(), assignedOn: z.union([day, z.literal('')]).optional(),
 }).strict().superRefine((row, ctx) => {
   if (!row.importSource && !row.visibility && (!row.expectedOutcome.trim() || !row.acceptanceCriteria.trim() || !row.dueDate)) ctx.addIssue({ code: 'custom', message: '普通月计划的预期成果、验收标准和截止日期不可为空' })
   if (row.isTemporary && !row.temporaryReason?.trim()) ctx.addIssue({ code: 'custom', message: '临时月度目标需要填写原因' })
 })
-const taskSchema = z.object({ ...entity, title: z.string().min(1).max(300), monthlyPlanId: id.nullable(), ownerId: id, description: z.string().max(20000), dueDate: z.union([day, z.literal('')]),
+const taskSchema = z.object({ ...entity, title: z.string().min(1).max(LIMITS.title), monthlyPlanId: id.nullable(), ownerId: id, description: z.string().max(LIMITS.importedText), dueDate: z.union([day, z.literal('')]),
   cancellation: cancellationSchema.optional(),
-  status: z.enum(['todo', 'doing', 'blocked', 'done']), isTemporary: z.boolean(), temporaryReason: line, workOrigin: workOriginSchema.optional(), importSource: importSourceSchema.optional(),
-  completionNote: line.optional(), evidenceUrl: z.string().max(2000).refine(value => { if (!value) return true; try { return ['http:', 'https:'].includes(new URL(value).protocol) } catch { return false } }).optional(), blockerReason: line.optional(), blockerImpact: line.optional(), supportNeeded: line.optional(), nextAction: line.optional(),
-  workSource: z.enum(['leader', 'self', 'coordination']).optional(), assignedBy: z.string().max(100).optional(), assignedOn: z.union([day, z.literal('')]).optional(),
-  requestedOutcome: line.optional(), priority: z.enum(['high', 'medium', 'low']).optional(), estimatedEffort: line.optional(), remainingEffortDays: effortSchema, currentProgress: line.optional(), decisionNeeded: line.optional(), waitingForFeedback: z.boolean().optional(),
+  status: z.enum(TASK_STATUSES), isTemporary: z.boolean(), temporaryReason: line, workOrigin: workOriginSchema.optional(), importSource: importSourceSchema.optional(),
+  completionNote: line.optional(), evidenceUrl: z.string().max(LIMITS.url).refine(value => { if (!value) return true; try { return ['http:', 'https:'].includes(new URL(value).protocol) } catch { return false } }).optional(), blockerReason: line.optional(), blockerImpact: line.optional(), supportNeeded: line.optional(), nextAction: line.optional(),
+  workSource: z.enum(WORK_SOURCES).optional(), assignedBy: z.string().max(LIMITS.assignedBy).optional(), assignedOn: z.union([day, z.literal('')]).optional(),
+  requestedOutcome: line.optional(), priority: z.enum(PRIORITIES).optional(), estimatedEffort: line.optional(), remainingEffortDays: effortSchema, currentProgress: line.optional(), decisionNeeded: line.optional(), waitingForFeedback: z.boolean().optional(),
 }).strict().superRefine((row, ctx) => {
-  if (!row.importSource && row.description.length > 12000) ctx.addIssue({ code: 'custom', message: '普通任务的说明格式无效' })
+  if (!row.importSource && row.description.length > LIMITS.text) ctx.addIssue({ code: 'custom', message: '普通任务的说明格式无效' })
 })
 const weeklySchema = z.object({ ...entity, plannedEffortDays: effortSchema, actualEffortDays: effortSchema, taskId: id, monthlyPlanId: id.nullable(), ownerId: id, weekStart: day, commitment: line, actualOutcome: line,
   blockerImpact: line.optional(), supportNeeded: line.optional(),
-  evidenceUrl: z.string().max(2000).refine(v => { if (!v) return true; try { return ['http:', 'https:'].includes(new URL(v).protocol) } catch { return false } }),
-  blocker: line, nextAction: line, status: z.enum(['planned', 'doing', 'blocked', 'done', 'not_done']), submitted: z.boolean(), workOrigin: workOriginSchema.optional(), importSource: importSourceSchema.optional(),
+  evidenceUrl: z.string().max(LIMITS.url).refine(v => { if (!v) return true; try { return ['http:', 'https:'].includes(new URL(v).protocol) } catch { return false } }),
+  blocker: line, nextAction: line, status: z.enum(WEEKLY_STATUSES), submitted: z.boolean(), workOrigin: workOriginSchema.optional(), importSource: importSourceSchema.optional(),
   deletion: deletionSchema.optional(), planApproval: planApprovalSchema.optional(),
 }).strict().superRefine((row, ctx) => {
   if (!row.importSource && !row.commitment.trim()) ctx.addIssue({ code: 'custom', message: '普通周记录的本周承诺不可为空' })
 })
-const importRowSchema = z.object({ id, annualGoalId: id.nullable().optional(), remainingEffortDays: effortSchema, plannedEffortDays: effortSchema, actualEffortDays: effortSchema, kind: z.enum(['monthly', 'weekly']), selected: z.boolean(), sourceSheet: z.string().max(200), sourceRow: z.number().int().positive(), sourceText: z.string().max(20000),
+const importRowSchema = z.object({ id, annualGoalId: id.nullable().optional(), remainingEffortDays: effortSchema, plannedEffortDays: effortSchema, actualEffortDays: effortSchema, kind: z.enum(['monthly', 'weekly']), selected: z.boolean(), sourceSheet: z.string().max(200), sourceRow: z.number().int().positive(), sourceText: z.string().max(LIMITS.importedText),
   exclusionReason: z.string().max(1000).optional(), exclusionKind: z.enum(['task', 'duplicate', 'not_task']).optional(), manuallyAdded: z.boolean().optional(), collaboratorNames: z.array(z.string().max(200)).max(100).optional(), collaboratorIds: z.array(id).max(100).optional(),
-  workSource: z.enum(['leader', 'self', 'coordination']).optional(), assignedBy: z.string().max(100).optional(), assignedOn: z.union([day, z.literal('')]).optional(), taskCompleted: z.boolean().optional(), completionNote: line.optional(), resultDisposition: z.enum(['created', 'existing']).optional(),
-  ownerName: line, ownerId: line, projectName: line, projectId: line, category: line, title: z.string().max(300), month: line, weekStart: line, dueDate: line,
+  workSource: z.enum(WORK_SOURCES).optional(), assignedBy: z.string().max(LIMITS.assignedBy).optional(), assignedOn: z.union([day, z.literal('')]).optional(), taskCompleted: z.boolean().optional(), completionNote: line.optional(), resultDisposition: z.enum(['created', 'existing']).optional(),
+  ownerName: line, ownerId: line, projectName: line, projectId: line, category: line, title: z.string().max(LIMITS.title), month: line, weekStart: line, dueDate: line,
   expectedOutcome: line, acceptanceCriteria: line, actualOutcome: line, blocker: line, nextAction: line, sourceStatus: line, monthlyPlanId: line, linkedRowId: line, taskId: line, issues: z.array(line).max(100),
-  monthlyResult: z.enum(['pending', 'submitted', 'accepted', 'not_completed']).optional(), weeklyStatus: z.enum(['planned', 'doing', 'blocked', 'done', 'not_done']).optional(),
+  monthlyResult: z.enum(ACCEPTANCE_STATUSES).optional(), weeklyStatus: z.enum(WEEKLY_STATUSES).optional(),
   isTemporary: z.boolean().optional(), temporaryReason: line.optional(),
   result: z.object({ collection: z.enum(['plans', 'tasks', 'weeklyRecords', 'historicalRecords']), id }).strict().optional(),
 }).strict()
@@ -106,8 +107,8 @@ const ruleSchema = z.object({ ...weeklyEntity, id: z.literal('weekly-submission-
 const cycleSchema = z.object({ ...weeklyEntity, week, deadlineAt: weeklyTimestamp.nullable(), deadlinePolicy: deadlineSnapshotSchema.optional(), rosterIds: z.array(id).max(50000), needsReview: z.boolean(), confirmedBy: id.nullable(), confirmationReason: line, frozenAt: weeklyTimestamp }).strict()
 const dutySchema = z.object({ ...weeklyEntity, ...dutyIdentity, contentWeek: week, deadlineAt: weeklyTimestamp, deadlinePolicy: deadlineSnapshotSchema.optional() }).strict()
 const planManifestItemSchema = z.object({ id, fingerprint: planFingerprint, submitted: z.boolean() }).strict()
-const planTaskSnapshotSchema = z.object({ id, title: z.string().min(1).max(300), dueDate: z.union([day, z.literal('')]), description: z.string().max(20000) }).strict()
-const planGoalSnapshotSchema = z.object({ id, month, title: z.string().min(1).max(300) }).strict()
+const planTaskSnapshotSchema = z.object({ id, title: z.string().min(1).max(LIMITS.title), dueDate: z.union([day, z.literal('')]), description: z.string().max(LIMITS.importedText) }).strict()
+const planGoalSnapshotSchema = z.object({ id, month, title: z.string().min(1).max(LIMITS.title) }).strict()
 const submissionSchema = z.object({ ...weeklyEntity, ...dutyIdentity, dutyId: id, submittedAt: weeklyTimestamp, actorId: id, reason: line, note: line, requestId: id, records: z.array(weeklySchema).max(50000), retainedDraftIds: z.array(id).max(50000), retainedDraftManifest: z.array(z.object({ id, version: z.number().int().positive() }).strict()).max(50000), progressEventIds: z.array(id).max(50000).optional(), planManifest: z.array(planManifestItemSchema).max(50000).optional(), planTaskSnapshots: z.array(planTaskSnapshotSchema).max(50000).optional(), planGoalSnapshots: z.array(planGoalSnapshotSchema).max(50000).optional() }).strict()
 const planReviewSchema = z.object({ ...weeklyEntity, dutyId: id, ownerId: id, cycleWeek: week, submissionId: id, decision: z.enum(['approved', 'returned']), reviewedBy: id, reviewedAt: weeklyTimestamp, reason: line, requestId: id }).strict()
   .refine(row => row.decision !== 'returned' || !!row.reason.trim(), '退回计划必须提供原因')
@@ -427,3 +428,20 @@ export function remapUsers(collection: TransferCollection, value: unknown, mappi
   remapReportAgentUsers(collection, row, mapping)
   return row
 }
+
+// Compile-time guard: the migration schema of each core entity carries exactly the fields of its
+// shared type, with compatible value types. Adding a field to one without the other is a type
+// error here instead of a silently dropped or rejected field during restore.
+type OnlyIn<A, B> = Exclude<keyof A, keyof B>
+type Mutual<A, B> = [A] extends [B] ? [B] extends [A] ? true : false : false
+type Aligned<Type, Schema> = [OnlyIn<Type, Schema>, OnlyIn<Schema, Type>] extends [never, never]
+  ? { [K in keyof Type & keyof Schema]: Mutual<Type[K], Schema[K]> }[keyof Type & keyof Schema] extends true ? true
+    : { mismatchedFields: { [K in keyof Type & keyof Schema]: Mutual<Type[K], Schema[K]> extends true ? never : K }[keyof Type & keyof Schema] }
+  : { onlyInType: OnlyIn<Type, Schema>; onlyInSchema: OnlyIn<Schema, Type> }
+/** Account registration state is review workflow, never migrated; accounts are matched by email. */
+type MigratedUser = Omit<User, 'registrationStatus' | 'registrationReviewComment'>
+export const coreEntityAlignment: {
+  user: Aligned<MigratedUser, z.infer<typeof userSchema>>; project: Aligned<Project, z.infer<typeof projectSchema>>
+  annualGoal: Aligned<AnnualGoal, z.infer<typeof goalSchema>>; plan: Aligned<MonthlyPlan, z.infer<typeof planSchema>>
+  task: Aligned<Task, z.infer<typeof taskSchema>>; weeklyRecord: Aligned<WeeklyRecord, z.infer<typeof weeklySchema>>
+} = { user: true, project: true, annualGoal: true, plan: true, task: true, weeklyRecord: true }

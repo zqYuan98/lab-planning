@@ -15,6 +15,7 @@ import { participates, visiblePlan } from './plan-visibility.ts'
 import { withSilentImport } from './import-notification-context.ts'
 import { readImportDirectory } from './import-context.ts'
 import { isManager } from './authorization.ts'
+import { WORK_SOURCES } from '../shared/entity-rules.ts'
 
 interface ImportSource extends Entity { ownerId: string; fileName: string; mimeType: string; base64: string; hash: string; parsed: ParsedImportFile }
 export interface HistoricalRecord extends Entity { importedBy: string; batchId: string; sourceId: string; row: ImportRow }
@@ -268,7 +269,7 @@ export class ImportService {
       }
     }
     const workSource = input.workSource === undefined ? before?.workSource : input.workSource
-    if (workSource !== undefined && workSource !== '') result.workSource = choice(workSource, ['leader', 'self', 'coordination'], '工作来源')
+    if (workSource !== undefined && workSource !== '') result.workSource = choice(workSource, WORK_SOURCES, '工作来源')
     const assignedOn = input.assignedOn === undefined ? before?.assignedOn : input.assignedOn
     if (assignedOn !== undefined) result.assignedOn = assignedOn === '' ? '' : date(assignedOn, '交办日期')
     const taskCompleted = input.taskCompleted === undefined ? before?.taskCompleted : input.taskCompleted

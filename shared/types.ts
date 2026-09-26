@@ -1,41 +1,44 @@
-export type Role = 'manager' | 'member' | 'observer'
+import type { ACCEPTANCE_STATUSES, ANNUAL_GOAL_STATUSES, PLAN_STATUSES, PLAN_VISIBILITIES, PRIORITIES, PROGRESS_MODES, PROJECT_STATUSES, ROLES, TASK_STATUSES, WEEKLY_STATUSES, WORK_ORIGIN_KINDS, WORK_SOURCES } from './entity-rules'
+type Of<T extends readonly string[]> = T[number]
+export type Role = Of<typeof ROLES>
+export type Priority = Of<typeof PRIORITIES>
 export interface Entity { id: string; version: number; createdAt: string; updatedAt: string }
 export interface ImportProvenance { batchId: string; sourceId: string; rowId: string; sourceStatus: string; mode?: 'draft' | 'existing'; notificationMode?: 'silent' }
-export interface WorkOrigin { kind: 'self' | 'assigned' | 'proxy'; actorId: string; reason: string }
+export interface WorkOrigin { kind: Of<typeof WORK_ORIGIN_KINDS>; actorId: string; reason: string }
 export interface User extends Entity { name: string; email: string; role: Role; position: string; active: boolean; registrationStatus?: 'pending' | 'approved' | 'rejected'; registrationReviewComment?: string }
-export interface Project extends Entity { name: string; code: string; description: string; ownerId: string; status: 'active' | 'archived' }
-export interface AnnualGoal extends Entity { title: string; year: number; target: string; progress: number; progressMode?: 'manual' | 'linked'; description: string; ownerId: string; status: 'active' | 'completed' }
-export type PlanStatus = 'draft' | 'submitted' | 'returned' | 'approved' | 'published' | 'merged'
+export interface Project extends Entity { name: string; code: string; description: string; ownerId: string; status: Of<typeof PROJECT_STATUSES> }
+export interface AnnualGoal extends Entity { title: string; year: number; target: string; progress: number; progressMode?: Of<typeof PROGRESS_MODES>; description: string; ownerId: string; status: Of<typeof ANNUAL_GOAL_STATUSES> }
+export type PlanStatus = Of<typeof PLAN_STATUSES>
 export interface MonthlyPlan extends Entity {
   annualGoalId?: string | null;
   /** Member-only historical reference projection; never a selectable current goal. */
-  visibility?: 'reference' | 'historical';
+  visibility?: Of<typeof PLAN_VISIBILITIES>;
   month: string; title: string; projectId: string | null; category: string; ownerId: string;
   collaboratorIds: string[]; expectedOutcome: string; acceptanceCriteria: string; dueDate: string;
-  priority: 'high' | 'medium' | 'low'; status: PlanStatus; reviewComment: string;
+  priority: Priority; status: PlanStatus; reviewComment: string;
   publishedVersion: number | null; sourcePlanId: string | null; actualOutcome: string;
-  acceptanceStatus: 'pending' | 'submitted' | 'accepted' | 'not_completed'; acceptanceNote: string;
+  acceptanceStatus: Of<typeof ACCEPTANCE_STATUSES>; acceptanceNote: string;
   mergedFromIds?: string[]; mergedIntoId?: string;
   /** Absent on legacy goals; temporary goals still use monthly review and publication. */
   isTemporary?: boolean; temporaryReason?: string;
   workSource?: WorkSource; assignedBy?: string; assignedOn?: string;
   importSource?: ImportProvenance;
 }
-export type WorkSource = 'leader' | 'self' | 'coordination'
+export type WorkSource = Of<typeof WORK_SOURCES>
 export interface Task extends Entity {
   remainingEffortDays?: number | null;
   title: string; monthlyPlanId: string | null; ownerId: string; description: string; dueDate: string;
-  status: 'todo' | 'doing' | 'blocked' | 'done'; isTemporary: boolean; temporaryReason: string;
+  status: Of<typeof TASK_STATUSES>; isTemporary: boolean; temporaryReason: string;
   /** Explicit withdrawal of the whole task; execution status and historical evidence remain intact. */
   cancellation?: { cancelledAt: string; cancelledBy: string; reason: string };
   importSource?: ImportProvenance; workOrigin?: WorkOrigin; completionNote?: string; evidenceUrl?: string;
   blockerReason?: string; blockerImpact?: string; supportNeeded?: string; nextAction?: string;
   /** Personal work context, independent of the audited identity that created the task. */
   workSource?: WorkSource; assignedBy?: string; assignedOn?: string; requestedOutcome?: string;
-  priority?: 'high' | 'medium' | 'low'; estimatedEffort?: string; currentProgress?: string;
+  priority?: Priority; estimatedEffort?: string; currentProgress?: string;
   decisionNeeded?: string; waitingForFeedback?: boolean;
 }
-export type WeeklyStatus = 'planned' | 'doing' | 'blocked' | 'done' | 'not_done'
+export type WeeklyStatus = Of<typeof WEEKLY_STATUSES>
 export interface WeeklyRecord extends Entity {
   plannedEffortDays?: number | null; actualEffortDays?: number | null;
   taskId: string; monthlyPlanId: string | null; ownerId: string; weekStart: string; commitment: string;

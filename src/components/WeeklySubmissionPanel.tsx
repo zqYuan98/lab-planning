@@ -1,3 +1,4 @@
+import { LIMITS } from '../../shared/entity-rules'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CheckCircle2, Clock3, RefreshCw } from 'lucide-react'
 import type { WeeklyDutyView, WeeklySubmission, WeeklySubmissionView } from '../../shared/weekly-submissions'
@@ -217,7 +218,7 @@ export default function WeeklySubmissionPanel({ data: initialData, refresh, noti
           await saved(reviewDecision === 'approved' ? '该版本周计划已审核通过' : '周计划已退回修改，退回意见已记录')
         }}>
           <Field label="审核结果"><select aria-label="审核结果" value={reviewDecision} onChange={event => setReviewDecision(event.target.value as 'approved' | 'returned')}><option value="approved">审核通过</option><option value="returned">退回修改</option></select></Field>
-          <Field label={reviewDecision === 'returned' ? '退回意见' : '审核意见（选填）'} hint={reviewDecision === 'returned' ? '请说明需要修改的内容，成员修改后重新整份提交。' : '本次结论仅对应上方提交版本。'}><textarea name="reason" required={reviewDecision === 'returned'} rows={3} maxLength={12000} /></Field>
+          <Field label={reviewDecision === 'returned' ? '退回意见' : '审核意见（选填）'} hint={reviewDecision === 'returned' ? '请说明需要修改的内容，成员修改后重新整份提交。' : '本次结论仅对应上方提交版本。'}><textarea name="reason" required={reviewDecision === 'returned'} rows={3} maxLength={LIMITS.text} /></Field>
         </Form> : <div className="submission-notice"><PlanReviewStatus duty={selected} /><p>当前版本已不处于待审状态，请核对最新记录。</p></div>}
       </Modal>}
 

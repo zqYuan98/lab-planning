@@ -4,9 +4,10 @@ import { visiblePlan } from './plan-visibility.ts'
 export { participates } from './plan-visibility.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
 import { isObserver, requireManagerRole, requireOwnerOrManager } from './authorization.ts'
+import { LIMITS } from '../shared/entity-rules.ts'
 
 export type Input = Record<string, unknown>
-export function text(value: unknown, label: string, required = true, max = 12000): string {
+export function text(value: unknown, label: string, required = true, max: number = LIMITS.text): string {
   if (value === undefined || value === null) {
     if (!required) return ''
     throw new HttpError(400, `请填写${label}`)

@@ -1,3 +1,4 @@
+import { LIMITS } from '../../shared/entity-rules'
 import { effortInput, summarizeEffort } from '../../shared/effort'
 import WeeklyProgressForm from '../components/WeeklyProgressForm'
 import { openTask } from '../navigation'
@@ -651,7 +652,7 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
           const deleted = await api<WeeklyRecord>(`/weekly-records/${selected.id}`, json({ version:selected.version, reason }, 'DELETE'))
           await saved('该周安排已删除，原任务和历史记录保留')
           setDeletedRecord(deleted)
-        }}><Field label="删除原因" hint="例如：早期录入未关联月度临时计划，现需调整后重建。"><textarea name="reason" required rows={3} maxLength={12000} /></Field></Form>
+        }}><Field label="删除原因" hint="例如：早期录入未关联月度临时计划，现需调整后重建。"><textarea name="reason" required rows={3} maxLength={LIMITS.text} /></Field></Form>
       </Modal>}
       {(modal === 'create' || modal === 'temporary') && (
         period ? <PeriodEditorDirectory data={data} onCancel={close}>{editorData => <WeeklyCreate data={editorData} week={week} temporary={modal === 'temporary'} initialOwnerId={workContext?.ownerId || owner || (manager ? '' : data.user.id)} initialTask={creationTask} onClose={close} onSaved={saved} live />}</PeriodEditorDirectory> : <WeeklyCreate
@@ -949,7 +950,7 @@ function WeeklyCreate({
         </div>
         {data.user.role === 'manager' && ownerId && ownerId !== data.user.id && <>
           <Field label="安排方式"><select aria-label="安排方式" value={arrangement} onChange={event => setArrangement(event.target.value)}><option value="assigned">下发任务</option><option value="proxy">代成员录入</option></select></Field>
-          {creationKind === 'proxy' && <Field label="代录原因"><textarea name="creationReason" required rows={2} maxLength={12000} /></Field>}
+          {creationKind === 'proxy' && <Field label="代录原因"><textarea name="creationReason" required rows={2} maxLength={LIMITS.text} /></Field>}
           <p className="form-hint">{assigning ? '纳入周统计后才正式下发；草稿不发送下发通知。下发后成员可直接更新。' : '保留管理员代录来源及原因。'}此操作不会生成成员的整份提报回执。</p>
         </>}
         <Field label="本周预计投入（人日）" hint="以 0.5 人日填写；留空表示尚未估算。任务剩余投入不会自动计入本周。"><input name="plannedEffortDays" type="number" min="0" step="0.5" /></Field>
@@ -1021,7 +1022,7 @@ function WeeklyCreate({
               <input
                 name="title"
                 required
-                maxLength={200}
+                maxLength={LIMITS.title}
                 placeholder="责任人具体负责的交付内容"
               />
             </Field>

@@ -6,6 +6,7 @@ import { HttpError } from './store.ts'
 import { DomainBase, bool, choice, manager, number, text, type Input } from './domain-common.ts'
 import { userDeletionPreview } from './user-deletion.ts'
 import { isManager } from './authorization.ts'
+import { ANNUAL_GOAL_STATUSES, LIMITS, PROGRESS_MODES, PROJECT_STATUSES, ROLES } from '../shared/entity-rules.ts'
 
 function email(value: unknown) {
   const address = text(value, '邮箱', true, 254).toLowerCase()
@@ -15,7 +16,7 @@ function email(value: unknown) {
 
 export class AdminService extends DomainBase {
   setup(input: Input): User {
-    const name = text(input.name, '姓名', true, 100)
+    const name = text(input.name, '姓名', true, LIMITS.personName)
     const address = email(input.email)
     const passwordHash = hashPassword(input.password)
     return this.store.transaction(() => {
@@ -26,7 +27,7 @@ export class AdminService extends DomainBase {
     })
   }
   register(input: Input) {
-    const data = { name: text(input.name, '姓名', true, 100), email: email(input.email), position: text(input.position, '岗位', false, 100), passwordHash: hashPassword(input.password) }
+    const data = { name: text(input.name, '姓名', true, LIMITS.personName), email: email(input.email), position: text(input.position, '岗位', false, LIMITS.position), passwordHash: hashPassword(input.password) }
     return this.store.transaction(() => {
       if (!this.store.list<User>('users').some(user => canUseAccount(user) && isManager(user))) throw new HttpError(409, '请先由部门负责人初始化工作空间')
       if (this.store.list<User>('users').some(user => user.email === data.email)) throw new HttpError(409, '该邮箱已注册或已提交申请，请登录或联系管理员')
@@ -62,7 +63,7 @@ export class AdminService extends DomainBase {
   createUser(actor: User, input: Input): User {
     actor = assertBusinessActor(this.store, actor)
     manager(actor)
-    const data = { name: text(input.name, '姓名', true, 100), email: email(input.email), passwordHash: hashPassword(input.password), credentialVersion: 1, role: choice(input.role, ['manager', 'member', 'observer'], '角色'), position: text(input.position, '岗位', false, 100), active: true }
+    const data = { name: text(input.name, '姓名', true, LIMITS.personName), email: email(input.email), passwordHash: hashPassword(input.password), credentialVersion: 1, role: choice(input.role, ROLES, '角色'), position: text(input.position, '岗位', false, LIMITS.position), active: true }
     return this.store.transaction(() => {
       if (this.store.list<StoredUser>('users').some(user => user.email === data.email)) throw new HttpError(409, '邮箱已存在')
       const user = this.store.insert<StoredUser>('users', data)
@@ -78,10 +79,10 @@ export class AdminService extends DomainBase {
       const before = this.current<StoredUser>('users', id, input)
       const patch: Partial<StoredUser> = {}
       if (!registrationApproved(before)) throw new HttpError(409, '请先通过注册审核处理该申请')
-      if (input.name !== undefined) patch.name = text(input.name, '姓名', true, 100)
-      if (input.position !== undefined) patch.position = text(input.position, '岗位', false, 100)
+      if (input.name !== undefined) patch.name = text(input.name, '姓名', true, LIMITS.personName)
+      if (input.position !== undefined) patch.position = text(input.position, '岗位', false, LIMITS.position)
       if (input.active !== undefined) patch.active = bool(input.active, '账号启用状态')
-      if (input.role !== undefined) patch.role = choice(input.role, ['manager', 'member', 'observer'], '角色')
+      if (input.role !== undefined) patch.role = choice(input.role, ROLES, '角色')
       if (passwordHash) { patch.passwordHash = passwordHash; patch.credentialVersion = before.credentialVersion + 1 }
       if (patch.active === false && before.active) patch.credentialVersion = before.credentialVersion + 1
       if (patch.role !== undefined && patch.role !== before.role) patch.credentialVersion = before.credentialVersion + 1
@@ -129,7 +130,7 @@ export class AdminService extends DomainBase {
     actor = assertBusinessActor(this.store, actor)
     manager(actor)
     return this.store.transaction(() => {
-      const data = { name: text(input.name, '项目名称', true, 200), code: text(input.code, '项目编号', true, 50), description: text(input.description, '项目描述', false), ownerId: this.activeUser(input.ownerId ?? actor.id).id, status: 'active' as const }
+      const data = { name: text(input.name, '项目名称', true, LIMITS.projectName), code: text(input.code, '项目编号', true, LIMITS.projectCode), description: text(input.description, '项目描述', false), ownerId: this.activeUser(input.ownerId ?? actor.id).id, status: 'active' as const }
       if (this.store.list<Project>('projects').some(project => project.code.toLowerCase() === data.code.toLowerCase())) throw new HttpError(409, '项目编号已存在')
       const project = this.store.insert<Project>('projects', data)
       this.audit(actor, 'project', project.id, 'create', null, project)
@@ -142,14 +143,14 @@ export class AdminService extends DomainBase {
     return this.store.transaction(() => {
       const before = this.current<Project>('projects', id, input)
       const patch: Partial<Project> = {}
-      if (input.name !== undefined) patch.name = text(input.name, '项目名称', true, 200)
+      if (input.name !== undefined) patch.name = text(input.name, '项目名称', true, LIMITS.projectName)
       if (input.code !== undefined) {
-        patch.code = text(input.code, '项目编号', true, 50)
+        patch.code = text(input.code, '项目编号', true, LIMITS.projectCode)
         if (this.store.list<Project>('projects').some(project => project.id !== id && project.code.toLowerCase() === patch.code!.toLowerCase())) throw new HttpError(409, '项目编号已存在')
       }
       if (input.description !== undefined) patch.description = text(input.description, '项目描述', false)
       if (input.ownerId !== undefined && input.ownerId !== before.ownerId) patch.ownerId = this.activeUser(input.ownerId).id
-      if (input.status !== undefined) patch.status = choice(input.status, ['active', 'archived'], '项目状态')
+      if (input.status !== undefined) patch.status = choice(input.status, PROJECT_STATUSES, '项目状态')
       const project = this.store.update<Project>('projects', id, before.version, patch)
       this.audit(actor, 'project', id, patch.status === 'archived' ? 'archive' : 'update', before, project)
       return project
@@ -159,7 +160,7 @@ export class AdminService extends DomainBase {
     actor = assertBusinessActor(this.store, actor)
     manager(actor)
     return this.store.transaction(() => {
-      const goal = this.store.insert<AnnualGoal>('annualGoals', { title: text(input.title, '年度目标', true, 300), year: number(input.year, '年份', 1900, 2200, true), target: text(input.target, '目标要求'), progress: number(input.progress ?? 0, '进展', 0, 100), ...(input.progressMode !== undefined ? { progressMode: choice(input.progressMode, ['manual', 'linked'], '进展方式') } : {}), description: text(input.description, '说明', false), ownerId: this.activeUser(input.ownerId ?? actor.id).id, status: 'active' })
+      const goal = this.store.insert<AnnualGoal>('annualGoals', { title: text(input.title, '年度目标', true, LIMITS.title), year: number(input.year, '年份', 1900, 2200, true), target: text(input.target, '目标要求'), progress: number(input.progress ?? 0, '进展', 0, 100), ...(input.progressMode !== undefined ? { progressMode: choice(input.progressMode, PROGRESS_MODES, '进展方式') } : {}), description: text(input.description, '说明', false), ownerId: this.activeUser(input.ownerId ?? actor.id).id, status: 'active' })
       this.audit(actor, 'annualGoal', goal.id, 'create', null, goal)
       return goal
     })
@@ -170,15 +171,15 @@ export class AdminService extends DomainBase {
     return this.store.transaction(() => {
       const before = this.current<AnnualGoal>('annualGoals', id, input)
       const patch: Partial<AnnualGoal> = {}
-      if (input.title !== undefined) patch.title = text(input.title, '年度目标', true, 300)
+      if (input.title !== undefined) patch.title = text(input.title, '年度目标', true, LIMITS.title)
       if (input.year !== undefined) patch.year = number(input.year, '年份', 1900, 2200, true)
       if (patch.year !== undefined && patch.year !== before.year && this.store.list<MonthlyPlan>('plans').some(plan => plan.annualGoalId === id && Number(plan.month.slice(0, 4)) !== patch.year)) throw new HttpError(409, '此年度目标已有其他年份的月度关联，请先调整关联')
-      if (input.progressMode !== undefined) patch.progressMode = choice(input.progressMode, ['manual', 'linked'], '进展方式')
+      if (input.progressMode !== undefined) patch.progressMode = choice(input.progressMode, PROGRESS_MODES, '进展方式')
       if (input.target !== undefined) patch.target = text(input.target, '目标要求')
       if (input.progress !== undefined) patch.progress = number(input.progress, '进展', 0, 100)
       if (input.description !== undefined) patch.description = text(input.description, '说明', false)
       if (input.ownerId !== undefined && input.ownerId !== before.ownerId) patch.ownerId = this.activeUser(input.ownerId).id
-      if (input.status !== undefined) patch.status = choice(input.status, ['active', 'completed'], '年度目标状态')
+      if (input.status !== undefined) patch.status = choice(input.status, ANNUAL_GOAL_STATUSES, '年度目标状态')
       const goal = this.store.update<AnnualGoal>('annualGoals', id, before.version, patch)
       this.audit(actor, 'annualGoal', id, 'update', before, goal)
       return goal

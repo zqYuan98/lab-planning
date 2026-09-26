@@ -1,3 +1,4 @@
+import { LIMITS } from '../../shared/entity-rules'
 import { useRef, useState, type FormEvent } from 'react'
 import { Check, LoaderCircle } from 'lucide-react'
 import type { Task } from '../../shared/types'
@@ -64,7 +65,7 @@ export default function WorkRegisterCapture({ onClose, onSaved }: CaptureProps) 
           <Field label="事项来源"><select value={source} onChange={event => setSource(event.target.value as typeof source)}>
             <option value="leader">领导交办</option><option value="self">自主安排</option><option value="coordination">协同事项</option>
           </select></Field>
-          <Field label="交办人 / 对接人（选填）"><input name="assignedBy" maxLength={100} placeholder="填写姓名或称呼" /></Field>
+          <Field label="交办人 / 对接人（选填）"><input name="assignedBy" maxLength={LIMITS.assignedBy} placeholder="填写姓名或称呼" /></Field>
           <Field label="交办日期（选填）"><input type="date" name="assignedOn" /></Field>
           <Field label="共同截止日期（选填）" hint="留空表示待确认，可在清单中分别设置。"><input type="date" name="dueDate" /></Field>
         </div>
