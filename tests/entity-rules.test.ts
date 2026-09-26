@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { AnnualGoal, MonthlyPlan, Project, Task, WeeklyRecord } from '../shared/types.ts'
 import { LIMITS } from '../shared/entity-rules.ts'
 import { Store } from '../server/store.ts'
@@ -52,7 +53,7 @@ test('one character over a field limit is rejected when saving', t => {
 test('browser forms take entity length limits from shared/entity-rules', () => {
   const files: string[] = []
   const walk = (dir: string) => { for (const name of readdirSync(dir)) { const path = join(dir, name); if (statSync(path).isDirectory()) walk(path); else if (/\.tsx?$/.test(name)) files.push(path) } }
-  walk(new URL('../src', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'))
+  walk(fileURLToPath(new URL('../src', import.meta.url)))
   const offenders = files.flatMap(file => {
     const source = readFileSync(file, 'utf8'), found: string[] = []
     const lineOf = (index: number) => source.slice(0, index).split('\n').length
