@@ -24,6 +24,8 @@ export function performanceFixture(months: number) {
     return put<AuditEvent>('events', { ...metadata(`event-${entityId}-${suffix}`, at), entityType, entityId, actorId, action: before === null ? 'create' : 'update', before, after, reason: '合成审计记录' })
   }
   store.transaction(() => {
+    // The store creates a random epoch on open; replace it with the fixed fixture value.
+    store.delete('operationContexts', 'business-commands', store.get<Entity>('operationContexts', 'business-commands')!.version)
     put('operationContexts', { ...metadata('business-commands', performanceNow), epoch: `${performanceSeed}-epoch` })
     for (let monthIndex = 0; monthIndex < months; monthIndex++) {
       const start = new Date(Date.UTC(2026, 9 - months + monthIndex, 1)), month = start.toISOString().slice(0, 7)

@@ -50,7 +50,7 @@ function parseCursor(raw: unknown, binding: string): { createdAt: string; id: st
 export class WorkspaceQueryService {
   constructor(private store: Store) {}
   shell(actor: User): WorkspaceShellData {
-    return this.store.transaction(() => {
+    return this.store.readTransaction(() => {
       actor = liveObjectActor(this.store, actor)
       const business = actor.role !== 'observer'
       return { user: safeUser(actor), capabilities: { manage: actor.role === 'manager', business, authorizedWork: actor.role === 'observer' }, accessScopeVersion: readScopeVersion(this.store, actor), operationEpoch: getOperationEpoch(this.store), aiConfigured: business && aiConfigured(this.store), counts: { openTasks: business ? this.store.workspaceCount({ resource: 'tasks', actorId: actor.id, manager: actor.role === 'manager', scope: 'open' }) : 0 } }
@@ -63,7 +63,7 @@ export class WorkspaceQueryService {
     return { actor, accessScopeVersion, epoch, revision }
   }
   page(actor: User, resource: WorkspaceResource, input: Query): WorkspacePage<WorkspaceItem> {
-    return this.store.transaction(() => {
+    return this.store.readTransaction(() => {
       const context = this.context(actor); actor = context.actor
       keys(input, ['ownerId', 'status', 'month', 'weekStart', 'taskId', 'q', 'includeCancelled', 'scope', 'kind', 'type', 'period', 'role', 'cursor', 'limit'])
       const filter: WorkspaceSqlFilter = { resource, actorId: actor.id, manager: actor.role === 'manager', ownerId: str(input.ownerId, '负责人'), status: str(input.status, '状态'), taskId: str(input.taskId, '任务'), q: str(input.q, '搜索词', 120), scope: choice(input.scope, ['open', 'all'], '范围'), kind: choice(input.kind, ['user', 'project', 'plan'], '候选类型'), type: choice(input.type, ['weekly', 'monthly'], '报告类型'), period: str(input.period, '周期') }
@@ -100,7 +100,7 @@ export class WorkspaceQueryService {
     return report
   }
   register(actor: User, input: Query): RegisterPage {
-    return this.store.transaction(() => {
+    return this.store.readTransaction(() => {
       const context = this.context(actor); actor = context.actor
       keys(input, ['view', 'q', 'priority', 'kind', 'cursor', 'limit'])
       const today = workRegisterToday(), base = buildWorkRegister({ user: actor, tasks: [], weeklyRecords: [] }, { today })

@@ -1,10 +1,11 @@
 import type { Entity, ReportSchedule, User } from '../shared/types.ts'
 import type { Store } from './store.ts'
+import type { RuntimeHeartbeat } from '../shared/notification-diagnostics.ts'
 import { generateReport, normalizeReportPeriod, shiftMonth } from './reports.ts'
 import { reportTypeManaged } from './report-agent-policy.ts'
 import { WeeklySubmissionService } from './weekly-submissions.ts'
 import { runNotificationReminders } from './notification-reminders.ts'
-import { beginRuntimeRun } from './runtime-health.ts'
+import { beginRuntimeRun, runtimeHeartbeat } from './runtime-health.ts'
 import { publishCollaborationEvents } from './collaboration-notifications.ts'
 import { runCollaborationDigests } from './collaboration-digests.ts'
 
@@ -57,15 +58,18 @@ export function runScheduledReports(store: Store, now = new Date()): string[] {
   }
   return reportIds
 }
-export function startScheduler(store: Store): () => void {
+export interface SchedulerOptions { intervalMs?: number; onHeartbeat?: (heartbeat: RuntimeHeartbeat) => void }
+export function startScheduler(store: Store, options: SchedulerOptions = {}): () => void {
   const submissions = new WeeklySubmissionService(store)
-  // Ticks share the request thread; log the slow steps so stalls can be attributed.
+  const report = () => options.onHeartbeat?.(runtimeHeartbeat(store, 'scheduler'))
+  // Log the slow steps so stalls can be attributed.
   const timed = (step: string, run: () => unknown, steps: Record<string, number>) => {
     const started = performance.now()
     try { run() } finally { steps[step] = Math.round(performance.now() - started) }
   }
   const tick = () => {
     const finish = beginRuntimeRun(store, 'scheduler'); let success = true
+    report()
     const steps: Record<string, number> = {}, started = performance.now()
     try { timed('weeklyReconcile', () => submissions.reconcile(), steps) } catch (error) { success = false; console.error('周提报核对未完成：', error instanceof Error ? error.message : '未知错误') }
     try { timed('reports', () => runScheduledReports(store), steps) } catch (error) { success = false; console.error('报告定时任务未完成：', error instanceof Error ? error.message : '未知错误') }
@@ -74,8 +78,9 @@ export function startScheduler(store: Store): () => void {
     const ms = Math.round(performance.now() - started)
     if (ms >= SLOW_TICK_MS) console.warn(JSON.stringify({ event: 'slow_scheduler_tick', ms, steps }))
     finish(success)
+    report()
   }
-  const interval = setInterval(tick, 30000)
+  const interval = setInterval(tick, options.intervalMs ?? 30000)
   interval.unref()
   tick()
   return () => clearInterval(interval)

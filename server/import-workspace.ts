@@ -14,7 +14,7 @@ const activeUser = (alias: string) => `${field('active', alias)}=1 AND COALESCE(
 export class ImportWorkspaceService {
   constructor(private store: Store) {}
   candidates(actor: User, input: Record<string, unknown>): ImportCandidatePage {
-    return this.store.transaction(() => {
+    return this.store.readTransaction(() => {
       const context = pageContext(this.store, actor); actor = context.actor
       queryKeys(input, ['kind', 'q', 'ownerId', 'month', 'cursor', 'limit'])
       const kind = queryText(input.kind) as ImportCandidateKind
@@ -44,7 +44,7 @@ export class ImportWorkspaceService {
     })
   }
   references(actor: User, input: unknown): ImportReferences {
-    return this.store.transaction(() => {
+    return this.store.readTransaction(() => {
       actor = pageContext(this.store, actor).actor
       if (!input || typeof input !== 'object' || Array.isArray(input)) throw new HttpError(400, '引用查询无效')
       queryKeys(input as Record<string, unknown>, kinds)

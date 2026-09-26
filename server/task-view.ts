@@ -48,7 +48,7 @@ export class TaskViewService {
       readOnlyReason: isActiveTask(task) ? null : '任务已作废，历史内容保留且不可继续编辑', taskHistory: this.history(actor, id) }
   }
   history(actor: User, taskId: string, input: { cursor?: unknown; limit?: unknown } = {}): TaskHistoryPage {
-    return this.store.transaction(() => {
+    return this.store.readTransaction(() => {
       actor = liveObjectActor(this.store, actor)
       const limit = input.limit === undefined ? 30 : Number(input.limit)
       if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new HttpError(400, '历史分页大小须为 1 至 100')

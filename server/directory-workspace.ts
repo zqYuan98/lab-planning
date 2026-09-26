@@ -53,7 +53,7 @@ export class DirectoryWorkspaceService {
     return { active: Number(row.active ?? 0), inactive: Number(row.inactive ?? 0), all: Number(row.allCount ?? 0), activeManagers: Number(row.managers ?? 0), pending: Number(row.pending ?? 0), rejected: Number(row.rejected ?? 0) }
   }
   team(actor: User, input: Query): TeamPage {
-    return this.store.transaction(() => {
+    return this.store.readTransaction(() => {
       queryKeys(input, ['status', 'q', 'focusId', 'cursor', 'limit'])
       const context = this.context(actor, true), status = oneOf(input.status, ['active', 'inactive', 'all'], 'active'), q = queryText(input.q, 120), focusId = queryText(input.focusId)
       let where = `e.collection='users' AND ${approved}`
@@ -66,7 +66,7 @@ export class DirectoryWorkspaceService {
     })
   }
   registrations(actor: User, input: Query): RegistrationPage {
-    return this.store.transaction(() => {
+    return this.store.readTransaction(() => {
       queryKeys(input, ['status', 'cursor', 'limit'])
       const context = this.context(actor, true), status = oneOf(input.status, ['all', 'pending', 'rejected'], 'all')
       const where = `e.collection='users' AND ${field('registrationStatus')} ${status === 'all' ? "IN ('pending','rejected')" : '=?'}`
@@ -76,7 +76,7 @@ export class DirectoryWorkspaceService {
     })
   }
   accounts(actor: User, input: Query): DirectoryAccountsPage {
-    return this.store.transaction(() => {
+    return this.store.readTransaction(() => {
       queryKeys(input, ['purpose', 'q', 'role', 'selectedIds', 'cursor', 'limit'])
       const purpose = oneOf(input.purpose, ['assignment', 'notification', 'diagnostics', 'usage'], 'assignment'), context = this.context(actor, purpose !== 'assignment')
       const q = queryText(input.q, 120), role = oneOf(input.role, ['all', 'member', 'manager', 'observer', 'business'], 'all')
@@ -114,7 +114,7 @@ export class DirectoryWorkspaceService {
     return new Map(rows.map(row => [String(row.projectId), Number(row.n)]))
   }
   projects(actor: User, input: Query): ProjectsPage {
-    return this.store.transaction(() => {
+    return this.store.readTransaction(() => {
       queryKeys(input, ['status', 'q', 'focusId', 'cursor', 'limit'])
       const context = this.context(actor), status = oneOf(input.status, ['all', 'active'], 'active'), q = queryText(input.q, 120), focusId = queryText(input.focusId)
       let where = "e.collection='projects'"; const values: Value[] = []
@@ -134,7 +134,7 @@ export class DirectoryWorkspaceService {
     return this.store.selectJson<MonthlyPlan>(`SELECT json_object('id',e.id,'month',${field('month')},'annualGoalId',${field('annualGoalId')},'sourcePlanId',${field('sourcePlanId')},'mergedIntoId',${field('mergedIntoId')},'mergedFromIds',json(COALESCE(${field('mergedFromIds')},'[]')),'status',${field('status')},'acceptanceStatus',${field('acceptanceStatus')}) AS data FROM entities e WHERE e.collection='plans' AND substr(${field('month')},1,4)=? AND ${field('annualGoalId')} IN (${ids.map(() => '?').join(',')}) AND ${field('visibility')} IS NULL${visibility}`, [String(year), ...ids, ...(actor.role === 'manager' ? [] : [actor.id, actor.id])])
   }
   goalDetail(actor: User, id: string, input: Query): AnnualGoalDetail {
-    return this.store.transaction(() => {
+    return this.store.readTransaction(() => {
       queryKeys(input, ['cursor', 'limit'])
       const context = this.context(actor), goal = this.store.get<AnnualGoal>('annualGoals', id)
       if (!goal) throw new HttpError(404, '年度目标不存在')
@@ -145,7 +145,7 @@ export class DirectoryWorkspaceService {
     })
   }
   goals(actor: User, input: Query): GoalsPage {
-    return this.store.transaction(() => {
+    return this.store.readTransaction(() => {
       queryKeys(input, ['year', 'cursor', 'limit'])
       const context = this.context(actor), year = input.year === undefined ? new Date().getFullYear() : Number(input.year)
       if (!Number.isInteger(year) || year < 2020 || year > 2100 || Array.isArray(input.year)) throw new HttpError(400, '请选择 2020 至 2100 年')

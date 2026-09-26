@@ -90,6 +90,10 @@ export class Store {
       data TEXT NOT NULL, PRIMARY KEY(collection, id)
     )`)
     applyMigrations(this.db)
+    // The operation epoch (see operation-context.ts) used to be created on first read. Create it
+    // when the database opens so read-only transactions never need to write.
+    this.db.prepare(`INSERT INTO entities(collection,id,version,data) SELECT 'operationContexts','business-commands',1,json_object('id','business-commands','epoch',?,'version',1,'createdAt',?,'updatedAt',?)
+      WHERE NOT EXISTS (SELECT 1 FROM entities WHERE collection='operationContexts' AND id='business-commands')`).run(randomUUID(), ...Array(2).fill(new Date().toISOString()))
   }
   private assertTransactionActive() {
     if (this.transactionContext.getStore()?.active === false) throw new Error('Store transaction has ended; asynchronous work is not allowed')
@@ -131,8 +135,14 @@ export class Store {
   entityEventsExplain(entityType: string, entityId?: string) {
     return this.readRows(`EXPLAIN QUERY PLAN SELECT data FROM entities WHERE collection='events' AND json_extract(data,'$.entityType')=?${entityId === undefined ? '' : " AND json_extract(data,'$.entityId')=?"} ORDER BY rowid`, entityId === undefined ? [entityType] : [entityType, entityId])
   }
-  /** O(1), process-local invalidation token. SQLite remains a single writer instance. */
-  workspaceRevision(): string { return `${this.connectionRevision}:${Number(this.readRows('SELECT total_changes() AS n')[0].n) - this.readAuditChanges}` }
+  /**
+   * O(1) invalidation token. total_changes counts this connection's writes; data_version moves
+   * when another connection (the scheduler thread) commits, so both paths invalidate paging.
+   */
+  workspaceRevision(): string {
+    const row = this.readRows('SELECT total_changes() AS n')[0], version = this.statement('PRAGMA data_version').get()!.data_version
+    return `${this.connectionRevision}:${Number(version)}:${Number(row.n) - this.readAuditChanges}`
+  }
   /** Access logs contain identifiers only. Reads must not invalidate business paging. */
   recordObjectRead(input: { actorId: string; action: string; objectType: string; objectId: string; objectIds: string[]; authorizedGoalId?: string; outcome: 'allowed' | 'denied' }): void {
     this.insert<Entity & typeof input & { occurredAt: string }>('objectReadAudits', { ...input, objectIds: [...input.objectIds], occurredAt: new Date().toISOString() })
@@ -213,7 +223,7 @@ export class Store {
     return this.readRows(`${observerGrant ? '' : related} SELECT json_object(${names.map(name=>`'${name}',${field(name)}`).join(',')}) AS data FROM entities e WHERE ${predicates.join(' AND ')} ORDER BY ${field('createdAt')} DESC,e.id DESC LIMIT ?`, [...values, limit]).map(row=>this.parseRow<Pick<import('../shared/types.ts').AuditEvent,'id'|'createdAt'|'entityType'|'actorId'|'action'|'reason'>>(row.data as string))
   }
   insert<T extends Entity>(collection: string, input: Omit<T, keyof Entity> & Partial<Entity>): T {
-    this.assertTransactionActive()
+    this.assertWritable()
     const now = new Date().toISOString()
     const entity = { ...input, id: input.id || randomUUID(), version: 1, createdAt: now, updatedAt: now } as T
     try {
@@ -228,6 +238,7 @@ export class Store {
     return structuredClone(entity)
   }
   update<T extends Entity>(collection: string, id: string, expectedVersion: number, patch: Partial<T>): T {
+    this.assertWritable()
     const before = this.get<T>(collection, id)
     if (!before) throw new HttpError(404, '记录不存在')
     if (!Number.isInteger(expectedVersion) || expectedVersion !== before.version) throw new HttpError(409, '数据已更新，请刷新后重试', 'VERSION_CONFLICT')
@@ -267,6 +278,7 @@ export class Store {
     return Object.fromEntries(this.statement("SELECT COALESCE(json_extract(data,'$.status'),'other') AS status,COUNT(*) AS count FROM entities WHERE collection=? GROUP BY json_extract(data,'$.status')").all(collection).map(row => [String(row.status), Number(row.count)]))
   }
   delete(collection: string, id: string, expectedVersion: number): void {
+    this.assertWritable()
     const before = this.get<Entity>(collection, id)
     if (!before) throw new HttpError(404, '记录不存在')
     if (!Number.isInteger(expectedVersion) || expectedVersion !== before.version) throw new HttpError(409, '数据已更新，请刷新后重试', 'VERSION_CONFLICT')
@@ -277,7 +289,7 @@ export class Store {
   }
   /** Only for validated, administrator-authorized data restoration; never upserts. */
   restoreEntity<T extends Entity>(collection: string, entity: T): T {
-    this.assertTransactionActive()
+    this.assertWritable()
     if (!entity.id || !Number.isInteger(entity.version) || entity.version < 1 || !Number.isFinite(Date.parse(entity.createdAt)) || !Number.isFinite(Date.parse(entity.updatedAt))) throw new HttpError(400, '恢复记录缺少有效标识或版本时间')
     try {
       this.statement('INSERT INTO entities(collection,id,version,data) VALUES(?,?,?,?)').run(collection, entity.id, entity.version, JSON.stringify(entity))
@@ -309,7 +321,7 @@ export class Store {
   }
   /** Migration-only exception: replace exactly an unused bootstrap rule, atomically. */
   replaceUnusedWeeklyRule(before: WeeklyRule, incoming: WeeklyRule): WeeklyRule {
-    this.assertTransactionActive()
+    this.assertWritable()
     if (this.depth === 0 || incoming.id !== 'weekly-submission-rule' || !this.isUnusedWeeklyRule(before)) throw new HttpError(409, '默认周提报规则已使用或变化，请重新预览')
     try {
       const result = this.statement('UPDATE entities SET version=?,data=? WHERE collection=? AND id=? AND version=?')
@@ -318,7 +330,19 @@ export class Store {
     } catch (error) { throw storageError(error) }
     return structuredClone(incoming)
   }
-  transaction<T>(fn: () => T): T {
+  /** Writes take the database write lock up front so a conflicting writer waits instead of failing later. */
+  transaction<T>(fn: () => T): T { return this.run(fn, 'IMMEDIATE') }
+  /**
+   * A consistent snapshot for read-only work. In WAL mode it never waits for the write lock, so a
+   * page read is not held up while the scheduler thread commits. Any write inside is a bug and throws.
+   */
+  readTransaction<T>(fn: () => T): T { return this.run(fn, 'DEFERRED') }
+  private readOnly = false
+  private assertWritable() {
+    this.assertTransactionActive()
+    if (this.readOnly) throw new Error('Store write inside a read-only transaction')
+  }
+  private run<T>(fn: () => T, mode: 'IMMEDIATE' | 'DEFERRED'): T {
     this.assertTransactionActive()
     const context = { active: true }
     return this.transactionContext.run(context, () => {
@@ -326,7 +350,8 @@ export class Store {
       const savepoint = `nested_${level}`
       let started = false
       try {
-        this.db.exec(level === 0 ? 'BEGIN IMMEDIATE' : `SAVEPOINT ${savepoint}`)
+        this.db.exec(level === 0 ? `BEGIN ${mode}` : `SAVEPOINT ${savepoint}`)
+        if (level === 0) this.readOnly = mode === 'DEFERRED'
         started = true
         this.depth++
         const result = fn()
@@ -346,6 +371,7 @@ export class Store {
       } finally {
         context.active = false
         if (started) this.depth--
+        if (started && level === 0) this.readOnly = false
       }
     })
   }

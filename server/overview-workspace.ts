@@ -101,7 +101,7 @@ function overviewFacts(store: Store, actor: User, options: { period: WorkPeriod;
 export class OverviewWorkspaceService {
   constructor(private store: Store, private clock = () => new Date()) {}
   personal(actor: User, input: Record<string, unknown> = {}): PersonalOverviewResponse {
-    return this.store.transaction(() => {
+    return this.store.readTransaction(() => {
       queryKeys(input, [])
       const context = pageContext(this.store, actor); actor = context.actor
       const today = shanghaiToday(this.clock()), data = overviewFacts(this.store, actor, { period: 'month', date: today, personal: true })
@@ -118,7 +118,7 @@ export class OverviewWorkspaceService {
     })
   }
   department(actor: User, input: Record<string, unknown>): DepartmentOverviewResponse {
-    return this.store.transaction(() => {
+    return this.store.readTransaction(() => {
       const context = pageContext(this.store, actor); actor = context.actor
       if (actor.role !== 'manager') throw new HttpError(403, '只有管理者可以读取部门概览')
       queryKeys(input, ['period', 'date', 'includeInactive', 'ownerId', 'projectId', 'status', 'q', 'riskOnly', 'sort', 'cursor', 'limit'])

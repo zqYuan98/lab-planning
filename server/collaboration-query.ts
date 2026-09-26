@@ -18,7 +18,7 @@ const trackingState = `(SELECT json_extract(k.data,'$.state') FROM entities k WH
 
 /** Full counts and bounded rows share one authorization/query snapshot. */
 export function collaborationDashboard(store: Store, actor: User, input: Record<string, unknown>, now = new Date()): CollaborationDashboard {
-  return store.transaction(() => {
+  return store.readTransaction(() => {
     queryKeys(input, ['filter', 'q', 'cursor', 'limit'])
     const context = pageContext(store, actor); actor = context.actor
     const filter = queryText(input.filter) || 'all', q = queryText(input.q, 120)

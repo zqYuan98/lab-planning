@@ -78,7 +78,7 @@ export class PeriodWorkspaceService {
     return { users, projects, plans: [...planMap.values()], tasks: [...taskMap.values()], weeklyRecords: records }
   }
   weekly(actor: User, input: Query): WeeklyWorkspace {
-    return this.store.transaction(() => {
+    return this.store.readTransaction(() => {
       const ctx = pageContext(this.store, actor); actor = ctx.actor
       queryKeys(input, ['weekStart', 'ownerId', 'includeInactive', 'status', 'q', 'source', 'cursor', 'limit', 'id'])
       const week = date(input.weekStart), owner = queryText(input.ownerId), inactive = flag(input.includeInactive), status = queryText(input.status), q = queryText(input.q).toLocaleLowerCase(), origin = queryText(input.source)
@@ -106,7 +106,7 @@ export class PeriodWorkspaceService {
     })
   }
   monthly(actor: User, input: Query): MonthlyWorkspace {
-    return this.store.transaction(() => {
+    return this.store.readTransaction(() => {
       const ctx = pageContext(this.store, actor); actor = ctx.actor
       queryKeys(input, ['month', 'includeInactive', 'scope', 'status', 'q', 'cursor', 'limit', 'id'])
       const month = date(input.month, true), inactive = flag(input.includeInactive), status = queryText(input.status), q = queryText(input.q), scope = queryText(input.scope) || 'current'
@@ -129,7 +129,7 @@ export class PeriodWorkspaceService {
   }
   private publicationPredicate(actor: User, month: string) { return { sql: "collection='publications' AND json_extract(data,'$.month')=? AND (?=1 OR EXISTS(SELECT 1 FROM json_each(data,'$.plans') p WHERE json_extract(p.value,'$.ownerId')=? OR EXISTS(SELECT 1 FROM json_each(p.value,'$.collaboratorIds') c WHERE c.value=?)))", values: [month, Number(actor.role === 'manager'), actor.id, actor.id] } }
   private publicationCount(actor: User, month: string) { const filter = this.publicationPredicate(actor, month); return Number(this.store.selectRows(`SELECT COUNT(*) AS n FROM entities WHERE ${filter.sql}`, filter.values)[0].n) }
-  publications(actor: User, input: Query) { return this.store.transaction(() => {
+  publications(actor: User, input: Query) { return this.store.readTransaction(() => {
     const ctx = pageContext(this.store, actor); queryKeys(input, ['month', 'cursor', 'limit']); actor = ctx.actor
     const month = date(input.month, true), filter = this.publicationPredicate(actor, month), window = pageWindow(input, ctx, 'publications'), total = this.publicationCount(actor, month)
     const fields = ['id', 'version', 'createdAt', 'updatedAt', 'month', 'revision', 'actorId'].map(key => `'${key}',json_extract(data,'$.${key}')`).join(',')
@@ -140,7 +140,7 @@ export class PeriodWorkspaceService {
   plan(actor: User, id: string) { const ctx = pageContext(this.store, actor), current = this.store.get<MonthlyPlan>('plans', id), plan = current && (this.planVisibility(ctx.actor, [current])[0] ?? this.planRows(ctx.actor, current.month).find(plan => plan.id === current.id)); if (!plan) throw new HttpError(404, '月度目标不存在或当前不可访问'); return { plan, references: this.references(ctx.actor, [], [plan]) } }
   record(actor: User, id: string) { const ctx = pageContext(this.store, actor), record = this.store.get<WeeklyRecord>('weeklyRecords', id); if (!record || !isActiveWeeklyRecord(record) || ctx.actor.role !== 'manager' && record.ownerId !== ctx.actor.id || !this.task(ctx.actor, record.taskId)) throw new HttpError(404, '周记录不存在或当前不可访问'); return { record, references: this.references(ctx.actor, [record]) } }
   candidates(actor: User, input: Query): PeriodCandidates {
-    return this.store.transaction(() => {
+    return this.store.readTransaction(() => {
       const ctx = pageContext(this.store, actor); actor = ctx.actor
       queryKeys(input, ['kind', 'ownerId', 'month', 'purpose', 'q', 'cursor', 'limit'])
       const kind = queryText(input.kind), purpose = queryText(input.purpose), owner = queryText(input.ownerId) || actor.id, q = queryText(input.q).toLocaleLowerCase()
