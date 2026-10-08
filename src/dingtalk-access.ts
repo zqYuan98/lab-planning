@@ -49,10 +49,24 @@ export async function identityThenWorkspace<T>(options: { dingTalk: boolean; ver
   return { data: await options.load() }
 }
 
+// Embedded DingTalk browsers may support AbortController but not AbortSignal.timeout.
+async function dingTalkApi<T>(path: string, timeoutMs: number, options: RequestInit = {}): Promise<T> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await api<T>(path, { ...options, signal: controller.signal })
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error('钉钉身份验证请求超时，请重试或使用普通团队账号登录。')
+    throw error
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export async function exchangeDingTalk(): Promise<{ authenticated: boolean; bindingRequired?: boolean }> {
   if (!isDingTalk()) throw new Error('请在钉钉工作台内打开本应用，再验证本人身份。')
-  const config = await api<DingTalkPublicConfig>('/auth/dingtalk/config', { signal: AbortSignal.timeout(10000) })
+  const config = await dingTalkApi<DingTalkPublicConfig>('/auth/dingtalk/config', 10000)
   if (!config.configured) throw new Error('钉钉接入尚未配置，请先使用团队账号登录。')
   const code = await requestCode(config)
-  return api('/auth/dingtalk/exchange', { ...json({ code }), signal: AbortSignal.timeout(15000) })
+  return dingTalkApi('/auth/dingtalk/exchange', 15000, json({ code }))
 }
