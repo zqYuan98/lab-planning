@@ -12,7 +12,7 @@ export type ViewId = keyof typeof viewLabels;
 export const columnLabels = {
   tasks: "任务内容",
   doing: "推进中",
-  done: "自报完成",
+  done: "完成",
   risk: "风险任务",
   drafts: "草稿 / 未排周",
   progress: "完成占比",
@@ -30,6 +30,7 @@ export interface WorkspacePreferences {
   status: string;
   riskOnly: boolean;
   includeInactive?: boolean;
+  includeCarryover?: boolean;
   sort: SortId;
   columns: ColumnId[];
   group: "status" | "owner" | "project";
@@ -50,6 +51,7 @@ export const defaultPreferences = (): WorkspacePreferences => ({
   status: "",
   riskOnly: false,
   includeInactive: false,
+  includeCarryover: false,
   sort: "name",
   columns: Object.keys(columnLabels) as ColumnId[],
   group: "status",
@@ -77,11 +79,13 @@ function validConfig(value: unknown): value is WorkspacePreferences {
       "not_done",
       "draft",
       "unscheduled",
+      "unknown",
       "overdue",
       "unplanned",
     ].includes(row.status) &&
     typeof row.riskOnly === "boolean" &&
     (row.includeInactive === undefined || typeof row.includeInactive === "boolean") &&
+    (row.includeCarryover === undefined || typeof row.includeCarryover === "boolean") &&
     ["name", "tasks", "risk", "due"].includes(row.sort) &&
     ["status", "owner", "project"].includes(row.group) &&
     (row.density === undefined ||

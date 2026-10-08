@@ -12,6 +12,7 @@ import { field, workspaceWhere, reportMetadataProjection, type WorkspaceSqlFilte
 import { registerSql, registerViews, type RegisterFilter } from './workspace-register-sql.ts'
 import { registerWorkspaceProgressFunctions, workspaceProgressSql, workspaceProgressResult, type WorkspaceProgressRow } from './workspace-progress.ts'
 import { historicalPlanDataSql } from './workspace-plan-snapshot.ts'
+import { effectiveCalendarOverrides } from '../shared/china-work-calendar.ts'
 
 const deliveryStatuses = new Set(['pending', 'sending', 'accepted', 'delivered', 'failed', 'unknown', 'skipped'])
 const STATEMENT_CACHE_SIZE = 500
@@ -189,8 +190,8 @@ export class Store {
   registerPage(filter: RegisterFilter, limit: number, cursor?: { createdAt: string; id: string }) {
     const query = registerSql(filter), clauses = [query.predicate], values = [...query.values]
     if (cursor) { clauses.push('(createdAt<? OR (createdAt=? AND rowKind||\':\'||id<?))'); values.push(cursor.createdAt, cursor.createdAt, cursor.id) }
-    const rows = this.readRows(`${query.cte} SELECT data,rowKind,historicalReference FROM rows WHERE ${clauses.join(' AND ')} ORDER BY createdAt DESC,rowKind||':'||id DESC LIMIT ?`, [...values, limit])
-      .map(row => ({ kind: String(row.rowKind) as 'task' | 'plan', historicalReference: !!row.historicalReference, entity: this.parseRow<import('../shared/types.ts').Task | import('../shared/types.ts').MonthlyPlan>(row.data as string) }))
+    const rows = this.readRows(`${query.cte} SELECT data,rowKind,historicalReference,carriedForward FROM rows WHERE ${clauses.join(' AND ')} ORDER BY createdAt DESC,rowKind||':'||id DESC LIMIT ?`, [...values, limit])
+      .map(row => ({ kind: String(row.rowKind) as 'task' | 'plan', historicalReference: !!row.historicalReference, carriedForward: !!row.carriedForward, entity: this.parseRow<import('../shared/types.ts').Task | import('../shared/types.ts').MonthlyPlan>(row.data as string) }))
     const total = Number(this.readRows(`${query.cte} SELECT COUNT(*) AS n FROM rows WHERE ${query.predicate}`, query.values)[0].n)
     const summary = this.readRows(`${query.cte} SELECT ${Object.entries(registerViews).map(([key, predicate]) => `COALESCE(SUM(CASE WHEN ${predicate} THEN 1 ELSE 0 END),0) AS "${key}"`).join(',')},COALESCE(SUM(coordination),0) AS coordination,COALESCE(SUM(CASE WHEN active=1 AND priority='high' THEN 1 ELSE 0 END),0) AS highCount FROM rows`, query.baseValues)[0]
     return { rows, total, summary }
@@ -305,14 +306,23 @@ export class Store {
   isUnusedWeeklyRule(rule: WeeklyRule): boolean {
     const current = this.get<WeeklyRule>('weeklyRules', 'weekly-submission-rule')
     if (!current || JSON.stringify(current) !== JSON.stringify(rule) || this.list('weeklyRules').length !== 1) return false
-    if (rule.id !== 'weekly-submission-rule' || rule.version !== 1 || rule.createdAt !== rule.updatedAt || !rule.enabled || rule.timezone !== 'Asia/Shanghai') return false
-    if (Object.keys(rule).filter(key => key !== 'planReviewEffectiveWeek').sort().join(',') !== 'createdAt,effectiveWeek,enabled,id,timezone,updatedAt,version,windows') return false
+    const untouched = rule.version === 1 && rule.createdAt === rule.updatedAt
+    // Bootstrap-only upgrades may add the administrator boundary and the prospective calendar.
+    const upgradedDefault = [2, 3].includes(rule.version) && rule.managerSubmissionEffectiveWeek === rule.effectiveWeek
+    if (rule.id !== 'weekly-submission-rule' || !untouched && !upgradedDefault || !rule.enabled || rule.timezone !== 'Asia/Shanghai') return false
+    if (Object.keys(rule).filter(key => !['planReviewEffectiveWeek', 'managerSubmissionEffectiveWeek', 'deadlinePolicies'].includes(key)).sort().join(',') !== 'createdAt,effectiveWeek,enabled,id,timezone,updatedAt,version,windows') return false
     const created = new Date(rule.createdAt)
     if (!Number.isFinite(created.getTime())) return false
     const local = new Date(created.getTime() + 8 * 3600000)
     local.setUTCDate(local.getUTCDate() + 7 - ((local.getUTCDay() + 6) % 7))
     const nextWeek = local.toISOString().slice(0, 10)
     if (rule.planReviewEffectiveWeek !== undefined && rule.planReviewEffectiveWeek !== nextWeek) return false
+    if (rule.managerSubmissionEffectiveWeek !== undefined && rule.managerSubmissionEffectiveWeek !== nextWeek) return false
+    if (rule.deadlinePolicies !== undefined) {
+      const overrides = this.get<{ calendarOverrides: Record<string, boolean> }>('collaborationSettings', 'collaboration')?.calendarOverrides ?? {}
+      const bootstrapPolicy = [{ version: 1, fromWeek: nextWeek, mode: 'last_workday', calendarOverrides: effectiveCalendarOverrides(overrides) }]
+      if (JSON.stringify(rule.deadlinePolicies) !== JSON.stringify(bootstrapPolicy)) return false
+    }
     if (rule.effectiveWeek !== nextWeek || JSON.stringify(rule.windows) !== JSON.stringify([{ fromWeek: nextWeek, toWeek: null }])) return false
     if (['weeklyCycles', 'weeklyDuties', 'weeklySubmissions', 'weeklyMissing', 'weeklyAdjustments', 'weeklyPlanReviews'].some(name => this.list(name).length > 0)) return false
     if (this.list<{ planApproval?: unknown }>('weeklyRecords').some(row => row.planApproval)) return false

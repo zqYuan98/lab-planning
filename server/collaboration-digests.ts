@@ -11,6 +11,7 @@ import { readCollaborationSettings, effectiveManagerIds } from './collaboration-
 import { automaticRiskCandidates, evaluateWorkRisks, riskTitle } from './collaboration-rules.ts'
 import { shanghaiDate, shanghaiTime, weekOf, workdayCount, workingDay } from './collaboration-calendar.ts'
 import { isManager } from './authorization.ts'
+import { workingDaysInWeek } from './work-calendar.ts'
 
 export const digestTitles: Record<NotificationDigest['type'], string> = {
   risk_member: '今日工作提醒', risk_manager: '需要关注的工作风险', critical_manager: '成员工作有重要更新',
@@ -114,12 +115,12 @@ export function runCollaborationDigests(store: Store, now = new Date()): void {
       }
     }
     if (time < '17:30') return
-    const friday = new Date(`${day}T00:00:00Z`).getUTCDay() === 5
+    const lastWorkday = workingDaysInWeek(weekOf(day), settings.calendarOverrides).at(-1) === day
     for (const recipient of store.list<User>('users').filter(canUseAccount)) {
       const manager = isManager(recipient)
       if (!manager && (!settings.memberActionsEnabled || store.get<CollaborationPreference>('collaborationPreferences', recipient.id)?.memberActionsEnabled === false)) continue
-      const fullManagerDigest = manager && (friday && settings.weeklyManagerEnabled || settings.dailyManagerEnabled)
-      const type = manager ? friday && settings.weeklyManagerEnabled ? 'weekly_manager' : 'daily_manager' : 'member_actions'
+      const fullManagerDigest = manager && (lastWorkday && settings.weeklyManagerEnabled || settings.dailyManagerEnabled)
+      const type = manager ? lastWorkday && settings.weeklyManagerEnabled ? 'weekly_manager' : 'daily_manager' : 'member_actions'
       const fresh = store.list<DigestItem>('digestItems').filter(item => item.recipientId === recipient.id && !item.consumedBy && itemTaskActive(store, item))
       if (manager && !fullManagerDigest) {
         // Minimum management digest remains available for overflow facts, independently of optional daily summaries.

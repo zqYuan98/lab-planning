@@ -16,10 +16,11 @@ export const statusLabels: Record<WorkRow["status"], string> = {
   planned: "未开始",
   doing: "推进中",
   blocked: "阻塞",
-  done: "自报完成",
+  done: "已完成",
   not_done: "未完成",
   draft: "周草稿",
   unscheduled: "未排周",
+  unknown: "总体状态待核对",
 };
 export const statusOrder = Object.keys(statusLabels) as WorkRow["status"][];
 export const riskRows = (rows: WorkRow[]) =>
@@ -33,9 +34,15 @@ const avatarColor = (id: string) =>
 export function StatusPill({ row }: { row: WorkRow }) {
   return (
     <span className={`ow-pill status-${row.status}`}>
-      {statusLabels[row.status]}
+      {row.status === 'done' ? row.statusScope === 'task' ? '整个任务完成' : '本期阶段完成' : statusLabels[row.status]}
     </span>
   );
+}
+export function TaskStateNote({ row }: { row: WorkRow }) {
+  const taskLabels = { todo: '未开始', doing: '推进中', blocked: '阻塞', done: '已完成' };
+  return <small className="ow-person-meta">{row.statusScope === 'period' && row.taskStatus
+    ? `整个任务：${row.needsCompletionReview ? '完成待核对' : taskLabels[row.taskStatus]}`
+    : row.weeklyStatus ? `最近周（${row.weeklyWeekStart}）：${row.weeklyStatus === 'done' ? '阶段完成' : statusLabels[row.weeklyStatus]}` : ''}</small>;
 }
 export function NoRows({
   text = "当前条件下没有任务",
@@ -61,6 +68,7 @@ export function WorkRowSignals({ row }: { row: WorkRow }) {
     <span className="task-signals">
       <PriorityBadge priority={row.priority} />
       <WorkTypeBadge isTemporary={row.workKind === "temporary"} isMonthly={row.workKind === "monthly"} />
+      {row.carryover && <span className="ow-pill status-draft">往期未完成</span>}
     </span>
   );
 }
@@ -234,7 +242,7 @@ export function MemberTable({
                     ) : column === "done" ? (
                       <TaskCount
                         rows={work.filter((row) => row.status === "done")}
-                        label={`${user.name}自报完成的任务`}
+                        label={`${user.name}完成的任务`}
                         drill={onDrill}
                       />
                     ) : column === "risk" ? (
@@ -263,7 +271,7 @@ export function MemberTable({
                       work.length ? (
                         <div
                           className="ow-progress"
-                          aria-label={`自报完成 ${summary.done} / ${work.length}`}
+                          aria-label={`完成 ${summary.done} / ${work.length}`}
                         >
                           <span>
                             <i
@@ -322,7 +330,7 @@ export function MemberTable({
             {work.length > 0 && (
               <div className="ow-member-card-meta">
                 <span>推进中 {summary.doing}</span>
-                <span>自报完成 {summary.done}</span>
+                <span>完成 {summary.done}</span>
                 {risks.length > 0 && (
                   <span className="ow-overdue">
                     <AlertCircle size={13} aria-hidden="true" />
@@ -384,6 +392,7 @@ export function TaskTable({
               </td>
               <td>
                 <StatusPill row={row} />
+                <TaskStateNote row={row} />
               </td>
               <td>
                 <span className={row.overdue ? "ow-overdue" : ""}>
@@ -413,6 +422,7 @@ export function TaskCard({ row, onOpen }: { row: WorkRow; onOpen: RowAction }) {
         <small className="ow-card-project">{row.projectName}</small>
         <StatusPill row={row} />
       </div>
+      <TaskStateNote row={row} />
       <div className="ow-card-meta">
         <span className="ow-card-owner">
           <span
@@ -439,17 +449,19 @@ export function Board({
   onOpen,
   totals,
   onFilter,
+  statusScope = rows[0]?.statusScope,
 }: {
   rows: WorkRow[];
   group: "status" | "owner" | "project";
   onOpen: RowAction;
   totals?: OverviewGroup[];
   onFilter?: (filter: OverviewDrill) => void;
+  statusScope?: 'task' | 'period';
 }) {
   const groups = new Map<string, { title: string; rows: WorkRow[] }>();
   if (group === "status")
     for (const key of statusOrder)
-      groups.set(key, { title: statusLabels[key], rows: [] });
+      groups.set(key, { title: key === 'done' ? statusScope === 'task' ? '整个任务完成' : '本期阶段完成' : statusLabels[key], rows: [] });
   for (const row of rows) {
     const key =
       group === "status"
@@ -688,13 +700,13 @@ export function OverviewMemberTable({ members, columns, onOpen, onDrill }: {
   </div>;
   return <><div className="ow-table-wrap ow-member-table" tabIndex={0} role="region" aria-label="可横向滚动的全员工作表"><table className="ow-table" aria-label="全员任务与进展"><thead><tr><th scope="col" className="ow-person-cell">成员 <span className="ow-muted">{members.length}</span></th><th scope="col">任务数</th>{columns.map(column => <th key={column} scope="col" className={`ow-col-${column}`}>{columnLabels[column]}</th>)}</tr></thead><tbody>
     {members.map(member => <tr key={member.id}><th scope="row" className="ow-person-cell"><div className="ow-person"><span className="ow-avatar" data-color={avatarColor(member.id)} aria-hidden="true">{member.name.slice(-2)}</span><div><strong>{member.name}</strong><span className="ow-person-meta">{!member.active ? '已停用 · 历史任务' : member.position || (member.role === 'manager' ? '管理者' : '团队成员')}</span></div></div></th><td>{count(member, member.summary.total)}</td>
-      {columns.map(column => <td key={column} className={`ow-col-${column}`}>{column === 'projects' ? member.projects.join('、') || <span className="ow-muted">暂无项目任务</span> : column === 'doing' ? count(member, member.summary.doing, { status: 'doing' }) : column === 'done' ? count(member, member.summary.done, { status: 'done' }) : column === 'risk' ? count(member, member.summary.risk, { riskOnly: true }) : column === 'drafts' ? <>{count(member, member.summary.drafts, { status: 'draft' })}<span className="ow-muted"> / </span>{count(member, member.summary.unscheduled, { status: 'unscheduled' })}</> : column === 'progress' ? member.summary.total ? <div className="ow-progress" aria-label={`自报完成 ${member.summary.done} / ${member.summary.total}`}><span><i style={{ width: `${member.summary.done / member.summary.total * 100}%` }}/></span><small>{Math.round(member.summary.done / member.summary.total * 100)}%</small></div> : <span className="ow-muted">暂无任务</span> : preview(member)}</td>)}
+      {columns.map(column => <td key={column} className={`ow-col-${column}`}>{column === 'projects' ? member.projects.join('、') || <span className="ow-muted">暂无项目任务</span> : column === 'doing' ? count(member, member.summary.doing, { status: 'doing' }) : column === 'done' ? count(member, member.summary.done, { status: 'done' }) : column === 'risk' ? count(member, member.summary.risk, { riskOnly: true }) : column === 'drafts' ? <>{count(member, member.summary.drafts, { status: 'draft' })}<span className="ow-muted"> / </span>{count(member, member.summary.unscheduled, { status: 'unscheduled' })}</> : column === 'progress' ? member.summary.total ? <div className="ow-progress" aria-label={`完成 ${member.summary.done} / ${member.summary.total}`}><span><i style={{ width: `${member.summary.done / member.summary.total * 100}%` }}/></span><small>{Math.round(member.summary.done / member.summary.total * 100)}%</small></div> : <span className="ow-muted">暂无任务</span> : preview(member)}</td>)}
     </tr>)}
-  </tbody></table></div><div className="ow-member-cards" aria-label="全员任务卡片">{members.map(member => <article className="ow-member-card" key={member.id}><header><div className="ow-person"><span className="ow-avatar" data-color={avatarColor(member.id)}>{member.name.slice(-2)}</span><div><strong>{member.name}</strong><span className="ow-person-meta">{!member.active ? '已停用 · 历史任务' : member.position || '团队成员'}</span></div></div><button className="ow-member-total" onClick={() => onDrill({ ownerId: member.id })}><strong>{member.summary.total}</strong> 项任务<ChevronRight size={14}/></button></header>{member.summary.total > 0 && <div className="ow-member-card-meta"><span>推进中 {member.summary.doing}</span><span>自报完成 {member.summary.done}</span>{member.summary.risk > 0 && <span className="ow-overdue">{member.summary.risk} 项需关注</span>}</div>}{preview(member)}</article>)}</div></>;
+  </tbody></table></div><div className="ow-member-cards" aria-label="全员任务卡片">{members.map(member => <article className="ow-member-card" key={member.id}><header><div className="ow-person"><span className="ow-avatar" data-color={avatarColor(member.id)}>{member.name.slice(-2)}</span><div><strong>{member.name}</strong><span className="ow-person-meta">{!member.active ? '已停用 · 历史任务' : member.position || '团队成员'}</span></div></div><button className="ow-member-total" onClick={() => onDrill({ ownerId: member.id })}><strong>{member.summary.total}</strong> 项任务<ChevronRight size={14}/></button></header>{member.summary.total > 0 && <div className="ow-member-card-meta"><span>推进中 {member.summary.doing}</span><span>完成 {member.summary.done}</span>{member.summary.risk > 0 && <span className="ow-overdue">{member.summary.risk} 项需关注</span>}</div>}{preview(member)}</article>)}</div></>;
 }
 
 export function OverviewProjectView({ groups, onDrill }: { groups: OverviewGroup[]; onDrill: (filter: OverviewDrill) => void }) {
   if (!groups.length) return <NoRows />;
-  const values = (group: OverviewGroup): Record<WorkRow['status'], number> => ({ planned: group.summary.planned, doing: group.summary.doing, blocked: group.summary.blocked, done: group.summary.done, not_done: group.summary.notDone, draft: group.summary.drafts, unscheduled: group.summary.unscheduled });
+  const values = (group: OverviewGroup): Record<WorkRow['status'], number> => ({ planned: group.summary.planned, doing: group.summary.doing, blocked: group.summary.blocked, done: group.summary.done, not_done: group.summary.notDone, draft: group.summary.drafts, unscheduled: group.summary.unscheduled, unknown: group.summary.unknown });
   return <div className="ow-project-grid">{groups.map(group => <section className="ow-project-card" key={group.id}><header><h3>{group.name}</h3><button className="ow-title-button" onClick={() => onDrill({ projectId: group.id })}>查看 {group.summary.total} 项<ChevronRight size={14}/></button></header><p className="ow-muted">{group.ownerCount} 人参与 · {group.planCount} 个月度目标</p><div className="ow-stacked-track" aria-label="任务状态分布">{statusOrder.map(status => <span key={status} className={`status-${status}`} style={{ flex: values(group)[status] }}/>)}</div><div className="ow-project-stats">{statusOrder.filter(status => values(group)[status]).map(status => <button key={status} onClick={() => onDrill({ projectId: group.id, status })}><span className={`ow-dot status-${status}`}/>{statusLabels[status]}<strong>{values(group)[status]}</strong></button>)}</div><p className="ow-muted">{group.ownerNames.join('、')}</p></section>)}</div>;
 }

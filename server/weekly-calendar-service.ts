@@ -2,13 +2,14 @@ import { createHash, createHmac, randomBytes } from 'node:crypto'
 import type { AuditEvent, Entity, Report, User } from '../shared/types.ts'
 import type { CollaborationSettings } from '../shared/collaboration.ts'
 import type { WeeklyCycle, WeeklyDeadlinePolicy, WeeklyDeadlineRepairPreview, WeeklyDeadlineSnapshot, WeeklyDuty, WeeklyRule } from '../shared/weekly-submissions.ts'
-import { snapshotDeadline, workingDaysInWeek } from '../shared/work-calendar.ts'
+import { snapshotDeadline } from '../shared/work-calendar.ts'
+import { effectiveCalendarOverrides } from '../shared/china-work-calendar.ts'
 import { DomainBase, choice, date, manager, text, type Input } from './domain-common.ts'
 import { assertBusinessActor } from './object-access.ts'
 import { readCollaborationSettings } from './collaboration-policy.ts'
 import { ensureWeeklyPlanReviewRule, syncWeeklyPlanReviewPolicy } from './weekly-plan-review.ts'
 import { addWeekDays, cycleWeek, shanghaiWeek } from './weekly-submission-clock.ts'
-import { readWorkCalendar } from './work-calendar.ts'
+import { readWorkCalendar, workingDaysInWeek } from './work-calendar.ts'
 import { HttpError, type Store } from './store.ts'
 
 const RULE = 'weekly-submission-rule'
@@ -27,6 +28,7 @@ function validOverrides(value: unknown): Record<string, boolean> {
 }
 
 function schedulePolicy(store: Store, actor: User, before: WeeklyRule, mode: WeeklyDeadlinePolicy['mode'], overrides: Record<string, boolean>, now: Date): WeeklyRule {
+  overrides = effectiveCalendarOverrides(overrides)
   const fromWeek = addWeekDays(shanghaiWeek(now), 7)
   const entries = before.deadlinePolicies ?? []
   const last = entries.at(-1)

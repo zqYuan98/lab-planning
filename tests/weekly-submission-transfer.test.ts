@@ -5,6 +5,7 @@ import { WeeklySubmissionService } from '../server/weekly-submissions.ts'
 import { WeeklyCalendarService } from '../server/weekly-calendar-service.ts'
 import { exportBusinessData, exportCsv, previewRestore, restoreBusinessData } from '../server/data-transfer.ts'
 import { collectionNames, parsePacket } from '../server/data-transfer-schema.ts'
+import { addWeekDays, shanghaiWeek } from '../server/weekly-submission-clock.ts'
 import type { User, Task, WeeklyRecord, Report, MonthlyPlan, AuditEvent } from '../shared/types.ts'
 import type { WeeklyCycle, WeeklyDuty, WeeklySubmission, WeeklyRule, WeeklyDeadlineSnapshot } from '../shared/weekly-submissions.ts'
 
@@ -59,6 +60,14 @@ function holidayFixture(t: TestContext, suffix: string, restWeek = false) {
   store.restoreEntity<Report>('reports', { ...entity, id: 'holiday-report', type: 'weekly', period: cycle.week, title: '假期周冻结报告', status: 'finalized', revision: 1, narrative: '', authorId: manager.id, finalizedAt: entity.createdAt,
     snapshot: { plans: [], tasks: [], weeklyRecords: [], projects: [], annualGoals: [], users: [], nextPlans: [], nextWeeklyRecords: [], publications: [], changes: [], weeklySubmissions: restWeek ? [] : [{ ownerId: member.id, cycleWeek: cycle.week, kind: 'results', status: 'due', deadlineAt: deadlineAt!, deadlinePolicy, firstSubmittedAt: null, missingAtDeadline: false, exemptionReason: '' }] } })
   return context
+}
+
+/** Produce the actual legacy wire shape; new servers now bootstrap a holiday policy. */
+function legacyFridayPacket(context: ReturnType<typeof fixture>) {
+  const packet = JSON.parse(JSON.stringify(exportBusinessData(context.store, context.manager), (key, value) =>
+    ['deadlinePolicies', 'deadlinePolicy'].includes(key) ? undefined : value)) as ReturnType<typeof exportBusinessData>
+  packet.formatVersion = 2
+  return packet
 }
 
 test('v7 holiday snapshots survive export, account remap and repeated restore without consulting live calendar', t => {
@@ -130,7 +139,7 @@ test('rest-week cycles roundtrip with null deadline and frozen summaries remain 
 })
 
 test('legacy formats v2-v6 retain Friday facts and reports without inventing holiday policy', t => {
-  const source = fixture(t, 'source', true), original = exportBusinessData(source.store, source.manager)
+  const source = fixture(t, 'source', true), original = legacyFridayPacket(source)
   for (const formatVersion of [2, 3, 4, 5, 6] as const) {
     const target = fixture(t, `v${formatVersion}`), packet = { ...structuredClone(original), formatVersion }
     const preview = previewRestore(target.store, target.manager, packet)
@@ -221,7 +230,7 @@ test('holiday missing facts use the duty deadline and reject a mismatched cutoff
 
 test('v2 roundtrip remaps nested users and retains UUID duties, immutable timestamps, drafts and report summaries', t => {
   const source = fixture(t, 'source', true), target = fixture(t, 'target')
-  const packet = exportBusinessData(source.store, source.manager)
+  const packet = legacyFridayPacket(source)
   assert.equal(packet.formatVersion, 2)
   assert.equal(packet.collections.weeklySubmissions.length, 2)
   assert.ok(packet.collections.events.some(event => event.entityType === 'weeklyRule'))
@@ -354,6 +363,22 @@ test('normal server bootstrap rule can be explicitly replaced without changing m
   assert.deepEqual(importedAudit.after, packet.collections.weeklyRules[0])
 })
 
+test('an unused legacy default remains replaceable after the administrator-roster upgrade', t => {
+  const source = fixture(t, 'source', true), target = fixture(t, 'target')
+  const now = new Date(), timestamp = now.toISOString(), effectiveWeek = addWeekDays(shanghaiWeek(now), 7)
+  target.store.restoreEntity<WeeklyRule>('weeklyRules', { id: 'weekly-submission-rule', version: 1, createdAt: timestamp, updatedAt: timestamp, enabled: true, effectiveWeek, planReviewEffectiveWeek: effectiveWeek, timezone: 'Asia/Shanghai', windows: [{ fromWeek: effectiveWeek, toWeek: null }] })
+  const upgraded = new WeeklySubmissionService(target.store, () => now).getRule()
+  assert.equal(upgraded.version, 3)
+  assert.equal(upgraded.managerSubmissionEffectiveWeek, effectiveWeek)
+  assert.equal(target.store.isUnusedWeeklyRule(upgraded), true)
+  const packet = exportBusinessData(source.store, source.manager)
+  const preview = previewRestore(target.store, target.manager, packet)
+  assert.equal(preview.canRestore, true, preview.issues.join('\n'))
+  assert.equal(preview.counts.weeklyRules.replace, 1)
+  restoreBusinessData(target.store, target.manager, packet, {}, preview.fingerprint)
+  assert.deepEqual(target.store.get('weeklyRules', upgraded.id), packet.collections.weeklyRules[0])
+})
+
 test('configured, audited or used rules never receive the bootstrap replacement exception', t => {
   const source = fixture(t, 'source', true)
   const packet = exportBusinessData(source.store, source.manager)
@@ -411,7 +436,8 @@ test('weekly timestamp schemas reject equivalent offset and non-millisecond repr
     for (const field of Object.keys(packet.collections[name][0]).filter(key => key.endsWith('At'))) paths.push(['collections', name, 0, field])
   }
   paths.push(['collections', 'reports', 0, 'snapshot', 'weeklySubmissions', 0, 'deadlineAt'])
-  paths.push(['collections', 'reports', 0, 'snapshot', 'weeklySubmissions', 0, 'firstSubmittedAt'])
+  const submittedSummary = packet.collections.reports[0].snapshot.weeklySubmissions!.findIndex(row => row.firstSubmittedAt)
+  paths.push(['collections', 'reports', 0, 'snapshot', 'weeklySubmissions', submittedSummary, 'firstSubmittedAt'])
   const ruleAudit = packet.collections.events.findIndex(event => event.entityType === 'weeklyRule')
   const cycleAudit = packet.collections.events.findIndex(event => event.entityType === 'weeklyCycle')
   paths.push(['collections', 'events', ruleAudit, 'before', 'createdAt'])

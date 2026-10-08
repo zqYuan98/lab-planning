@@ -38,8 +38,8 @@ test('Friday cutoff uses Shanghai time, two independent duties, late fill keeps 
     assert.equal(rows.find(r => r.kind === 'plan')?.status, 'late')
     assert.equal(rows.find(r => r.kind === 'plan')?.missingAtDeadline, true)
     f.service.reconcile(); f.service.reconcile()
-    assert.equal(f.store.list('weeklyMissing').length, 3)
-    assert.equal(f.service.view(f.manager, '2026-09-07').cycle?.rosterIds.length, 2)
+    assert.equal(f.store.list('weeklyMissing').length, 5)
+    assert.equal(f.service.view(f.manager, '2026-09-07').cycle?.rosterIds.length, 3)
   } finally { f.store.close() }
 })
 
@@ -117,7 +117,7 @@ test('effective full week, no future empty claims, stopped-server catchup and ne
     f.service.reconcile()
     assert.equal(f.store.list('weeklyCycles').length, 3)
     assert.equal(f.service.view(f.manager, '2026-09-14').cycle?.rosterIds.includes(joined.id), true)
-    assert.equal(f.store.list('weeklyMissing').length, 16)
+    assert.equal(f.store.list('weeklyMissing').length, 22)
   } finally { f.store.close() }
 })
 
@@ -161,7 +161,7 @@ test('rule pause resumes from next full week without liabilities for paused week
     assert.equal(f.service.view(f.manager, '2026-09-14').cycle, null)
     assert.equal(f.service.view(f.manager, '2026-09-21').cycle, null)
     assert.ok(f.service.view(f.manager, '2026-09-28').cycle)
-    assert.equal(f.store.list('weeklyMissing').length, 8)
+    assert.equal(f.store.list('weeklyMissing').length, 12)
   } finally { f.store.close() }
 })
 

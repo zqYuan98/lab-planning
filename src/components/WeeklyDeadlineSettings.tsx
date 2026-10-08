@@ -30,7 +30,7 @@ export default function WeeklyDeadlineSettings({ view, onUpdated }: Props) {
           await finishSaved(() => onUpdated(`截止规则已保存${fromWeek ? `，自 ${fromWeek} 当周生效` : '，从下一完整周生效'}`), rule.version)
         } finally { setBusy(false) }
       }}>
-        <Field label="后续周期截止方式"><select name="mode" defaultValue={latest?.mode ?? 'friday'} onChange={editPolicy}><option value="friday">固定周五 16:00</option><option value="last_workday">当周最后一个工作日 16:00（含调休）</option></select></Field>
+        <Field label="后续周期截止方式"><select name="mode" defaultValue={latest?.mode ?? 'last_workday'} onChange={editPolicy}><option value="friday">固定周五 16:00</option><option value="last_workday">当周最后一个工作日 16:00（含调休）</option></select></Field>
         {view.workCalendar && <><WorkCalendarField overrides={view.workCalendar.overrides} onChange={editPolicy} /><p className="form-hint">此日历与「进展、催办与摘要」共用；协作功能关闭时日历仍有效。保存日历也会影响协作功能后续的工作日判断，不会自动改写已生成提报周期。</p></>}
       </Form>
     </section>

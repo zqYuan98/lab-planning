@@ -5,6 +5,7 @@ import type { Notification, NotificationDelivery } from '../shared/notifications
 import type { WeeklyCycle, WeeklyDeadlinePolicy, WeeklyDuty, WeeklyRule } from '../shared/weekly-submissions.ts'
 import type { DingTalkClient, DingTalkIdentity } from '../server/dingtalk.ts'
 import { Store } from '../server/store.ts'
+import { WeeklySubmissionService } from '../server/weekly-submissions.ts'
 import { currentReminderSlot, runNotificationReminders } from '../server/notification-reminders.ts'
 import { currentNotificationMessage, runNotificationWorker } from '../server/notification-worker.ts'
 import { enqueueNotification, getNotificationSettings, updateNotificationSettings } from '../server/notifications.ts'
@@ -48,23 +49,23 @@ function fixture(t: TestContext, deadlineAt: string | null, options: { noCycle?:
   return { store, manager, member, run, notifications, setDeadline, snapshot }
 }
 
-function externalFixture(t: TestContext, deadlineAt: string) {
-  const f = fixture(t, deadlineAt)
+function externalFixture(t: TestContext, deadlineAt: string, options: Parameters<typeof fixture>[2] = {}) {
+  const f = fixture(t, deadlineAt, options)
   const env = { APP_ORIGIN: 'https://planning.test', DINGTALK_NOTIFICATIONS_ENABLED: 'true', DINGTALK_DEPLOYMENT_ID: 'holiday-test-only', DINGTALK_CORP_ID: 'holiday-corp', DINGTALK_NOTIFICATION_CONTENT_MODE: 'summary' }
   const previous = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]))
   Object.assign(process.env, env)
   t.after(() => { for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value } })
   for (const user of [f.manager, f.member]) f.store.insert<DingTalkIdentity>('externalIdentities', { provider: 'dingtalk', corpId: env.DINGTALK_CORP_ID, userid: `fake-${user.id}`, userId: user.id })
   updateNotificationSettings(f.store, { ...getNotificationSettings(f.store), externalEnabled: true, pilotUserIds: [f.manager.id, f.member.id] }, true)
-  const sent: string[] = []
+  const sent: string[] = [], recipients: string[] = []
   const client: DingTalkClient = {
     configured: true, corpId: env.DINGTALK_CORP_ID, clientId: 'fake-client',
     getIdentity: async () => ({ corpId: env.DINGTALK_CORP_ID, userid: 'fake-member' }),
-    send: async (_userid, message) => { sent.push(message.body); return { taskId: `fake-${sent.length}` } },
+    send: async (userid, message) => { recipients.push(userid); sent.push(message.body); return { taskId: `fake-${sent.length}` } },
     result: async () => 'pending',
   }
   const delivery = (row: Notification) => f.store.get<NotificationDelivery>('notificationDeliveries', row.id)!
-  return { ...f, sent, client, delivery }
+  return { ...f, sent, recipients, client, delivery }
 }
 
 test('deadline slots use the Shanghai deadline date, preserve legacy Friday, and reject no-duty weeks', () => {
@@ -110,8 +111,36 @@ test('a Wednesday effective policy creates its first cycle from a read-only dead
   assert.equal(f.snapshot(), before, 'a non-deadline tick must not initialize a cycle')
   f.run('2026-09-16T01:00:00Z')
   assert.equal(f.store.get<WeeklyCycle>('weeklyCycles', WEEK)?.deadlineAt, WEDNESDAY)
-  assert.equal(f.notifications().length, 1)
-  assert.equal(f.notifications()[0].targets.length, 2)
+  assert.equal(f.notifications().length, 2)
+  assert.deepEqual(f.notifications().map(row => row.recipientId).sort(), [f.manager.id, f.member.id].sort())
+  assert.ok(f.notifications().every(row => row.targets.length === 2))
+})
+
+test('a manager receives their own reminder through the provider and still receives the department summary after submitting', async t => {
+  const f = externalFixture(t, FRIDAY, { noCycle: true })
+  const morning = new Date('2026-09-18T01:00:00Z')
+  f.run(morning.toISOString())
+  const reminder = f.notifications().find(row => row.recipientId === f.manager.id)!
+  assert.equal(reminder.kind, 'weekly_reminder')
+  assert.deepEqual(reminder.targets.map(target => target.kind), ['results', 'plan'])
+  assert.ok(reminder.targets.every(target => f.store.get<WeeklyDuty>('weeklyDuties', target.id)?.ownerId === f.manager.id))
+  assert.equal(currentNotificationMessage(f.store, f.manager, reminder, morning, true)?.targets.length, 2)
+  await runNotificationWorker(f.store, f.client, morning)
+  assert.deepEqual(f.recipients.slice().sort(), [`fake-${f.manager.id}`, `fake-${f.member.id}`].sort())
+  const service = new WeeklySubmissionService(f.store, () => new Date('2026-09-18T03:00:00Z'))
+  for (const duty of service.view(f.manager, WEEK).duties.filter(row => row.ownerId === f.manager.id)) {
+    service.submit(f.manager, { dutyId: duty.id, version: duty.version, manifest: [], note: '已完成协调，下周暂无新增安排', requestId: `manager-${duty.kind}` })
+  }
+  assert.equal(currentNotificationMessage(f.store, f.manager, reminder, new Date('2026-09-18T03:01:00Z'), true), undefined)
+  f.run('2026-09-18T07:00:00Z')
+  await runNotificationWorker(f.store, f.client, new Date('2026-09-18T07:00:00Z'))
+  assert.equal(f.recipients.filter(id => id === `fake-${f.manager.id}`).length, 1, 'completed manager receives no afternoon reminder')
+  f.run('2026-09-18T08:05:00Z')
+  const summary = f.notifications().find(row => row.kind === 'weekly_summary')!
+  assert.equal(summary.recipientId, f.manager.id)
+  assert.match(summary.body, /截止未交：2项（1人）/)
+  await runNotificationWorker(f.store, f.client, new Date('2026-09-18T08:05:00Z'))
+  assert.equal(f.recipients.filter(id => id === `fake-${f.manager.id}`).length, 2, 'manager retains department-summary delivery')
 })
 
 test('a whole-week rest cycle creates no reminder, summary, duty or missed fact', t => {

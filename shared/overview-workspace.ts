@@ -11,6 +11,7 @@ export interface DepartmentOverviewResponse extends WorkspacePage<OverviewRow> {
   operationEpoch: string; startDate: string; endDate: string; summary: OverviewSummary; members: OverviewMember[];
   memberOptions: Pick<User, 'id' | 'name' | 'active'>[]; projectOptions: { id: string; name: string }[];
   groups: { status: OverviewGroup[]; owner: OverviewGroup[]; project: OverviewGroup[] };
+  goalCoverage: { month: string; total: number; published: number; withoutTasks: number; preview: { id: string; title: string }[] };
 }
 export type OverviewDrill = Pick<WorkFilters, 'ownerId' | 'projectId' | 'status' | 'riskOnly'>
 export type PersonalPlan = Pick<MonthlyPlan, 'id' | 'title' | 'month' | 'ownerId' | 'priority' | 'status' | 'acceptanceStatus' | 'dueDate' | 'isTemporary'> & { ownerName: string }

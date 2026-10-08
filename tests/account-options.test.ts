@@ -35,8 +35,8 @@ test('history mode includes approved inactive users without turning registration
 })
 
 test('ambiguous historical rosters can restore approved inactive members without treating pending accounts as staff', () => {
-  assert.deepEqual(historicalRosterAccounts(users).map(person => person.id), ['active', 'inactive'])
-  assert.equal(accountDisplayName(historicalRosterAccounts(users)[1]), 'inactive（已停用）')
+  assert.deepEqual(historicalRosterAccounts([...users, user('observer', { role: 'observer' })]).map(person => person.id), ['manager', 'active', 'inactive'])
+  assert.equal(accountDisplayName(historicalRosterAccounts(users)[2]), 'inactive（已停用）')
   assert.ok(!assignmentAccounts(users).some(person => person.id === 'inactive'))
 })
 

@@ -4,6 +4,7 @@ import WeeklyProgressForm from '../components/WeeklyProgressForm'
 import { openTask } from '../navigation'
 import { useEffect, useRef, useState } from 'react'
 import type { WeeklyWorkspace } from '../../shared/period-workspace'
+import type { WorkWeekCalendar } from '../../shared/china-work-calendar'
 import { useWorkspaceQuery } from '../workspace-query'
 import { captureMutationContext } from '../mutation-response'
 import { mergePeriod, periodScope, PeriodPager, PeriodEditorDirectory, usePeriodCandidates } from '../period-workspace'
@@ -29,6 +30,7 @@ import { draftText, draftChecked } from '../draft-recovery'
 import { assignmentAttempt, type SubmissionAttempt } from '../notification-navigation'
 import WorkOriginLabel, { workSource } from '../components/WorkOriginLabel'
 import WeeklySubmissionPanel from '../components/WeeklySubmissionPanel'
+import WorkWeekCalendarSummary from '../components/WorkWeekCalendarSummary'
 import NotificationStatus from '../components/NotificationStatus'
 import { TaskCancellationAction, TaskCancellationModal } from '../components/TaskCancellation'
 import { PriorityBadge, WorkTypeBadge, TaskLegend, ContextHelp } from '../components/TaskSignals'
@@ -209,6 +211,8 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
     )
   const official = weekRecords.filter(isEffectiveWeeklyRecord)
   const pending = weekRecords.filter(record => record.submitted && !isEffectiveWeeklyRecord(record))
+  const recordCalendar = period?.value?.calendar?.week === week ? period.value.calendar
+    : [submissionView?.calendar?.current, submissionView?.calendar?.next].find(calendar => calendar?.week === week)
   const effort = period?.value?.effortSummary ?? summarizeEffort(weekRecords, data.plans, data.projects)
   const summary = period?.value?.summary ?? { official: official.length, pending: pending.length, done: official.filter(record => record.status === 'done').length, blocked: official.filter(record => record.status === 'blocked').length }
   async function openRecord(type: string, record: WeeklyRecord) {
@@ -263,8 +267,9 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
         <WeeklySubmissionPanel data={data} refresh={refresh} notify={notify} week={cycleWeek} onChangeCycle={selectRecordWeek} onSelectWork={selectWork} reviewRequest={reviewRequest} onViewChange={setSubmissionView} />
       </div>
       <div ref={recordSection} tabIndex={-1} className="weekly-record-context">
-        <h2>周工作记录 · {week} ～ {advanceWeek(week,6)}</h2>
-        <WeeklyRecordSubmissionGuidance noSubmissionDuty={noSubmissionDuty} />
+        <h2>周工作记录 · 自然周 {week} ～ {advanceWeek(week,6)}</h2>
+        {recordCalendar && <WorkWeekCalendarSummary calendar={recordCalendar} label="记录周" />}
+        <WeeklyRecordSubmissionGuidance noSubmissionDuty={noSubmissionDuty} wholeWeekRest={submissionView?.calendar ? submissionView.calendar.current.workingDays.length === 0 : undefined} />
         {workContext && <div className="navigation-context"><span>正在处理{nameOf(data,workContext.ownerId)}的{workContext.kind === 'results' ? '完成情况' : '下周计划'}（记录周 {workContext.contentWeek}，提报周期 {workContext.cycleWeek}）。</span>{!(noSubmissionDuty && workContext.cycleWeek === cycleWeek) && <button className="button primary" onClick={() => reviewWork(workContext)}>返回核对并提交整份提报</button>}</div>}
       </div>
       {deletedRecord && <DeletedWeeklyRecordNotice data={data} record={deletedRecord} onRelink={() => { detailSequence.current++; setSelected(deletedRecord); setModal('relink') }} onRecreate={task => {
@@ -350,7 +355,7 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
           </button>
         </div>
       )}
-      <section className="context-box" aria-label="本周投入汇总"><p>本周投入：预计 {effort.plannedEffortDays} 人日 · 实际 {effort.actualEffortDays} 人日 · 未填预计 {effort.missingPlannedCount} 项 / 实际 {effort.missingActualCount} 项</p>{effort.byOwnerWeek.filter(item => item.overCapacity).map(item => <p key={`${item.ownerId}:${item.weekStart}`} role="status">容量提示：{nameOf(data, item.ownerId)}本周预计或实际投入超过 5 人日，请核对安排。</p>)}<details><summary>按项目查看投入</summary>{effort.byProject.map(item => <p key={item.projectId ?? 'none'}>{item.projectName}：预计 {item.plannedEffortDays} / 实际 {item.actualEffortDays} 人日（未填 {item.missingPlannedCount} / {item.missingActualCount} 项）</p>)}</details><small>覆盖当前成员筛选的全部有效周记录，不受列表分页、关键词和状态筛选影响。</small></section>
+      <section className="context-box" aria-label="本周投入汇总"><p>本周投入：预计 {effort.plannedEffortDays} 人日 · 实际 {effort.actualEffortDays} 人日 · 未填预计 {effort.missingPlannedCount} 项 / 实际 {effort.missingActualCount} 项</p>{recordCalendar && <p>本周每人工作日容量：{recordCalendar.workingDays.length} 人日。</p>}{effort.byOwnerWeek.filter(item => item.overCapacity).map(item => <WeeklyCapacityNotice key={`${item.ownerId}:${item.weekStart}`} name={nameOf(data, item.ownerId)} capacityDays={item.capacityDays ?? recordCalendar?.workingDays.length} />)}<details><summary>按项目查看投入</summary>{effort.byProject.map(item => <p key={item.projectId ?? 'none'}>{item.projectName}：预计 {item.plannedEffortDays} / 实际 {item.actualEffortDays} 人日（未填 {item.missingPlannedCount} / {item.missingActualCount} 项）</p>)}</details><small>覆盖当前成员筛选的全部有效周记录，不受列表分页、关键词和状态筛选影响。</small></section>
       <div className="weekly-summary">
         <span>
           已纳入周统计 <strong>{summary.official}</strong> 项
@@ -655,9 +660,10 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
         }}><Field label="删除原因" hint="例如：早期录入未关联月度临时计划，现需调整后重建。"><textarea name="reason" required rows={3} maxLength={LIMITS.text} /></Field></Form>
       </Modal>}
       {(modal === 'create' || modal === 'temporary') && (
-        period ? <PeriodEditorDirectory data={data} onCancel={close}>{editorData => <WeeklyCreate data={editorData} week={week} temporary={modal === 'temporary'} initialOwnerId={workContext?.ownerId || owner || (manager ? '' : data.user.id)} initialTask={creationTask} onClose={close} onSaved={saved} live />}</PeriodEditorDirectory> : <WeeklyCreate
+        period ? <PeriodEditorDirectory data={data} onCancel={close}>{editorData => <WeeklyCreate data={editorData} week={week} calendar={recordCalendar} temporary={modal === 'temporary'} initialOwnerId={workContext?.ownerId || owner || (manager ? '' : data.user.id)} initialTask={creationTask} onClose={close} onSaved={saved} live />}</PeriodEditorDirectory> : <WeeklyCreate
           data={data}
           week={week}
+          calendar={recordCalendar}
           temporary={modal === 'temporary'}
           initialOwnerId={workContext?.ownerId || owner || (manager ? '' : data.user.id)}
           initialTask={creationTask}
@@ -784,11 +790,12 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
     </>
   )
 }
-export function WeeklyRecordSubmissionGuidance({ noSubmissionDuty }: { noSubmissionDuty: boolean }) {
+export function WeeklyRecordSubmissionGuidance({ noSubmissionDuty, wholeWeekRest = true }: { noSubmissionDuty: boolean; wholeWeekRest?: boolean }) {
+  const noDutyReason = wholeWeekRest ? '本提报周期整周休息' : '按本提报周期已保存规则'
   return <>
-    <p>{noSubmissionDuty ? '本提报周期整周休息，无须提交整份提报；仍可保存周工作记录。' : '完成记录后，请核对并提交整份提报。'}</p>
+    <p>{noSubmissionDuty ? `${noDutyReason}，无须提交整份提报；仍可保存周工作记录。` : '完成记录后，请核对并提交整份提报。'}</p>
     <ContextHelp title="周记录与整份提报有什么区别">
-      <p>{noSubmissionDuty ? '保存单条记录用于更新工作。本提报周期整周休息，无须正式提报，也不计缺交。' : '保存单条记录用于更新工作；适用审核的计划通过后纳入周统计。完成填写后，请核对并提交整份提报。'}</p>
+      <p>{noSubmissionDuty ? `保存单条记录用于更新工作。${noDutyReason}，无须正式提报，也不计缺交。` : '保存单条记录用于更新工作；适用审核的计划通过后纳入周统计。完成填写后，请核对并提交整份提报。'}</p>
       <p>同一任务可以持续跨周，每周承诺、实际结果和证据分别保存。</p>
     </ContextHelp>
   </>
@@ -815,9 +822,23 @@ function WeeklyRelink({ data, task, onClose, onSaved }: { data: PageProps['data'
     {candidates.error ? <div className="error" role="alert">{candidates.error}<button onClick={candidates.retry}>重新读取目标</button></div> : !candidates.value ? <p role="status">正在读取责任人参与的已发布目标…</p> : <Form onCancel={onClose} onSubmit={async event => { await api(`/tasks/${task.id}/relink`, json({ ...Object.fromEntries(new FormData(event.currentTarget)), version: task.version })); await onSaved('任务月度关联已调整') }}><Field label="关联已发布月度目标"><select name="monthlyPlanId" required defaultValue={task.monthlyPlanId || ''}><option value="" disabled>请选择目标</option>{candidates.value.plans.map(plan => <option key={plan.id} value={plan.id}>{plan.month} · {plan.title}</option>)}</select></Field><Field label="调整原因"><textarea name="reason" rows={3} required /></Field></Form>}
   </Modal>
 }
+export function WeeklyCapacityNotice({ name, capacityDays }: { name: string; capacityDays?: number }) {
+  return <p role="status">容量提示：{name}本周预计或实际投入{capacityDays === undefined ? '超出已保存容量' : `超过 ${capacityDays} 人日（本周工作日容量）`}，请核对安排。</p>
+}
+
+export function WeeklyTaskDeadlineField({ calendar, planDueDate }: { calendar?: WorkWeekCalendar; planDueDate?: string }) {
+  const defaultDueDate = planDueDate || calendar?.workingDays.at(-1) || ''
+  const hint = calendar && !calendar.workingDays.length
+    ? '所选自然周整周休息，请按实际安排核对截止日期。'
+    : planDueDate ? '沿用月度目标截止日期，可按任务实际安排调整。'
+      : calendar ? '默认采用所选周最后一个工作日（含调休）；修改所属周后请核对截止日期。' : '请按任务实际安排选择截止日期。'
+  return <Field label="任务截止日期" hint={hint}><input name="dueDate" type="date" defaultValue={defaultDueDate} required /></Field>
+}
+
 function WeeklyCreate({
   data: initialData,
   week,
+  calendar,
   temporary,
   initialTask,
   initialOwnerId,
@@ -827,6 +848,7 @@ function WeeklyCreate({
 }: {
   data: PageProps['data']
   week: string
+  calendar?: WorkWeekCalendar
   temporary: boolean
   initialTask?: Task
   initialOwnerId: string
@@ -1029,14 +1051,7 @@ function WeeklyCreate({
             <Field label="任务说明">
               <textarea name="description" rows={2} />
             </Field>
-            <Field label="任务截止日期">
-              <input
-                name="dueDate"
-                type="date"
-                defaultValue={plan?.dueDate || addDays(week, 4)}
-                required
-              />
-            </Field>
+            <WeeklyTaskDeadlineField calendar={calendar} planDueDate={plan?.dueDate} />
             {temporary && (
               <Field label="临时工作原因">
                 <textarea

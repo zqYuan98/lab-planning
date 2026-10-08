@@ -96,7 +96,9 @@ test('business migration preserves the reviewed progress IDs and their related i
   const progress = f.progress(row)
   const receipt = f.submit()
   const packet = exportBusinessData(f.store, f.manager)
-  assert.equal(packet.formatVersion, 3)
+  // Fresh weekly rules now include the national work-calendar policy, which requires v7.
+  assert.equal(packet.formatVersion, 7)
+  assert.ok(packet.collections.weeklyRules[0].deadlinePolicies?.length)
   assert.deepEqual(packet.collections.weeklySubmissions[0].progressEventIds, [progress.progressEvent!.id])
   assert.equal(packet.collections.progressEvents.length, 1)
   const target = new Store(':memory:')

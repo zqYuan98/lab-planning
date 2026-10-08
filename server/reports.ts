@@ -9,6 +9,7 @@ import { callAiJson, readAiSettings, resolveAiSettings } from './ai-service.ts'
 import { buildReportFacts, validateFactText } from './report-agent-evidence.ts'
 import { annualGoalProgress } from '../shared/annual-goals.ts'
 import { summarizeEffort } from '../shared/effort.ts'
+import { readWorkCalendar } from './work-calendar.ts'
 import { reportTypeManaged } from './report-agent-policy.ts'
 import type { ReportFact } from '../shared/report-agent.ts'
 import { WeeklySubmissionService } from './weekly-submissions.ts'
@@ -71,7 +72,7 @@ export function buildReportSnapshot(store: Store, type: Report['type'], period: 
   const changes = store.list<AuditEvent>('events').filter(e => ['plan', 'plans', 'monthlyPlan'].includes(e.entityType) && relevantPlanIds.has(e.entityId)).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   const annualGoals = store.list<AnnualGoal>('annualGoals').filter(g => g.year === Number(period.slice(0, 4)))
   const effortRecords = type === 'monthly' ? weeklyRecords.filter(r => r.weekStart.startsWith(period)) : weeklyRecords
-  const effortSummary = { ...summarizeEffort(effortRecords, allPlans, store.list<Project>('projects')), basis: type === 'monthly' ? '按周一所属月份归集有效周记录；跨月周只计一次，空值不当作零，任务剩余人日不累计' : '按本周有效周记录归集；空值不当作零，任务剩余人日不累计' }
+  const effortSummary = { ...summarizeEffort(effortRecords, allPlans, store.list<Project>('projects'), readWorkCalendar(store).overrides), basis: type === 'monthly' ? '按周一所属月份归集有效周记录；跨月周只计一次，空值不当作零，任务剩余人日不累计；每周容量按生成时工作日历冻结' : '按本周有效周记录归集；空值不当作零，任务剩余人日不累计；每周容量按生成时工作日历冻结' }
   const annualGoalSummaries = annualGoals.map(goal => ({ goalId: goal.id, ...annualGoalProgress(goal, allPlans) }))
   return structuredClone({ effortSummary, annualGoalSummaries, plans, contextPlans, weeklyRecords, tasks, projects: store.list<Project>('projects'),
     users: store.list<User>('users').filter(registrationApproved).map(publicUser), annualGoals,

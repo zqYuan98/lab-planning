@@ -8,6 +8,7 @@ import { accountDisplayName, historicalRosterAccounts } from '../account-options
 import WorkOriginLabel from './WorkOriginLabel'
 import WeeklyDeadlineSettings from './WeeklyDeadlineSettings'
 import WeeklyReviewQueue from './WeeklyReviewQueue'
+import WorkWeekCalendarSummary from './WorkWeekCalendarSummary'
 import { weeklyDeadlineLabel } from '../weekly-deadline-flow'
 import { api, json, finishSaved, ApiError } from '../api'
 import { LatestRead } from '../latest-read'
@@ -104,10 +105,6 @@ export default function WeeklySubmissionPanel({ data: initialData, refresh, noti
     if (duty && sequence === selectedAction.current) open(duty, nextMode)
   }
   function closeMode() { selectedAction.current++; setMode('') }
-  function progress(duty: WeeklyDutyView) {
-    const value = submissionProgress(duty)
-    return <><span>已保存 {value.total} 项 · 已填{duty.kind === 'results' ? '进展' : '计划'} {value.filled} 项 · 草稿 {value.drafts} 项</span>{value.lastUpdatedAt && <small>最近更新：{dateTime(value.lastUpdatedAt)}</small>}</>
-  }
   function recordPreview(duty: WeeklyDutyView) {
     return <div className="submission-preview">{duty.records.filter(isActiveWeeklyRecord).map(row => <article key={row.id}>
       <strong>{data.tasks.find(t => t.id === row.taskId)?.title ?? '个人任务'}</strong><Badge tone={weeklyRecordState(row).tone}>{weeklyRecordState(row).label}</Badge>
@@ -147,18 +144,8 @@ export default function WeeklySubmissionPanel({ data: initialData, refresh, noti
         {view.deadlineAt !== null && view.rule.planReviewEffectiveWeek && <p className="submission-explanation">周计划审核从 {view.rule.planReviewEffectiveWeek} 提报周期开始，覆盖 {advanceWeek(view.rule.planReviewEffectiveWeek, 7)} 起的下周计划。提交时效与审核结果分别记录，日常进展更新不重审。</p>}
         {!view.cycle && view.deadlineAt !== null && <p className="submission-notice">{week < view.rule.effectiveWeek ? `规则自 ${view.rule.effectiveWeek} 当周起生效，历史周期不记缺交。` : week > view.serverNow.slice(0,10) ? '此截止周期尚未开始，可以先填写周任务草稿。' : '此周期已暂停提报，不计缺交。'}</p>}
         {view.deadlineAt !== null && view.cycle?.needsReview && <div className="submission-notice"><p>本周期应交名单待管理员核对，暂不认定缺交。</p>{manager && <button className="button secondary" onClick={() => setMode('roster')}>核对应交名单</button>}</div>}
-        {!manager && view.deadlineAt !== null && view.cycle && !view.cycle.needsReview && !ownDuties.length && <p className="submission-notice">你不在本周期应交名单中，无须补交。周中加入的成员从下一完整周开始计入。</p>}
-        {!manager && ownDuties.length === 2 && ownDuties.every(duty => ['on_time', 'late', 'exempt'].includes(duty.status)) && <p className="submission-notice">本周期两项内容已整份提交或获豁免；计划审核结果请查看下方，历史补交记录仍保留。</p>}
-        {!manager && ownDuties.length > 0 && <div className="submission-cards">{ownDuties.map(duty => <article key={duty.id} className="submission-card">
-          <div className="submission-card-top"><h3>{kindLabel(duty.kind)}</h3><Badge tone={tones[duty.status]}>{submissionProgress(duty).label}</Badge></div>
-          <PlanReviewStatus duty={duty} />
-          <p>{duty.kind === 'results' ? '如实更新实际进展，仍在进行中的工作也可提交。' : '核对下周所有任务安排后，确认整份计划。'}</p>
-          <div className="submission-facts"><span>记录周：{duty.contentWeek} ～ {advanceWeek(duty.contentWeek,6)}</span>{progress(duty)}<span>首次整份提交：{dateTime(duty.firstSubmittedAt)}</span></div>
-          {submissionChangeNotice(duty) && <p className="submission-notice">{submissionChangeNotice(duty)}</p>}
-          {duty.missingAtDeadline && <small>截止时未提交的记录已保留。</small>}
-          {duty.exemptionReason && <small>豁免原因：{duty.exemptionReason}</small>}
-          <div className="submission-actions"><button className="button secondary" onClick={() => selectWork(duty)}>{duty.kind === 'results' ? '填写本周进展' : '填写下周计划'}</button><button className="button primary" onClick={() => open(duty, 'submit')}><CheckCircle2 size={16} />{duty.latestSubmission ? '核对并提交修订' : '核对并正式提交'}</button><button className="button secondary" onClick={() => open(duty, 'detail')}>记录</button></div>
-        </article>)}</div>}
+        {view.deadlineAt !== null && view.cycle && !view.cycle.needsReview && !ownDuties.length && <p className="submission-notice">你不在本周期应交名单中，无须补交。周中加入的成员从下一完整周开始计入。{manager && view.rule.managerSubmissionEffectiveWeek && `管理员个人提报自 ${view.rule.managerSubmissionEffectiveWeek} 当周起计入；此前已截止的历史周期不追补。`}</p>}
+        <PersonalWeeklySubmissions actorId={data.user.id} duties={duties} onSelectWork={selectWork} onOpen={open} />
         {manager && view.deadlineAt !== null && view.cycle && !view.cycle.needsReview && <>
           <div className="submission-summary"><strong>{requiredPeople} 人应交 · {requiredDuties.length} 项</strong><span>周期名单 {roster.length} 人（含豁免）</span><span>{people} 人有缺交 · 共 {missing.length} 项</span><span>{duties.filter(d => d.status === 'late').length} 项已补交</span><span>{duties.filter(duty => duty.planReviewStatus === 'pending').length} 份计划待审核</span><span>任务完成率、提交时效与审核分别统计</span></div>
           <div className="submission-tools"><Field label="按提报状态筛选成员"><select value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="all">全部成员</option>{Object.entries(labels).map(([status, label]) => <option key={status} value={status}>{label}</option>)}</select></Field><Field label="应交项"><select value={kindFilter} onChange={event => setKindFilter(event.target.value)}><option value="all">两项全部</option><option value="results">本周完成情况</option><option value="plan">下周计划</option></select></Field><Field label="计划审核"><select value={reviewFilter} onChange={event => setReviewFilter(event.target.value)}><option value="all">全部审核状态</option>{Object.entries(planReviewLabels).map(([status, label]) => <option key={status} value={status}>{label}</option>)}</select></Field></div>
@@ -198,7 +185,7 @@ export default function WeeklySubmissionPanel({ data: initialData, refresh, noti
         <button className="button secondary" onClick={() => selectWork(selected)}>查看该成员该周全部记录</button>
         <h3>整份提报历史</h3>
         <div className="timeline">{selected.submissions.map((receipt, index) => <article key={receipt.id}><h3>第 {index + 1} 次提交 · {dateTime(receipt.submittedAt)}</h3><p>{receipt.records.length} 项记录 · {receipt.note || '无补充说明'}</p>{receipt.reason && <p>代录：{nameOf(data, receipt.actorId)} · {receipt.reason}</p>}{(selected.planReviews ?? []).filter(review => review.submissionId === receipt.id).map(review => <div className="submission-review-history" key={review.id}><Badge tone={review.decision === 'approved' ? 'green' : 'red'}>{review.decision === 'approved' ? '此版本审核通过' : '此版本已退回'}</Badge><p>{nameOf(data, review.reviewedBy)} · {dateTime(review.reviewedAt)}{review.reason ? ` · ${review.reason}` : ''}</p></div>)}<details><summary>查看本次提交快照</summary><WeeklySubmissionSnapshot submission={receipt} data={data} /></details></article>)}{selected.adjustments.map(event => <article key={event.id}><h3>{{ exempt: '豁免', revoke_exemption: '撤销豁免', invalidate: '作废提交', restore: '恢复提交' }[event.action]} · {dateTime(event.occurredAt)}</h3><p>{nameOf(data, event.actorId)} · {event.reason}</p></article>)}{!selected.submissions.length && <p>尚未提交整份提报；上方已保存的周记录仍可查看。</p>}</div>
-        {manager && <div className="submission-actions">{selected.kind === 'plan' && selected.planReviewStatus === 'pending' && <button className="button primary" onClick={() => open(selected, 'review')}>审核计划</button>}<button className="button secondary" onClick={() => open(selected, 'submit')}>代录提报</button><button className="button secondary" onClick={() => { setAdjustAction('exempt'); setMode('adjust') }}>豁免 / 纠错</button></div>}
+        {manager && <div className="submission-actions">{selected.kind === 'plan' && selected.planReviewStatus === 'pending' && <button className="button primary" onClick={() => open(selected, 'review')}>审核计划</button>}<button className="button secondary" onClick={() => open(selected, 'submit')}>{selected.ownerId === data.user.id ? '核对并正式提交' : '代录提报'}</button><button className="button secondary" onClick={() => { setAdjustAction('exempt'); setMode('adjust') }}>豁免 / 纠错</button></div>}
       </Modal>}
 
       {mode === 'review' && selected?.latestSubmission && manager && <Modal title="审核下周计划" onClose={closeMode} wide>
@@ -245,6 +232,7 @@ export default function WeeklySubmissionPanel({ data: initialData, refresh, noti
 
       {mode === 'rule' && view && manager && <Modal title="周提报规则" onClose={closeMode}>
         <p>分别提交本周完成情况和下周计划。规则自 {view.rule.effectiveWeek} 起生效。</p><p>启停从下一个完整周生效，已形成的应交项、缺交和补交记录保留。</p>
+        {view.rule.managerSubmissionEffectiveWeek && <p>管理员同样需要提交本人的完成情况和下周计划，自 {view.rule.managerSubmissionEffectiveWeek} 当周起计入。此前已截止的历史周期不追补；人工确认的名单保持原结果。</p>}
         {view.rule.planReviewEffectiveWeek && <p>下周计划审核自 {view.rule.planReviewEffectiveWeek} 提报周期开始，覆盖 {advanceWeek(view.rule.planReviewEffectiveWeek, 7)} 当周计划。原有历史无需补审；管理员下发的安排视为已确认，代录计划仍需审核。</p>}
         <Form onCancel={closeMode} onSubmit={async event => { await api('/weekly-submissions/rule', json({ version: view.rule.version, enabled: new FormData(event.currentTarget).get('enabled') === 'true' }, 'PUT')); await saved('提报规则已更新') }}>
           <Field label="后续周期"><select name="enabled" defaultValue={String(view.rule.enabled)}><option value="true">启用周提报检查</option><option value="false">暂停后续周期检查</option></select></Field>
@@ -255,8 +243,44 @@ export default function WeeklySubmissionPanel({ data: initialData, refresh, noti
   )
 }
 
-export function WeeklyDeadlineBanner({ view }: { view: Pick<WeeklySubmissionView, 'week' | 'nextWeek' | 'deadlineAt' | 'deadlinePolicy'> }) {
-  return <div className="submission-deadline"><Clock3 size={16} /><strong>{view.deadlineAt === null ? weeklyDeadlineLabel(null) : `截止：${weeklyDeadlineLabel(view.deadlineAt)}`}</strong>{view.deadlinePolicy && <span>{view.deadlinePolicy.mode === 'last_workday' ? '按当周最后一个工作日截止' : '固定周五截止'}</span>}<span>完成情况：{view.week} ～ {advanceWeek(view.week,6)} · 下周计划：{view.nextWeek} ～ {advanceWeek(view.nextWeek,6)}</span>{view.deadlineAt === null && <span>无须正式提报，不计缺交；仍可安排任务和记录进展。</span>}</div>
+function progress(duty: WeeklyDutyView) {
+  const value = submissionProgress(duty)
+  return <><span>已保存 {value.total} 项 · 已填{duty.kind === 'results' ? '进展' : '计划'} {value.filled} 项 · 草稿 {value.drafts} 项</span>{value.lastUpdatedAt && <small>最近更新：{dateTime(value.lastUpdatedAt)}</small>}</>
+}
+
+/** Personal responsibilities are visible for every submitter, including department managers. */
+export function PersonalWeeklySubmissions({ actorId, duties, onSelectWork, onOpen }: {
+  actorId: string; duties: WeeklyDutyView[]; onSelectWork: (duty: WeeklyDutyView) => void
+  onOpen: (duty: WeeklyDutyView, mode: 'submit' | 'detail') => void
+}) {
+  const ownDuties = duties.filter(duty => duty.ownerId === actorId)
+  if (!ownDuties.length) return null
+  return <section aria-label="我的周提报"><h3>我的周提报</h3>
+    {ownDuties.length === 2 && ownDuties.every(duty => ['on_time', 'late', 'exempt'].includes(duty.status)) && <p className="submission-notice">本周期两项内容已整份提交或获豁免；计划审核结果请查看下方，历史补交记录仍保留。</p>}
+    <div className="submission-cards">{ownDuties.map(duty => <article key={duty.id} className="submission-card">
+      <div className="submission-card-top"><h3>{kindLabel(duty.kind)}</h3><Badge tone={tones[duty.status]}>{submissionProgress(duty).label}</Badge></div>
+      <PlanReviewStatus duty={duty} />
+      <p>{duty.kind === 'results' ? '如实更新实际进展，仍在进行中的工作也可提交。' : '核对下周所有任务安排后，确认整份计划。'}</p>
+      <div className="submission-facts"><span>记录周：{duty.contentWeek} ～ {advanceWeek(duty.contentWeek,6)}</span>{progress(duty)}<span>首次整份提交：{dateTime(duty.firstSubmittedAt)}</span></div>
+      {submissionChangeNotice(duty) && <p className="submission-notice">{submissionChangeNotice(duty)}</p>}
+      {duty.missingAtDeadline && <small>截止时未提交的记录已保留。</small>}
+      {duty.exemptionReason && <small>豁免原因：{duty.exemptionReason}</small>}
+      <div className="submission-actions"><button className="button secondary" onClick={() => onSelectWork(duty)}>{duty.kind === 'results' ? '填写本周进展' : '填写下周计划'}</button><button className="button primary" onClick={() => onOpen(duty, 'submit')}><CheckCircle2 size={16} />{duty.latestSubmission ? '核对并提交修订' : '核对并正式提交'}</button><button className="button secondary" onClick={() => onOpen(duty, 'detail')}>记录</button></div>
+    </article>)}</div>
+  </section>
+}
+
+export function WeeklyDeadlineBanner({ view }: { view: Pick<WeeklySubmissionView, 'week' | 'nextWeek' | 'deadlineAt' | 'deadlinePolicy' | 'calendar'> }) {
+  const current = view.calendar?.current
+  const lastWorkingDay = current?.workingDays.at(-1)
+  const calendarDeadline = lastWorkingDay ? new Date(`${lastWorkingDay}T16:00:00+08:00`).getTime() : null
+  const savedDeadline = view.deadlineAt === null ? null : new Date(view.deadlineAt).getTime()
+  const differsFromCalendar = !!current && (savedDeadline !== calendarDeadline || !!view.deadlinePolicy && view.deadlinePolicy.workingDays.join(',') !== current.workingDays.join(','))
+  return <>
+    <div className="submission-deadline"><Clock3 size={16} /><strong>{view.deadlineAt === null ? current?.workingDays.length ? '按已保存规则，本周期无提报义务' : weeklyDeadlineLabel(null) : `截止：${weeklyDeadlineLabel(view.deadlineAt)}`}</strong>{view.deadlinePolicy && <span>{view.deadlinePolicy.mode === 'last_workday' ? '按当周最后一个工作日截止' : '固定周五截止'}</span>}<span>自然周 · 完成情况：{view.week} ～ {advanceWeek(view.week,6)} · 下周计划：{view.nextWeek} ～ {advanceWeek(view.nextWeek,6)}</span>{view.deadlineAt === null && <span>无须正式提报，不计缺交；仍可安排任务和记录进展。</span>}</div>
+    {view.calendar && <div className="submission-work-calendar"><WorkWeekCalendarSummary calendar={view.calendar.current} /><WorkWeekCalendarSummary calendar={view.calendar.next} label="下周" /><p className="submission-explanation">工作日按共享日历计算，计入已载入的节假日与调休；周记录仍按周一至周日归档。</p></div>}
+    {differsFromCalendar && <p className="submission-notice">本周期保存的截止规则与最新工作日历不同，仍以上方截止时间为准。管理员可在「提报规则」中预览当前周期截止修复；已有提交或缺交等历史事实时，原记录保留。</p>}
+  </>
 }
 
 export function PlanReviewStatus({ duty }: { duty: WeeklyDutyView }) {

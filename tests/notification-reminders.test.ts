@@ -37,13 +37,16 @@ function fixture() {
     })
   }
   const manager = user('manager', 'manager'), member = user('member'), other = user('other')
-  service.getRule()
+  // These cases exercise the explicitly retained Friday policy. National-calendar
+  // last-workday reminders (including this week's Sunday makeup day) have separate coverage.
+  const rule = service.getRule()
+  store.update<WeeklyRule>('weeklyRules', rule.id, rule.version, { deadlinePolicies: [{ version: 1, fromWeek: WEEK, mode: 'friday', calendarOverrides: {} }] })
   const set = (value: string) => { now = new Date(value) }
   set('2026-09-18T00:00:00Z')
   service.reconcile()
   const run = (value: string) => { set(value); runNotificationReminders(store, now) }
   const notifications = (recipientId?: string) => store.list<Notification>('notifications').filter(row => !recipientId || row.recipientId === recipientId)
-  const duty = (owner = member, kind: 'results' | 'plan' = 'results') => service.view(owner, WEEK).duties.find(row => row.kind === kind)!
+  const duty = (owner = member, kind: 'results' | 'plan' = 'results') => service.view(owner, WEEK).duties.find(row => row.ownerId === owner.id && row.kind === kind)!
   function submit(owner = member, kind: 'results' | 'plan' = 'results') {
     const current = duty(owner, kind)
     return service.submit(owner, {
@@ -68,7 +71,7 @@ test('Friday Shanghai slots combine formal duties and keep content week distinct
     f.run('2026-09-18T00:59:59Z')
     assert.equal(f.notifications().length, 0)
     f.run('2026-09-18T01:00:00Z')
-    assert.equal(f.notifications().length, 2)
+    assert.equal(f.notifications().length, 3)
     const notification = f.notifications(f.member.id)[0]
     assert.equal(notification.kind, 'weekly_reminder')
     assert.equal(notification.actionable, false)
@@ -82,7 +85,7 @@ test('Friday Shanghai slots combine formal duties and keep content week distinct
     assert.match(notification.body, /正式提报截止：2026-09-18 16:00（北京时间）/)
     f.run('2026-09-18T01:04:59Z')
     runNotificationReminders(f.store, new Date('2026-09-18T01:02:00Z'))
-    assert.equal(f.notifications().length, 2, 'repeated workers reuse persisted slot event keys')
+    assert.equal(f.notifications().length, 3, 'repeated workers reuse persisted slot event keys, including the manager’s own reminder')
     f.run('2026-09-18T07:00:00Z')
     assert.equal(f.notifications(f.member.id).length, 2, 'afternoon is a distinct reminder event')
     assert.match(f.notifications(f.member.id)[1].body, /提醒时间：2026-09-18 15:00/)
@@ -137,7 +140,10 @@ test('exempt obligations, inactive accounts, unapproved accounts and users outsi
     f.store.update<User>('users', f.other.id, f.other.version, { registrationStatus: 'pending' })
     f.user('joined-after-roster')
     f.run('2026-09-18T07:00:00Z')
-    assert.equal(f.notifications().length, 2)
+    assert.equal(f.notifications().length, 4)
+    assert.equal(f.notifications(f.member.id).length, 1, 'the inactive member receives no afternoon reminder')
+    assert.equal(f.notifications(f.other.id).length, 1, 'the unapproved member receives no afternoon reminder')
+    assert.equal(f.notifications(f.manager.id).length, 2, 'the active manager still owes their own submissions')
     assert.equal(f.notifications('joined-after-roster').length, 0)
   } finally { f.store.close() }
 })
@@ -173,7 +179,7 @@ test('only the latest current slot recovers, without earlier slot, day or week r
     runNotificationReminders(f.store, new Date('invalid'))
     assert.equal(f.notifications().length, 0)
     f.run('2026-09-25T07:00:00Z')
-    assert.equal(f.notifications().length, 2)
+    assert.equal(f.notifications().length, 3)
     assert.ok(f.notifications().every(row => row.targets.every(target => target.cycleWeek === '2026-09-21')))
     assert.ok(f.notifications().every(row => row.eventKey.includes(':15:00:')))
   } finally { f.store.close() }
@@ -183,14 +189,14 @@ test('a recovered morning slot emits once until 15:00 and an afternoon slot expi
   const f = fixture()
   try {
     f.run('2026-09-18T06:59:59Z')
-    assert.equal(f.notifications().length, 2)
+    assert.equal(f.notifications().length, 3)
     assert.ok(f.notifications().every(row => row.eventKey.includes(':09:00:')))
     assert.match(f.notifications(f.member.id)[0].body, /提醒时间：2026-09-18 14:59/)
     f.run('2026-09-18T07:59:59Z')
-    assert.equal(f.notifications().length, 4)
-    assert.ok(f.notifications().slice(2).every(row => row.eventKey.includes(':15:00:')))
+    assert.equal(f.notifications().length, 6)
+    assert.ok(f.notifications().slice(3).every(row => row.eventKey.includes(':15:00:')))
     f.run('2026-09-18T08:00:00Z')
-    assert.equal(f.notifications().length, 4)
+    assert.equal(f.notifications().length, 6)
   } finally { f.store.close() }
 })
 
@@ -220,8 +226,8 @@ test('manager summary separates cutoff misses, current debts and subsequent vali
     assert.equal(summary.recipientId, f.manager.id)
     assert.equal(summary.kind, 'weekly_summary')
     assert.deepEqual(summary.targets, [{ type: 'summary', id: WEEK, cycleWeek: WEEK, weekStart: WEEK }])
-    assert.match(summary.body, /截止未交：2项（2人）/)
-    assert.match(summary.body, /当前仍欠交：1项（1人）/)
+    assert.match(summary.body, /截止未交：4项（3人）/)
+    assert.match(summary.body, /当前仍欠交：3项（2人）/)
     assert.match(summary.body, /已补交：1项（1人）/)
     assert.match(summary.body, /当前豁免：1项（1人）/)
     f.run('2026-09-18T08:09:59Z')
@@ -236,8 +242,8 @@ test('late exemption keeps historical cutoff misses in manager summary', () => {
     f.exempt(f.member, 'results')
     f.run('2026-09-18T08:05:00Z')
     const summary = f.notifications(f.manager.id)[0]
-    assert.match(summary.body, /截止未交：4项（2人）/)
-    assert.match(summary.body, /当前仍欠交：3项（2人）/)
+    assert.match(summary.body, /截止未交：6项（3人）/)
+    assert.match(summary.body, /当前仍欠交：5项（3人）/)
     assert.match(summary.body, /已补交：0项（0人）/)
     assert.match(summary.body, /当前豁免：1项（1人）/)
   } finally { f.store.close() }
@@ -255,7 +261,7 @@ test('restoring an originally on-time receipt does not mislabel it as a late sub
     assert.equal(f.duty().status, 'on_time')
     f.run('2026-09-18T08:05:00Z')
     assert.match(f.notifications(f.manager.id)[0].body, /已补交：0项（0人）/)
-    assert.match(f.notifications(f.manager.id)[0].body, /当前仍欠交：3项（2人）/)
+    assert.match(f.notifications(f.manager.id)[0].body, /当前仍欠交：5项（3人）/)
   } finally { f.store.close() }
 })
 

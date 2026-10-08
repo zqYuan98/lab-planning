@@ -95,7 +95,7 @@ export default function DepartmentOverview({
     setSelectedView("");
   }
   const querySearch = useDebouncedSearch(config.query);
-  const parameters = new URLSearchParams({ period: config.period, date: config.date, includeInactive: String(!!config.includeInactive), ownerId: config.ownerId, projectId: config.projectId, status: config.status, q: querySearch, riskOnly: String(config.riskOnly), sort: config.sort, limit: '50' });
+  const parameters = new URLSearchParams({ period: config.period, date: config.date, includeInactive: String(!!config.includeInactive), includeCarryover: String(config.period !== 'all' && !!config.includeCarryover), ownerId: config.ownerId, projectId: config.projectId, status: config.status, q: querySearch, riskOnly: String(config.riskOnly), sort: config.sort, limit: '50' });
   if (cursors.at(-1)) parameters.set('cursor', cursors.at(-1)!);
   const query = useWorkspaceQuery<DepartmentOverviewResponse>(`/workspace/overview/department?${parameters}`, `${data.user.id}:${data.operationEpoch}:${data.accessScopeVersion}`, undefined, { onCursorStale: () => { const first = new URLSearchParams(parameters); first.delete('cursor'); setCursors(['']); return `/workspace/overview/department?${first}` } });
   const reloadFirst = () => { const first = new URLSearchParams(parameters); first.delete('cursor'); setCursors(['']); return query.reload(`/workspace/overview/department?${first}`) };
@@ -258,17 +258,17 @@ export default function DepartmentOverview({
       tone: "blue",
       value: summary.doing,
       unit: "项",
-      note: "本期最新执行状态",
+      note: config.period === 'all' ? "任务总体进展" : "本期最新阶段状态",
       active: false,
       action: () => onDrill({ status: "doing" }),
     },
     {
-      label: "自报完成",
+      label: config.period === 'all' ? "任务已完成" : "本期阶段完成",
       icon: CheckCircle2,
       tone: "green",
       value: summary.done,
       unit: "项",
-      note: "月度成果验收独立进行",
+      note: config.period === 'all' ? "已明确完成整个任务" : "阶段完成不代表整个任务完成",
       active: false,
       action: () => onDrill({ status: "done" }),
     },
@@ -400,6 +400,22 @@ export default function DepartmentOverview({
           </div>
         </div>
       </header>
+      <section className="ow-scope-note" aria-label="概览统计范围">
+        <p>{config.period === 'all'
+          ? '全部周期展示个人任务总台账，包含历史未完成和已完成任务；按任务编号去重，完成以整个任务状态为准。'
+          : '按所选周期展示周安排、所属月目标的个人任务和到期任务；阶段完成与整个任务完成分别显示。'} 默认隐藏停用成员与已作废任务。</p>
+        {config.period !== 'all' && <label className="checkbox-label">
+          <input type="checkbox" checked={!!config.includeCarryover} onChange={event => change({ includeCarryover: event.target.checked })} />
+          包含往期未完成任务（无本期周安排的标为未排周）
+        </label>}
+        {workspace?.goalCoverage && <div className="ow-goal-coverage">
+          <p>全部门 · {workspace.goalCoverage.month} 月度目标 {workspace.goalCoverage.total} 项，已发布 {workspace.goalCoverage.published} 项，其中 {workspace.goalCoverage.withoutTasks} 项尚未拆解任务。目标独立统计，不计入下方任务总数。</p>
+          <div className="ow-actions">
+            {workspace.goalCoverage.preview.map(goal => <button key={goal.id} className="ow-button" onClick={() => navigate('monthly', { month: workspace.goalCoverage.month, id: goal.id })}>待拆解：{goal.title}</button>)}
+            <button className="ow-button" onClick={() => navigate('monthly', { month: workspace.goalCoverage.month })}>查看该月全部目标</button>
+          </div>
+        </div>}
+      </section>
       <section className="ow-metrics" aria-label="当前筛选范围统计">
         {metrics.map((metric) => (
           <button
@@ -808,7 +824,7 @@ export default function DepartmentOverview({
           ) : config.view === "tasks" ? (
             <TaskTable rows={rows} onOpen={setDetail} />
           ) : config.view === "board" ? (
-            <Board rows={rows} group={config.group} onOpen={setDetail} totals={workspace?.groups[config.group]} onFilter={onDrill} />
+            <Board rows={rows} group={config.group} onOpen={setDetail} totals={workspace?.groups[config.group]} onFilter={onDrill} statusScope={config.period === 'all' ? 'task' : 'period'} />
           ) : config.view === "projects" ? (
             <OverviewProjectView groups={workspace?.groups.project || []} onDrill={onDrill} />
           ) : (
@@ -833,7 +849,7 @@ export default function DepartmentOverview({
       <details className="ow-fact-note">
         <summary>统计口径与说明</summary>
         <p>
-          任务按编号去重，状态取所选周期最新周记录；草稿和待审计划单列，未排周表示该周期没有周记录。月度目标或截止日命中的任务也纳入月视图。逾期按当前截止日期与今天比较，历史周期不还原历史截止日期。单条周记录纳入统计不代表整份周提报已提交。
+          任务按编号去重。“全部”按整个任务是否完成统计，结合最近有效周记录展示进展；未来安排不覆盖当前执行。按月、按周显示所选周期的阶段状态，未排周表示该周期没有周记录。勾选“包含往期未完成”后补入旧任务并标记来源，不会复制任务或自动承接目标。逾期按整个任务是否结束、当前截止日期与今天比较；历史周期不还原历史截止日期，需要期末快照时请使用历史周期复盘。未拆解月度目标独立提示，月度成果仍需验收。单条周记录纳入统计不代表整份周提报已提交。
         </p>
       </details>
       {saving && (

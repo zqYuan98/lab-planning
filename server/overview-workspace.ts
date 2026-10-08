@@ -9,17 +9,25 @@ import { HttpError, type Store } from './store.ts'
 import { pageContext, queryKeys, queryText, readPage } from './page-read-common.ts'
 import { planReference, planVisibilityProjector } from './plan-visibility.ts'
 import { isManager } from './authorization.ts'
+import { canUseAccount, registrationApproved } from '../shared/auth-policy.ts'
+import { carriedPlanIds } from './carried-plan-evidence.ts'
 
 const metadata = ['id', 'version', 'createdAt', 'updatedAt']
 /** Same ordering as localeCompare(…, 'zh-CN') without building a collator per comparison. */
 const zhCollator = new Intl.Collator('zh-CN')
-const taskFields = [...metadata, 'title', 'monthlyPlanId', 'ownerId', 'dueDate', 'status', 'isTemporary', 'temporaryReason', 'priority']
+const taskFields = [...metadata, 'title', 'monthlyPlanId', 'ownerId', 'dueDate', 'status', 'isTemporary', 'temporaryReason', 'priority', 'importSource', 'completionNote']
 const planFields = [...metadata, 'month', 'title', 'projectId', 'ownerId', 'collaboratorIds', 'dueDate', 'priority', 'status', 'publishedVersion', 'sourcePlanId', 'acceptanceStatus', 'mergedFromIds', 'mergedIntoId', 'isTemporary', 'visibility']
 const recordFields = [...metadata, 'taskId', 'monthlyPlanId', 'ownerId', 'weekStart', 'commitment', 'status', 'submitted', 'planApproval']
 function projection(fields: string[], source = 'e.data') {
   // `->` yields each value as JSON (booleans, strings, arrays and objects intact; missing is
   // NULL), matching a json_type/json_extract CASE with one path lookup instead of two.
-  return `json_object(${fields.map(key => `'${key}',${source} -> '$.${key}'`).join(',')})`
+  // Only presence markers are needed for imported completion verification, never note/provenance text.
+  const value = (key: string) => key === 'importSource'
+    ? `CASE WHEN json_type(${source},'$.importSource')='object' THEN json('{}') ELSE NULL END`
+    : key === 'completionNote'
+      ? `CASE WHEN trim(COALESCE(json_extract(${source},'$.completionNote'),''),char(9,10,11,12,13,32,160,5760,8192,8193,8194,8195,8196,8197,8198,8199,8200,8201,8202,8232,8233,8239,8287,12288,65279))<>'' THEN 'confirmed' ELSE '' END`
+      : `${source} -> '$.${key}'`
+  return `json_object(${fields.map(key => `'${key}',${value(key)}`).join(',')})`
 }
 function snapshotProjection(fields: string[], side: 'before' | 'after') { return `CASE WHEN json_type(e.data,'$.${side}')='object' THEN ${projection(fields, `json_extract(e.data,'$.${side}')`)} ELSE NULL END` }
 function rows<T>(store: Store, collection: string, fields: string[], where = '', values: (string | number)[] = []): T[] {
@@ -40,7 +48,7 @@ function bool(value: unknown) {
   throw new HttpError(400, '筛选条件无效')
 }
 /** Reads only overview facts. Raw reports, audit narratives and task progress are not page data. */
-function overviewFacts(store: Store, actor: User, options: { period: WorkPeriod; date: string; personal?: boolean; search?: boolean }) {
+function overviewFacts(store: Store, actor: User, options: { period: WorkPeriod; date: string; personal?: boolean; search?: boolean; includeCarryover?: boolean }) {
   const manager = isManager(actor), month = options.date.slice(0, 7)
   const start = options.personal ? [weekMonday(`${month}-01`), addCalendarDays(weekMonday(options.date), -21)].sort()[0]
     : options.period === 'week' ? weekMonday(options.date) : `${month}-01`
@@ -53,10 +61,10 @@ function overviewFacts(store: Store, actor: User, options: { period: WorkPeriod;
     [...ownerValues, ...(options.period === 'all' && !options.personal ? [] : [end, start])])
   const plans = rows<MonthlyPlan>(store, 'plans', planFields)
   const tasks = rows<Task>(store, 'tasks', taskFields, `AND json_extract(e.data,'$.cancellation') IS NULL${ownerWhere}
-    ${options.period === 'all' && !options.personal ? '' : `AND (json_extract(e.data,'$.dueDate') BETWEEN ? AND ?
+    ${(options.period === 'all' || options.includeCarryover) && !options.personal ? '' : `AND (json_extract(e.data,'$.dueDate') BETWEEN ? AND ?
       OR EXISTS (SELECT 1 FROM entities p WHERE p.collection='plans' AND p.id=json_extract(e.data,'$.monthlyPlanId') AND json_extract(p.data,'$.month')=?)
       OR e.id IN (SELECT value FROM json_each(?)))`}`,
-    [...ownerValues, ...(options.period === 'all' && !options.personal ? [] : [start, end, month, JSON.stringify([...new Set(records.map(row => row.taskId))])])])
+    [...ownerValues, ...((options.period === 'all' || options.includeCarryover) && !options.personal ? [] : [start, end, month, JSON.stringify([...new Set(records.map(row => row.taskId))])])])
   const known = new Set(tasks.map(task => task.id))
   const missingIds = [...new Set(records.map(row => row.taskId))].filter(id => !known.has(id)), history = new Map<string, Task>(), cancelledHistory = new Set<string>()
   if (missingIds.length) for (const event of store.selectJson<AuditEvent>(`SELECT json_object('entityId',json_extract(e.data,'$.entityId'),'before',${snapshotProjection([...taskFields, 'cancellation'], 'before')},'after',${snapshotProjection([...taskFields, 'cancellation'], 'after')}) AS data
@@ -122,15 +130,24 @@ export class OverviewWorkspaceService {
     return this.store.readTransaction(() => {
       const context = pageContext(this.store, actor); actor = context.actor
       if (!isManager(actor)) throw new HttpError(403, '只有管理者可以读取部门概览')
-      queryKeys(input, ['period', 'date', 'includeInactive', 'ownerId', 'projectId', 'status', 'q', 'riskOnly', 'sort', 'cursor', 'limit'])
+      queryKeys(input, ['period', 'date', 'includeInactive', 'includeCarryover', 'ownerId', 'projectId', 'status', 'q', 'riskOnly', 'sort', 'cursor', 'limit'])
       const period = queryText(input.period) || 'all', date = queryText(input.date) || shanghaiToday(this.clock())
       if (!['all', 'month', 'week'].includes(period) || !day(date)) throw new HttpError(400, '统计周期或日期无效')
       const status = queryText(input.status), sort = queryText(input.sort) || 'name'
-      if (!['', 'all', 'planned', 'doing', 'blocked', 'done', 'not_done', 'draft', 'unscheduled', 'overdue', 'unplanned'].includes(status) || !['name', 'tasks', 'risk', 'due'].includes(sort)) throw new HttpError(400, '状态或排序无效')
+      if (!['', 'all', 'planned', 'doing', 'blocked', 'done', 'not_done', 'draft', 'unscheduled', 'unknown', 'overdue', 'unplanned'].includes(status) || !['name', 'tasks', 'risk', 'due'].includes(sort)) throw new HttpError(400, '状态或排序无效')
       const query = queryText(input.q, 120), ownerId = queryText(input.ownerId), projectId = queryText(input.projectId), includeInactive = bool(input.includeInactive), riskOnly = bool(input.riskOnly)
+      const includeCarryover = bool(input.includeCarryover)
       const ownerFilter = ownerId && ownerId !== 'all', projectFilter = projectId && projectId !== 'all', statusFilter = status && status !== 'all'
-      const data = overviewFacts(this.store, actor, { period: period as WorkPeriod, date, search: !!query })
-      const workspace = buildWorkspace(data, { period: period as WorkPeriod, date, includeInactive }, shanghaiToday(this.clock()))
+      const data = overviewFacts(this.store, actor, { period: period as WorkPeriod, date, search: !!query, includeCarryover })
+      const workspace = buildWorkspace(data, { period: period as WorkPeriod, date, includeInactive, includeCarryover }, shanghaiToday(this.clock()))
+      // Goals are a separate planning layer, never synthetic tasks in the board totals.
+      const goalMonth = period === 'all' ? shanghaiToday(this.clock()).slice(0, 7) : date.slice(0, 7)
+      const goalOwners = new Set(data.users.filter(user => canUseAccount(user) || includeInactive && registrationApproved(user)).map(user => user.id))
+      const monthGoals = data.plans.filter(plan => plan.month === goalMonth && plan.status !== 'merged' && goalOwners.has(plan.ownerId))
+      const representedGoals = new Set(data.tasks.map(task => task.monthlyPlanId))
+      const carriedGoals = carriedPlanIds(this.store, monthGoals.map(plan => plan.id))
+      const withoutTasks = monthGoals.filter(plan => plan.status === 'published' && plan.acceptanceStatus !== 'accepted' && !representedGoals.has(plan.id) && !carriedGoals.has(plan.id))
+      const goalCoverage = { month: goalMonth, total: monthGoals.length, published: monthGoals.filter(plan => plan.status === 'published').length, withoutTasks: withoutTasks.length, preview: withoutTasks.slice(0, 3).map(({ id, title }) => ({ id, title })) }
       const work = filterWorkRows(workspace.rows, { query, ownerId, projectId, riskOnly, status: status === 'unplanned' ? '' : status as WorkFilters['status'] })
         .filter(row => status !== 'unplanned' || row.status === 'draft' || row.status === 'unscheduled')
         .sort((a, b) => (sort === 'due' ? (a.dueDate || '9999').localeCompare(b.dueDate || '9999') : sort === 'risk' ? Number(b.overdue || ['blocked', 'not_done'].includes(b.status)) - Number(a.overdue || ['blocked', 'not_done'].includes(a.status)) : 0) || zhCollator.compare(a.ownerName, b.ownerName) || zhCollator.compare(a.title, b.title) || a.id.localeCompare(b.id))
@@ -144,7 +161,7 @@ export class OverviewWorkspaceService {
         for (const row of work) { const key = kind === 'status' ? row.status : kind === 'owner' ? row.ownerId : row.projectId || '__none__'; const entries = groups.get(key); if (entries) entries.push(row); else groups.set(key, [row]) }
         return [...groups].map(([id, entries]) => ({ id, name: kind === 'status' ? id : kind === 'owner' ? entries[0].ownerName : entries[0].projectName, summary: summary(entries), ownerCount: new Set(entries.map(row => row.ownerId)).size, planCount: new Set(entries.map(row => row.planId).filter(Boolean)).size, ownerNames: [...new Set(entries.map(row => row.ownerName))] }))
       }
-      return { ...readPage(input, work.map(overviewRow), context, 'overview-department'), operationEpoch: context.operationEpoch, startDate: workspace.startDate, endDate: workspace.endDate, summary: summary(work), members: memberSummaries,
+      return { ...readPage(input, work.map(overviewRow), context, 'overview-department'), operationEpoch: context.operationEpoch, startDate: workspace.startDate, endDate: workspace.endDate, summary: summary(work), members: memberSummaries, goalCoverage,
         memberOptions: workspace.members.map(({ id, name, active }) => ({ id, name, active })), projectOptions: [...new Map(workspace.rows.filter(row => row.projectId).map(row => [row.projectId!, row.projectName]))].map(([id, name]) => ({ id, name })), groups: { status: groups('status'), owner: groups('owner'), project: groups('project') } }
     })
   }

@@ -187,13 +187,13 @@ export default function WorkRegister({ data, refresh, notify, navigate }: PagePr
               {plan.expectedOutcome && <ContextHelp title="预期交付"><p>{plan.expectedOutcome}</p>{plan.importSource && <p>已有计划导入</p>}</ContextHelp>}
             </div>
             <div className="wr-item-progress">
-              <p><span>下一步</span>建立个人任务，安排本周执行。</p>
+              <p><span>下一步</span>{row.carriedForward ? '核对原月成果与验收结论；后续执行沿用承接任务。' : '建立个人任务，安排本周执行。'}</p>
               {plan.actualOutcome && <p><span>目标成果进展</span>{plan.actualOutcome}</p>}
-              {plan.status !== 'published' && <p className="wr-decision">目标尚未发布。可先建立任务、保存周草稿，发布后才能正式排周。</p>}
+              {!row.carriedForward && plan.status !== 'published' && <p className="wr-decision">目标尚未发布。可先建立任务、保存周草稿，发布后才能正式排周。</p>}
               {plan.temporaryReason && <ContextHelp title="临时说明"><p>{plan.temporaryReason}</p></ContextHelp>}
-              {archived && <p className="wr-decision">所属项目已归档，请先协调恢复项目再建立任务。</p>}
+              {!row.carriedForward && archived && <p className="wr-decision">所属项目已归档，请先协调恢复项目再建立任务。</p>}
             </div>
-            <div className="wr-item-actions"><span className="wr-schedule">待建立个人任务</span><button className="button secondary" disabled={archived} onClick={() => navigate('monthly', { action: 'create-task', id: plan.id, month: plan.month, weekStart: result.weekStart })}><CalendarDays size={15} />建立任务并安排</button><button className="wr-edit-button" onClick={() => navigate('monthly', { id: plan.id, month: plan.month })}>查看月度目标<ArrowRight size={14} /></button></div>
+            <div className="wr-item-actions"><span className="wr-schedule">{row.carriedForward ? '已跨月承接，原月待验收' : '待建立个人任务'}</span>{!row.carriedForward && <button className="button secondary" disabled={archived} onClick={() => navigate('monthly', { action: 'create-task', id: plan.id, month: plan.month, weekStart: result.weekStart })}><CalendarDays size={15} />建立任务并安排</button>}<button className="wr-edit-button" onClick={() => navigate('monthly', { id: plan.id, month: plan.month })}>查看月度目标<ArrowRight size={14} /></button></div>
           </article>
         }
         const task = row.task
@@ -223,7 +223,7 @@ export default function WorkRegister({ data, refresh, notify, navigate }: PagePr
       })}</div> : <Empty title={query.trim() || priority || kind ? '没有找到匹配的工作事项' : view === 'active' ? '从第一件工作开始' : `暂无${workRegisterViewLabels[view]}事项`} description={query.trim() || priority || kind ? '调整筛选条件，查看其他工作。' : '先记录，再安排具体时间。'} action={<button className="button secondary" onClick={() => query.trim() || priority || kind ? (setQuery(''), setPriority(''), setKind('')) : setCapture(true)}>{query.trim() || priority || kind ? '清除筛选与搜索' : '快速记录事项'}</button>} />}
       <div className="page-actions"><button className="button secondary" disabled={!cursors.length||resource.loading} onClick={()=>setCursors(value=>value.slice(0,-1))}>上一页</button><span>第 {cursors.length+1} 页</span><button className="button secondary" disabled={!resource.value?.nextCursor||resource.loading} onClick={()=>setCursors(value=>[...value,resource.value!.nextCursor!])}>下一页</button></div>
     </section>
-    <ContextHelp title="清单范围与状态说明"><p>清单展示本人的任务，以及本人负责、未验收且尚未拆成本人任务的月度目标；未完成工作跨周保留。来源待核对不等于领导交办。任务总体状态与每周完成情况分别记录。个人任务未设置优先级时，展示关联月度目标的优先级。</p></ContextHelp>
+    <ContextHelp title="清单范围与状态说明"><p>清单展示本人的任务，以及本人负责、未验收且尚未关联本人任务的月度目标；已完成跨月承接的原目标保留用于核对原月成果与验收，不重复提示建立任务。未完成工作跨周保留。来源待核对不等于领导交办。任务总体状态与每周完成情况分别记录。个人任务未设置优先级时，展示关联月度目标的优先级。</p></ContextHelp>
     {capture && <WorkRegisterCapture onClose={() => setCapture(false)} onSaved={receiveSaved} />}
     {editing && <WorkRegisterEditor key={`${editing.id}-${editing.version}`} userId={data.user.id} task={editing} onClose={() => setEditing(null)} onSaved={task => receiveSaved([task])} />}
     {report && <WorkRegisterReport snapshot={report} onClose={() => setReport(null)} />}

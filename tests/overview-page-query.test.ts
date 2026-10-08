@@ -8,7 +8,7 @@ import { buildWorkspace, filterWorkRows, summarizeWorkRows } from '../shared/ove
 import { performanceFixture, performanceNow } from '../scripts/r2-performance-fixture.ts'
 import { legacyBootstrap } from './fixtures/r2-baseline/domain.ts'
 import type { AuditEvent, MonthlyPlan, Publication, Task, User, WeeklyRecord } from '../shared/types.ts'
-import { OverviewMemberTable, OverviewProjectView, Board } from '../src/components/overview/WorkspaceViews.tsx'
+import { OverviewMemberTable, OverviewProjectView, Board, TaskCard } from '../src/components/overview/WorkspaceViews.tsx'
 
 const date = '2026-09-24', clock = () => new Date(performanceNow)
 test('personal overview keeps frozen-reader counts and trends while returning only three focus summaries', t => {
@@ -138,4 +138,97 @@ test('36 month ordinary responses are bounded and group views display complete s
   const boardHtml = renderToStaticMarkup(createElement(Board, { rows: result.items, group: 'status', totals: result.groups.status, onOpen() {}, onFilter() {} }))
   assert.ok(boardHtml.includes('查看分组全部任务'))
   t.diagnostic(`36-month department JSON ${bytes} bytes; ${result.total} tasks with 50 rows per response`)
+})
+
+test('department periods can include outstanding prior work without altering the default period or duplicating tasks', t => {
+  const f = performanceFixture(1); t.after(() => f.store.close())
+  const service = new OverviewWorkspaceService(f.store, () => new Date('2026-10-08T04:00:00Z'))
+  const sample = f.store.list<Task>('tasks')[0]
+  const old = f.store.restoreEntity<Task>('tasks', { ...sample, id: 'old-unfinished', status: 'doing', dueDate: '2026-09-30' })
+  const completed = f.store.restoreEntity<Task>('tasks', { ...sample, id: 'old-completed', status: 'done', dueDate: '2026-09-30' })
+  const future = f.store.restoreEntity<Task>('tasks', { ...sample, id: 'future-created', createdAt: '2026-11-01T00:00:00Z', dueDate: '2026-09-30' })
+  const input = { period: 'month', date: '2026-10-08', q: 'old-unfinished', limit: 1 }
+  f.store.update<Task>('tasks', old.id, old.version, { title: 'old-unfinished' })
+  assert.equal(service.department(f.actors.manager, input).total, 0)
+  const carried = service.department(f.actors.manager, { ...input, includeCarryover: true })
+  assert.equal(carried.total, 1)
+  assert.equal(carried.items[0].id, old.id)
+  assert.equal(carried.items[0].carryover, true)
+  assert.equal(carried.items[0].status, 'unscheduled')
+  assert.equal(carried.items[0].taskStatus, 'doing')
+  assert.equal(carried.items[0].overdue, true)
+  const result = service.department(f.actors.manager, { period: 'month', date: '2026-10-08', includeCarryover: true, limit: 100 })
+  assert.ok(!result.items.some(row => [completed.id, future.id].includes(row.id)))
+  assert.equal(new Set(result.items.map(row => row.id)).size, result.items.length)
+  assert.equal(result.groups.status.reduce((count, group) => count + group.summary.total, 0), result.total)
+  assert.throws(() => service.department(f.actors.manager, { includeCarryover: 'yes' }), { status: 400 })
+  const html = renderToStaticMarkup(createElement(TaskCard, { row: carried.items[0], onOpen() {} }))
+  assert.ok(html.includes('往期未完成') && html.includes('整个任务：推进中') && html.includes('未排周'))
+})
+
+test('new monthly goals remain visible separately from task totals, including before decomposition', t => {
+  const f = performanceFixture(1); t.after(() => f.store.close())
+  const service = new OverviewWorkspaceService(f.store, () => new Date('2026-10-08T04:00:00Z'))
+  const base = f.store.list<MonthlyPlan>('plans')[0], task = f.store.list<Task>('tasks')[0]
+  const goal = (id: string, patch: Partial<MonthlyPlan> = {}) => f.store.restoreEntity<MonthlyPlan>('plans', { ...base, id, month: '2026-10', title: id, dueDate: '2026-10-30', acceptanceStatus: 'pending', ...patch })
+  goal('new-unassigned')
+  goal('draft-goal', { status: 'draft' })
+  goal('merged-goal', { status: 'merged' })
+  goal('accepted-goal', { acceptanceStatus: 'accepted' })
+  goal('assigned-goal')
+  goal('cancelled-task-goal')
+  goal('carried-goal')
+  f.store.restoreEntity<Task>('tasks', { ...task, id: 'oct-task', monthlyPlanId: 'assigned-goal', dueDate: '2026-10-30' })
+  f.store.restoreEntity<Task>('tasks', { ...task, id: 'cancelled-oct-task', monthlyPlanId: 'cancelled-task-goal', cancellation: { cancelledAt: performanceNow, cancelledBy: f.actors.manager.id, reason: '作废不算已拆解' } })
+  f.store.restoreEntity('carryWorkflows', { id: 'completed-carry', version: 1, createdAt: performanceNow, updatedAt: performanceNow, status: 'completed', sourcePlanId: 'carried-goal', result: { taskIds: ['oct-task'] } })
+  for (const period of ['all', 'month', 'week']) {
+    const result = service.department(f.actors.manager, { period, date: '2026-10-08', status: 'blocked', limit: 1 })
+    assert.equal(result.goalCoverage.total, 6, `${period}: goal counts stay independent of task state filters and pagination`)
+    assert.equal(result.goalCoverage.published, 5)
+    assert.equal(result.goalCoverage.withoutTasks, 2)
+    assert.deepEqual(result.goalCoverage.preview.map(goal => goal.id), ['new-unassigned', 'cancelled-task-goal'])
+    assert.ok(!result.items.some(row => row.id === 'new-unassigned'), 'goals do not invent tasks')
+  }
+  const owner = f.store.get<User>('users', base.ownerId)!
+  f.store.update<User>('users', owner.id, owner.version, { active: false })
+  assert.equal(service.department(f.actors.manager, { date: '2026-10-08' }).goalCoverage.total, 0)
+  assert.equal(service.department(f.actors.manager, { date: '2026-10-08', includeInactive: true }).goalCoverage.total, 6)
+})
+
+test('task cards distinguish overall completion from weekly stage completion', t => {
+  const f = performanceFixture(1); t.after(() => f.store.close())
+  const service = new OverviewWorkspaceService(f.store, clock)
+  const task = f.store.list<Task>('tasks')[0]
+  const row = service.department(f.actors.manager, { q: task.title }).items.find(row => row.id === task.id)!
+  assert.equal(row.status, 'doing')
+  assert.equal(row.weeklyStatus, 'done')
+  const html = renderToStaticMarkup(createElement(TaskCard, { row, onOpen() {} }))
+  assert.ok(html.includes('推进中') && html.includes('阶段完成'))
+  assert.ok(!html.includes('整个任务完成'))
+  f.store.update<Task>('tasks', task.id, task.version, { status: 'done' })
+  const finished = service.department(f.actors.manager, { q: task.title }).items.find(row => row.id === task.id)!
+  assert.equal(finished.overdue, false)
+  assert.ok(renderToStaticMarkup(createElement(TaskCard, { row: finished, onOpen() {} })).includes('整个任务完成'))
+})
+
+test('imported completion without explicit confirmation remains outstanding without exposing original notes', t => {
+  const f = performanceFixture(1); t.after(() => f.store.close())
+  const service = new OverviewWorkspaceService(f.store, () => new Date('2026-10-08T04:00:00Z'))
+  const sample = f.store.list<Task>('tasks')[0]
+  let task = f.store.restoreEntity<Task>('tasks', { ...sample, id: 'import-review', title: '导入状态核对', status: 'done', completionNote: '\n\u3000\t', importSource: { batchId: 'batch', sourceId: 'source', rowId: 'row', sourceStatus: '原表敏感描述' } })
+  const result = service.department(f.actors.manager, { q: task.title })
+  assert.equal(result.summary.done, 0)
+  assert.equal(result.items[0].status, 'unknown')
+  assert.equal(result.items[0].needsCompletionReview, true)
+  assert.equal(result.items[0].overdue, true)
+  assert.ok(!JSON.stringify(result).includes('原表敏感描述'))
+  const month = service.department(f.actors.manager, { period: 'month', date: '2026-10-08', q: task.title, includeCarryover: true })
+  assert.equal(month.items[0].carryover, true)
+  assert.ok(renderToStaticMarkup(createElement(TaskCard, { row: month.items[0], onOpen() {} })).includes('完成待核对'))
+  task = f.store.update<Task>('tasks', task.id, task.version, { completionNote: '本人已确认全部完成。'.repeat(1000) })
+  const confirmed = service.department(f.actors.manager, { q: task.title })
+  assert.equal(confirmed.items[0].status, 'done')
+  assert.equal(confirmed.items[0].overdue, false)
+  assert.equal(confirmed.items[0].needsCompletionReview, undefined)
+  assert.ok(!JSON.stringify(confirmed).includes('本人已确认全部完成'))
 })

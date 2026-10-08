@@ -5,6 +5,7 @@ export type PeriodReferences = Pick<Bootstrap, 'users' | 'projects' | 'plans' | 
 export interface WeeklyWorkspace extends WorkspacePage<WeeklyRecord> {
   references: PeriodReferences
   effortSummary: import('./effort').EffortSummary
+  calendar?: import('./china-work-calendar').WorkWeekCalendar
   summary: { total: number; official: number; pending: number; done: number; blocked: number }
   detail?: { task?: Task; record?: WeeklyRecord }
 }

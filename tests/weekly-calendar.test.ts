@@ -46,7 +46,7 @@ test('deadline policy follows holidays and working weekends, while existing and 
     const next = f.service.view(f.member, '2026-09-28')
     assert.equal(next.deadlineAt, '2026-09-30T08:00:00.000Z')
     assert.ok(next.duties.every(duty => duty.deadlineAt === next.deadlineAt))
-    assert.equal(f.service.reportSummary('monthly', '2026-09').filter(row => row.cycleWeek === next.week).length, 2)
+    assert.equal(f.service.reportSummary('monthly', '2026-09').filter(row => row.cycleWeek === next.week).length, 4)
     assert.equal(next.workCalendar, undefined)
     assert.deepEqual(next.cycle?.rosterIds, [f.member.id])
     f.configure({ ...holidays, '2026-09-30': false })
@@ -106,6 +106,8 @@ test('late reconciliation uses the historical policy snapshot rather than the la
 test('old October cycle is explicitly extended to the working Saturday before its old cutoff', () => {
   const f = fixture()
   try {
+    const legacy = f.service.getRule()
+    f.store.update<WeeklyRule>('weeklyRules', legacy.id, legacy.version, { deadlinePolicies: [{ version: 1, fromWeek: '2026-09-28', mode: 'friday', calendarOverrides: {} }] })
     f.set('2026-10-08T01:00:00Z')
     f.configure()
     const old = f.service.view(f.manager, '2026-10-05')
@@ -233,7 +235,7 @@ test('repair rejects historical facts, stale previews, unauthorized actors and e
     assert.throws(() => f.calendar.previewRepair(f.member, { week: view.week }), /管理者/)
     const preview = f.calendar.previewRepair(f.manager, { week: view.week })
     assert.throws(() => f.calendar.repair(f.manager, { week: view.week, token: 'tampered', reason: '修复' }), /预览/)
-    const duty = view.duties[0]
+    const duty = view.duties.find(row => row.ownerId === f.member.id)!
     f.service.submit(f.member, { dutyId: duty.id, version: duty.version, manifest: duty.manifest, note: '暂无安排', requestId: 'receipt', draftAction: 'retain' })
     assert.equal(f.calendar.previewRepair(f.manager, { week: view.week }).eligible, false)
     assert.throws(() => f.calendar.repair(f.manager, { week: view.week, token: preview.token, reason: '修复' }), /预览|历史|提交/)

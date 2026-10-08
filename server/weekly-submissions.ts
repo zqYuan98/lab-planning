@@ -8,6 +8,7 @@ import { Store, HttpError } from './store.ts'
 import { addWeekDays, cycleWeek, shanghaiWeek, mondayInstant } from './weekly-submission-clock.ts'
 import { resolveWeeklyDeadline } from '../shared/work-calendar.ts'
 import { readWorkCalendar } from './work-calendar.ts'
+import { getWorkWeekCalendar } from '../shared/china-work-calendar.ts'
 import { projectWeeklyDuty, submissionProgressEvents, weeklyDutyHistory } from './weekly-duty-view.ts'
 import type { ProgressEvent } from '../shared/collaboration.ts'
 import { notifyFormalSubmission } from './collaboration-notifications.ts'
@@ -48,7 +49,17 @@ export class WeeklySubmissionService extends DomainBase {
   }
 
   getRule(): WeeklyRule {
-    return ensureWeeklyPlanReviewRule(this.store, this.clock())
+    return this.store.transaction(() => {
+      const now = this.clock(), rule = ensureWeeklyPlanReviewRule(this.store, now)
+      if (rule.managerSubmissionEffectiveWeek) return rule
+      const current = shanghaiWeek(now)
+      const cycle = this.store.get<WeeklyCycle>('weeklyCycles', current)
+      const deadlineAt = cycle ? cycle.deadlineAt : resolveWeeklyDeadline(rule, current).deadlineAt
+      const firstWeek = deadlineAt && now.toISOString() < deadlineAt ? current : addWeekDays(current, 7)
+      return this.update<WeeklyRule>('weeklyRules', rule.id, rule.version, {
+        managerSubmissionEffectiveWeek: firstWeek < rule.effectiveWeek ? rule.effectiveWeek : firstWeek,
+      })
+    })
   }
 
   updateRule(actor: User, input: Input): WeeklyRule {
@@ -74,7 +85,7 @@ export class WeeklySubmissionService extends DomainBase {
     return rule.windows.some(window => week >= window.fromWeek && (!window.toWeek || week < window.toWeek))
   }
 
-  private rosterAt(week: string): { rosterIds: string[]; needsReview: boolean } {
+  private rosterAt(week: string, includeManagers: boolean, managersOnly = false): { rosterIds: string[]; needsReview: boolean } {
     const asOf = mondayInstant(week)
     const events = this.rows<AuditEvent>('events').filter(event => event.entityType === 'user').sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     const rosterIds: string[] = []
@@ -89,7 +100,7 @@ export class WeeklySubmissionService extends DomainBase {
         if (!snapshot) snapshot = history.find(event => event.createdAt > asOf)?.before as User | undefined
       }
       if (!snapshot || !snapshot.id || snapshot.id !== user.id) { needsReview = true; continue }
-      if (isMember(snapshot) && canUseAccount(snapshot)) rosterIds.push(user.id)
+      if ((isMember(snapshot) && !managersOnly || isManager(snapshot) && includeManagers) && canUseAccount(snapshot)) rosterIds.push(user.id)
     }
     return { rosterIds: rosterIds.sort(), needsReview }
   }
@@ -108,7 +119,14 @@ export class WeeklySubmissionService extends DomainBase {
       for (let week = rule.effectiveWeek; week <= current; week = addWeekDays(week, 7)) {
         if (!this.activeWeek(rule, week)) continue
         let cycle = this.store.get<WeeklyCycle>('weeklyCycles', week)
-        if (!cycle) cycle = this.insert<WeeklyCycle>('weeklyCycles', { id: week, week, ...resolveWeeklyDeadline(rule, week), ...this.rosterAt(week), confirmedBy: null, confirmationReason: '', frozenAt: now })
+        const includeManagers = !!rule.managerSubmissionEffectiveWeek && week >= rule.managerSubmissionEffectiveWeek
+        if (!cycle) cycle = this.insert<WeeklyCycle>('weeklyCycles', { id: week, week, ...resolveWeeklyDeadline(rule, week), ...this.rosterAt(week, includeManagers), ...(includeManagers ? { managerRosterApplied: true as const } : {}), confirmedBy: null, confirmationReason: '', frozenAt: now })
+        else if (includeManagers && !cycle.managerRosterApplied && week === current && cycle.deadlineAt && now < cycle.deadlineAt && !cycle.confirmedBy && !cycle.needsReview) {
+          // Repair the current automatic roster without rewriting closed or manually confirmed periods.
+          const managers = this.rosterAt(week, true, true)
+          const rosterIds = [...new Set([...cycle.rosterIds, ...managers.rosterIds])].sort()
+          cycle = this.update<WeeklyCycle>('weeklyCycles', cycle.id, cycle.version, { rosterIds, needsReview: managers.needsReview, managerRosterApplied: true })
+        }
         if (cycle.needsReview || !cycle.deadlineAt) continue
         for (const ownerId of cycle.rosterIds) for (const kind of ['results', 'plan'] as const) {
           const duty = this.ensureDuty(ownerId, cycle, kind)
@@ -155,6 +173,7 @@ export class WeeklySubmissionService extends DomainBase {
     // Never include the departmental roster in member responses.
     const safeCycle = cycle && !isManager(actor) ? { ...cycle, rosterIds: cycle.rosterIds.filter(id => id === actor.id), confirmationReason: '', confirmedBy: null } : cycle
     return { rule, week, nextWeek: addWeekDays(week, 7), ...this.deadlineView(rule, week, cycle), serverNow: this.clock().toISOString(), cycle: safeCycle,
+      calendar: this.calendarView(week),
       ...(isManager(actor) ? { workCalendar: readWorkCalendar(this.store) } : {}),
       duties: this.rows<WeeklyDuty>('weeklyDuties').filter(d => d.cycleWeek === week && (isManager(actor) || d.ownerId === actor.id)).map(d => this.dutyView(d)) }
     })
@@ -169,9 +188,15 @@ export class WeeklySubmissionService extends DomainBase {
       const week = cycleWeek(requestedWeek), cycle = this.store.get<WeeklyCycle>('weeklyCycles', week) ?? null
       const safeCycle = cycle && !isManager(actor) ? { ...cycle, rosterIds: cycle.rosterIds.filter(id => id === actor.id), confirmationReason: '', confirmedBy: null } : cycle
       return { rule, week, nextWeek: addWeekDays(week, 7), ...this.deadlineView(rule, week, cycle), serverNow: this.clock().toISOString(), cycle: safeCycle,
+        calendar: this.calendarView(week),
         ...(isManager(actor) ? { workCalendar: readWorkCalendar(this.store) } : {}),
         duties: this.rows<WeeklyDuty>('weeklyDuties').filter(duty => duty.cycleWeek === week && (isManager(actor) || duty.ownerId === actor.id)).map(duty => this.dutyView(duty)) }
     })
+  }
+
+  private calendarView(week: string): NonNullable<WeeklySubmissionView['calendar']> {
+    const { overrides } = readWorkCalendar(this.store)
+    return { current: getWorkWeekCalendar(week, overrides), next: getWorkWeekCalendar(addWeekDays(week, 7), overrides) }
   }
 
   private deadlineView(rule: WeeklyRule, week: string, cycle: WeeklyCycle | null) {
@@ -278,7 +303,10 @@ export class WeeklySubmissionService extends DomainBase {
       const week = cycleWeek(input.week), cycle = this.current<WeeklyCycle>('weeklyCycles', week, input)
       if (!cycle.needsReview) throw new HttpError(409, '名单已冻结，请对个人应交项办理豁免')
       if (!Array.isArray(input.rosterIds) || input.rosterIds.some(id => typeof id !== 'string') || new Set(input.rosterIds).size !== input.rosterIds.length) throw new HttpError(400, '应交名单格式无效')
-      for (const id of input.rosterIds) this.need<User>('users', id)
+      for (const id of input.rosterIds) {
+        const user = this.need<User>('users', id)
+        if (!isManager(user) && !isMember(user)) throw new HttpError(400, '观察者不承担周提报义务')
+      }
       const updated = this.update<WeeklyCycle>('weeklyCycles', week, cycle.version, { rosterIds: input.rosterIds as string[], needsReview: false, confirmedBy: actor.id, confirmationReason: text(input.reason, '名单核对原因') })
       this.audit(actor, 'weeklyCycle', week, 'confirm_roster', cycle, updated, updated.confirmationReason)
       this.reconcile()

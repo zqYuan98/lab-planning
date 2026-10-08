@@ -9,6 +9,8 @@ import { Store } from '../server/store.ts'
 import { addWeekDays, fridayDeadline, shanghaiWeek } from '../server/weekly-submission-clock.ts'
 import type { AuditEvent } from '../shared/types.ts'
 import type { WeeklyCycle, WeeklyDeadlineRepairPreview, WeeklyDuty, WeeklyRule, WeeklySubmissionView } from '../shared/weekly-submissions.ts'
+import { WeeklySubmissionService } from '../server/weekly-submissions.ts'
+import { effectiveCalendarOverrides } from '../shared/china-work-calendar.ts'
 
 const POLICY = '/weekly-submissions/deadline-policy'
 const PREVIEW = '/weekly-submissions/deadline-repair/preview'
@@ -26,7 +28,7 @@ async function fixture(t: TestContext, withCycle = true) {
     ...metadata, id, name: id, email: `${id}@example.test`, role, active: true, position: '', credentialVersion: 1, passwordHash: 'unused',
   })
   const manager = user('calendar-manager', 'manager'), member = user('calendar-member', 'member'), observer = user('calendar-observer', 'observer')
-  const rule = store.restoreEntity<WeeklyRule>('weeklyRules', {
+  let rule = store.restoreEntity<WeeklyRule>('weeklyRules', {
     ...metadata, id: 'weekly-submission-rule', enabled: true, effectiveWeek: week, timezone: 'Asia/Shanghai',
     windows: [{ fromWeek: week, toWeek: null }], planReviewEffectiveWeek: week,
   })
@@ -40,6 +42,7 @@ async function fixture(t: TestContext, withCycle = true) {
       contentWeek: kind === 'results' ? week : addWeekDays(week, 7), deadlineAt: fridayDeadline(week),
     })
   }
+  rule = new WeeklySubmissionService(store, () => now).getRule()
   let externalCalls = 0
   const failExternal = async (): Promise<never> => { externalCalls++; throw new Error('External I/O is forbidden in calendar HTTP tests') }
   const provider: DingTalkClient = { configured: false, corpId: '', clientId: '', getIdentity: failExternal, send: failExternal, result: failExternal }
@@ -65,7 +68,8 @@ async function fixture(t: TestContext, withCycle = true) {
   }
   const admin = client(manager), owner = client(member), viewer = client(observer), anonymous = client()
   const nextWeek = addWeekDays(week, 7)
-  const overrides = { [addWeekDays(week, 3)]: false, [addWeekDays(week, 4)]: false, [addWeekDays(nextWeek, 3)]: false, [addWeekDays(nextWeek, 4)]: false }
+  // Explicit company calendar keeps this HTTP test stable during holidays and make-up weekends.
+  const overrides = Object.fromEntries([week, nextWeek].flatMap(start => Array.from({ length: 7 }, (_, offset) => [addWeekDays(start, offset), offset < 3])))
   const calendarVersion = () => store.get<{ version: number }>('collaborationSettings', 'collaboration')?.version ?? 0
   const configure = () => admin<WeeklyRule>(POLICY, {
     version: store.get<WeeklyRule>('weeklyRules', rule.id)!.version, mode: 'last_workday', calendarVersion: calendarVersion(), calendarOverrides: overrides,
@@ -113,7 +117,7 @@ test('HTTP policy saves both versions, applies next week and leaves persisted cu
   assert.equal(updated.deadlinePolicies?.length, 1)
   assert.equal(updated.deadlinePolicies?.[0].fromWeek, f.nextWeek)
   assert.equal(updated.deadlinePolicies?.[0].mode, 'last_workday')
-  assert.deepEqual(updated.deadlinePolicies?.[0].calendarOverrides, f.overrides)
+  assert.deepEqual(updated.deadlinePolicies?.[0].calendarOverrides, effectiveCalendarOverrides(f.overrides))
   assert.deepEqual(f.store.get('weeklyCycles', f.week), current)
   assert.deepEqual(f.store.get('weeklyCycles', previousWeek), previous)
   assert.deepEqual(f.store.list('weeklyDuties'), oldDuties)
@@ -148,7 +152,7 @@ test('HTTP policy rejects stale rule and calendar CAS versions atomically', asyn
   assert.equal(next.version, rule.version + 1)
   assert.equal(f.calendarVersion(), version + 1)
   assert.equal(next.deadlinePolicies?.length, 1, 'another edit replaces the pending policy for the same future week')
-  assert.equal(next.deadlinePolicies?.[0].version, 2)
+  assert.equal(next.deadlinePolicies?.[0].version, rule.deadlinePolicies![0].version + 1)
   assert.equal(next.deadlinePolicies?.[0].fromWeek, f.nextWeek)
 })
 

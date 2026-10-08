@@ -4,6 +4,9 @@ import { randomUUID } from 'node:crypto'
 import { Store } from '../server/store.ts'
 import { Domain } from '../server/domain.ts'
 import { CarryWorkflowService } from '../server/carry-workflows.ts'
+import { WorkspaceQueryService } from '../server/workspace-query.ts'
+import { carriedPlanIds } from '../server/carried-plan-evidence.ts'
+import { createWorkRegisterSnapshot } from '../shared/work-register.ts'
 import { getOperationEpoch, rotateOperationEpoch } from '../server/operation-context.ts'
 import type { AuditEvent, Entity, MonthlyPlan, Task, User, WeeklyRecord } from '../shared/types.ts'
 import type { WeeklySubmission } from '../shared/weekly-submissions.ts'
@@ -218,4 +221,98 @@ test('source accepted or merged during waiting cannot resume; newly introduced o
   assert.equal(f.service.detail(f.manager, ready.workflow.id).canApply, false)
   assert.throws(() => f.service.previewApply(f.manager, ready.workflow.id, f.selection([task])), { status: 409 })
   assert.equal(f.store.get<Task>('tasks', task.id)!.monthlyPlanId, source.id)
+})
+
+test('completed carry keeps the original goal reviewable without asking the owner to create its tasks again', t => {
+  const f = fixture(t), task = f.task(), ready = f.ready(), query = new WorkspaceQueryService(f.store)
+  const sourceBefore = f.store.get<MonthlyPlan>('plans', f.source.id)!
+  const preview = f.service.previewApply(f.manager, ready.workflow.id, f.selection([task]))
+  f.service.apply(f.manager, ready.workflow.id, f.applyInput(preview))
+  const page = query.register(f.member, {}), source = page.items.find(row => row.id === f.source.id)!
+  assert.equal(source.kind, 'plan')
+  assert.equal(source.kind === 'plan' && source.carriedForward, true)
+  assert.equal(source.displayStatus, '已跨月承接，原月待验收')
+  assert.equal(source.isActive, true, 'carrying work must not accept or hide the original goal')
+  assert.equal(source.isUnscheduled, false)
+  assert.equal(page.items.filter(row => row.kind === 'task').length, 1, 'the same task continues after carry')
+  assert.ok(!query.register(f.member, { view: 'unscheduled' }).items.some(row => row.id === source.id))
+  assert.deepEqual(query.register(f.member, { q: '原月待验收', limit: 1 }).items.map(row => row.id), [source.id])
+  assert.ok(!query.register(f.member, { q: '待建立个人任务' }).items.some(row => row.id === source.id))
+  assert.equal(query.register(f.second, { q: '原月待验收' }).total, 0, 'manager personal list does not absorb member goals')
+  const exported = createWorkRegisterSnapshot(page.result).rows.find(row => row.id === source.id)!
+  assert.match(exported.itemType, /已跨月承接/)
+  assert.equal(exported.nextAction, '核对原月成果与验收结论；后续执行沿用承接任务')
+  assert.doesNotMatch(JSON.stringify(exported), /待建立个人任务|建立个人任务后/)
+  assert.deepEqual(f.store.get('plans', source.id), sourceBefore)
+  rotateOperationEpoch(f.store)
+  assert.equal(query.register(f.member, { q: '原月待验收' }).total, 1, 'completed migration remains a business fact after operation epoch changes')
+  f.store.update<MonthlyPlan>('plans', sourceBefore.id, sourceBefore.version, { acceptanceStatus: 'accepted' })
+  assert.ok(!query.register(f.member, {}).items.some(row => row.id === source.id), 'normal acceptance still closes original coverage')
+})
+
+test('creating, publishing or cancelling a carry target without applying tasks does not suppress source scheduling', t => {
+  const f = fixture(t), query = new WorkspaceQueryService(f.store)
+  let view = f.service.create(f.manager, f.startInput())
+  const assertUncarried = () => {
+    const row = query.register(f.member, {}).items.find(row => row.id === f.source.id)!
+    assert.equal(row.kind, 'plan')
+    assert.equal(row.kind === 'plan' && row.carriedForward, undefined)
+    assert.equal(row.isUnscheduled, true)
+    assert.ok(query.register(f.member, { view: 'unscheduled', q: '待建立个人任务' }).items.some(row => row.id === f.source.id))
+    assert.equal(query.register(f.member, { q: '原月待验收' }).total, 0)
+  }
+  assertUncarried()
+  view = f.publish(view)
+  assertUncarried()
+  f.service.cancel(f.manager, view.workflow.id, f.command({ workflowVersion: view.workflow.version, reason: '暂停承接' }))
+  assertUncarried()
+})
+
+test('legacy monthly carry plus same-task relink proves migration to a direct child or later descendant', t => {
+  for (const laterDescendant of [false, true]) {
+    const f = fixture(t), task = f.task(), query = new WorkspaceQueryService(f.store)
+    const publish = (plan: MonthlyPlan) => {
+      let current = f.domain.submitPlan(f.manager, plan.id, { version: plan.version })
+      current = f.domain.reviewPlan(f.manager, current.id, { version: current.version, decision: 'approve' })
+      f.domain.publishMonth(f.manager, current.month, { planIds: [current.id] })
+      return f.store.get<MonthlyPlan>('plans', current.id)!
+    }
+    let target = publish(f.domain.carryPlan(f.manager, f.source.id, f.command({ sourceVersion: f.source.version, month: '2026-10', dueDate: '2026-10-31', reason: '旧版跨月承接' })))
+    if (laterDescendant) target = publish(f.domain.carryPlan(f.manager, target.id, f.command({ sourceVersion: target.version, month: '2026-11', dueDate: '2026-11-30', reason: '继续承接至后续月份' })))
+    assert.equal(f.store.list('carryWorkflows').length, 0)
+    assert.equal(carriedPlanIds(f.store, [f.source.id]).size, 0, 'creating or publishing a descendant is not migration')
+    f.domain.relinkTask(f.manager, task.id, { version: task.version, monthlyPlanId: target.id, reason: '原任务继续执行' })
+    assert.deepEqual([...carriedPlanIds(f.store, [f.source.id])], [f.source.id])
+    const source = query.register(f.member, {}).items.find(row => row.id === f.source.id)!
+    assert.equal(source.kind === 'plan' && source.carriedForward, true)
+    assert.equal(source.isUnscheduled, false)
+    assert.equal(query.register(f.member, { q: '原月待验收' }).items[0].id, f.source.id)
+    assert.equal(f.store.list<Task>('tasks').length, 1)
+    assert.equal(f.store.get<MonthlyPlan>('plans', f.source.id)!.acceptanceStatus, 'pending')
+  }
+})
+
+test('a new task in a carried child does not imply that any original task was migrated', t => {
+  const f = fixture(t), query = new WorkspaceQueryService(f.store)
+  const target = f.domain.carryPlan(f.manager, f.source.id, f.command({ sourceVersion: f.source.version, month: '2026-10', dueDate: '2026-10-31', reason: '新建承接草稿' }))
+  f.domain.createTask(f.manager, { title: '子目标的新独立任务', ownerId: f.member.id, monthlyPlanId: target.id, dueDate: '2026-10-31' })
+  assert.equal(carriedPlanIds(f.store, [f.source.id]).size, 0)
+  const source = query.register(f.member, {}).items.find(row => row.id === f.source.id)!
+  assert.equal(source.kind === 'plan' && source.carriedForward, undefined)
+  assert.equal(source.isUnscheduled, true)
+  assert.ok(query.register(f.member, { view: 'unscheduled', q: '待建立个人任务' }).items.some(row => row.id === f.source.id))
+})
+
+test('relink to an unrelated goal and mismatched audit task identities do not prove carry', t => {
+  const f = fixture(t), task = f.task(), query = new WorkspaceQueryService(f.store)
+  let unrelated = f.domain.createPlan(f.manager, { month: '2026-10', title: '无承接关系的独立目标', ownerId: f.member.id, category: '研究', expectedOutcome: '报告', acceptanceCriteria: '评审', dueDate: '2026-10-31' })
+  unrelated = f.domain.submitPlan(f.manager, unrelated.id, { version: unrelated.version })
+  unrelated = f.domain.reviewPlan(f.manager, unrelated.id, { version: unrelated.version, decision: 'approve' })
+  f.domain.publishMonth(f.manager, unrelated.month, { planIds: [unrelated.id] })
+  f.domain.relinkTask(f.manager, task.id, { version: task.version, monthlyPlanId: unrelated.id, reason: '纠正原任务关联' })
+  const child = f.domain.carryPlan(f.manager, f.source.id, f.command({ sourceVersion: f.source.version, month: '2026-10', dueDate: '2026-10-31', reason: '另建承接草稿' }))
+  f.store.insert<AuditEvent>('events', { entityType: 'task', entityId: task.id, actorId: f.manager.id, action: 'relink', reason: '错误历史快照', before: task, after: { ...task, id: 'another-task', version: task.version + 1, monthlyPlanId: child.id } })
+  assert.equal(carriedPlanIds(f.store, [f.source.id]).size, 0)
+  assert.equal(query.register(f.member, { q: '原月待验收' }).total, 0)
+  assert.ok(query.register(f.member, { view: 'unscheduled' }).items.some(row => row.id === f.source.id))
 })

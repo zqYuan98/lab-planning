@@ -41,6 +41,21 @@ test('calendar counts complete Shanghai workdays across weekends, overrides and 
   assert.equal(weekOf('2027-01-01'), '2026-12-28')
 })
 
+test('automatic reminders rest on statutory holidays and weekly digests follow the last working date', t => {
+  for (const [day, expected] of [['2026-09-24', 'weekly_manager'], ['2026-09-25', undefined], ['2026-10-07', undefined], ['2026-10-09', 'daily_manager'], ['2026-10-10', 'weekly_manager']] as const) {
+    const f = fixture(t, { autoRulesEnabled: false }), { task, tracking } = f.task()
+    addDigestItem(f.store, f.manager.id, `calendar-${day}`, { sourceKind: 'progress_recorded', target: { type: 'task', id: task.id }, taskId: task.id,
+      ownerId: f.member.id, title: '进展', lines: ['完成核对'], occurredAt: dayAt(day, '17:00').toISOString(), generation: tracking.generation, actionable: false })
+    runCollaborationDigests(f.store, dayAt(day, '17:30'))
+    const digests = f.store.list<NotificationDigest>('notificationDigests').filter(row => row.recipientId === f.manager.id)
+    assert.deepEqual(digests.map(row => row.type), expected ? [expected] : [], day)
+  }
+  const f = fixture(t)
+  f.task('2026-09-30')
+  assert.equal(automaticRiskCandidates(f.store, dayAt('2026-10-07')), undefined)
+  assert.ok(automaticRiskCandidates(f.store, dayAt('2026-10-10')))
+})
+
 test('stale threshold starts after the baseline day and dry-run makes no writes', t => {
   const f = fixture(t), { task, tracking } = f.task('2026-09-30', dayAt('2026-09-14', '15:00'))
   assert.equal(evaluateWorkRisks(f.store, dayAt('2026-09-17')).some(risk => risk.kind === 'stale'), false)

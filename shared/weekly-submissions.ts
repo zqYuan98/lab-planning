@@ -20,12 +20,16 @@ export interface WeeklyRule extends Entity {
   windows: { fromWeek: string; toWeek: string | null }[]
   /** First submission cycle requiring review of the following week's member plans. */
   planReviewEffectiveWeek?: string
+  /** Prospective upgrade boundary: administrators also owe personal weekly submissions. */
+  managerSubmissionEffectiveWeek?: string
   deadlinePolicies?: WeeklyDeadlinePolicy[]
 }
 export interface WeeklyCycle extends Entity {
   week: string; deadlineAt: string | null; rosterIds: string[]; needsReview: boolean
   confirmedBy: string | null; confirmationReason: string; frozenAt: string
   deadlinePolicy?: WeeklyDeadlineSnapshot
+  /** The automatic roster has been built or repaired with administrators included. */
+  managerRosterApplied?: true
 }
 export interface WeeklyDuty extends Entity {
   ownerId: string; cycleWeek: string; kind: SubmissionKind; contentWeek: string; deadlineAt: string
@@ -71,6 +75,8 @@ export interface WeeklySubmissionView {
   rule: WeeklyRule; week: string; nextWeek: string; deadlineAt: string | null; serverNow: string
   cycle: WeeklyCycle | null; duties: WeeklyDutyView[]
   deadlinePolicy?: WeeklyDeadlineSnapshot
+  /** Live workdays for planning; a persisted cycle's deadline above remains frozen. */
+  calendar?: { current: import('./china-work-calendar').WorkWeekCalendar; next: import('./china-work-calendar').WorkWeekCalendar }
   /** Calendar editing data is returned only to managers. */
   workCalendar?: { version: number; overrides: Record<string, boolean> }
 }

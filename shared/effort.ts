@@ -1,5 +1,6 @@
 import type { MonthlyPlan, Project, WeeklyRecord } from './types'
 import { isEffectiveWeeklyRecord } from './weekly-record-state'
+import { calendarWorkingDaysInWeek } from './china-work-calendar'
 
 export function isEffortDays(value: unknown): value is number | null {
   return value === null || typeof value === 'number' && Number.isFinite(value) && value >= 0 && Number.isInteger(value * 2)
@@ -14,7 +15,8 @@ export function effortInput(value: FormDataEntryValue | null): number | null {
 export interface EffortTotals { recordCount: number; plannedEffortDays: number; actualEffortDays: number; missingPlannedCount: number; missingActualCount: number }
 export interface EffortSummary extends EffortTotals {
   byProject: (EffortTotals & { projectId: string | null; projectName: string })[]
-  byOwnerWeek: (EffortTotals & { ownerId: string; weekStart: string; overCapacity: boolean })[]
+  /** New summaries always carry capacityDays; historical report snapshots may omit it. */
+  byOwnerWeek: (EffortTotals & { ownerId: string; weekStart: string; capacityDays?: number; overCapacity: boolean })[]
 }
 const empty = (): EffortTotals => ({ recordCount: 0, plannedEffortDays: 0, actualEffortDays: 0, missingPlannedCount: 0, missingActualCount: 0 })
 const add = (total: EffortTotals, record: WeeklyRecord) => {
@@ -22,9 +24,9 @@ const add = (total: EffortTotals, record: WeeklyRecord) => {
   if (record.plannedEffortDays == null) total.missingPlannedCount++; else total.plannedEffortDays += record.plannedEffortDays
   if (record.actualEffortDays == null) total.missingActualCount++; else total.actualEffortDays += record.actualEffortDays
 }
-/** Uses the supplied facts only, so frozen report snapshots never consult live task estimates. */
-export function summarizeEffort(records: readonly WeeklyRecord[], plans: readonly MonthlyPlan[] = [], projects: readonly Project[] = []): EffortSummary {
-  const total = empty(), byProject = new Map<string | null, EffortSummary['byProject'][number]>(), byOwnerWeek = new Map<string, EffortSummary['byOwnerWeek'][number]>()
+/** Compute once from record facts and the current work calendar; reports persist the result as a frozen snapshot. */
+export function summarizeEffort(records: readonly WeeklyRecord[], plans: readonly MonthlyPlan[] = [], projects: readonly Project[] = [], calendarOverrides: Record<string, boolean> = {}): EffortSummary {
+  const total = empty(), byProject = new Map<string | null, EffortSummary['byProject'][number]>(), byOwnerWeek = new Map<string, EffortSummary['byOwnerWeek'][number] & { capacityDays: number }>()
   const planMap = new Map(plans.map(plan => [plan.id, plan])), projectMap = new Map(projects.map(project => [project.id, project.name]))
   const unique = new Map<string, WeeklyRecord>()
   for (const record of records) if (!unique.has(record.id) || unique.get(record.id)!.version < record.version) unique.set(record.id, record)
@@ -35,8 +37,8 @@ export function summarizeEffort(records: readonly WeeklyRecord[], plans: readonl
     const project = byProject.get(projectId) ?? { ...empty(), projectId, projectName: projectId ? projectMap.get(projectId) ?? '未命名项目' : '未关联项目' }
     add(project, record); byProject.set(projectId, project)
     const key = JSON.stringify([record.ownerId, record.weekStart])
-    const week = byOwnerWeek.get(key) ?? { ...empty(), ownerId: record.ownerId, weekStart: record.weekStart, overCapacity: false }
-    add(week, record); week.overCapacity = week.plannedEffortDays > 5 || week.actualEffortDays > 5; byOwnerWeek.set(key, week)
+    const week = byOwnerWeek.get(key) ?? { ...empty(), ownerId: record.ownerId, weekStart: record.weekStart, capacityDays: calendarWorkingDaysInWeek(record.weekStart, calendarOverrides).length, overCapacity: false }
+    add(week, record); week.overCapacity = week.plannedEffortDays > week.capacityDays || week.actualEffortDays > week.capacityDays; byOwnerWeek.set(key, week)
   }
   return { ...total, byProject: [...byProject.values()], byOwnerWeek: [...byOwnerWeek.values()] }
 }

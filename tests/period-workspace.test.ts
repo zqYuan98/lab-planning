@@ -3,10 +3,22 @@ import assert from 'node:assert/strict'
 import { PeriodWorkspaceService } from '../server/period-workspace.ts'
 import { performanceFixture, performanceNow } from '../scripts/r2-performance-fixture.ts'
 import { legacyBootstrap } from './fixtures/r2-baseline/domain.ts'
-import { visibleMonthlyPlan } from '../src/account-options.ts'
+import { accountDisplayName, historicalRosterAccounts, visibleMonthlyPlan } from '../src/account-options.ts'
+import { canUseAccount } from '../shared/auth-policy.ts'
 import { isActiveWeeklyRecord, isEffectiveWeeklyRecord, weeklyPlanFingerprint } from '../shared/weekly-record-state.ts'
 import { weeklyRecordState } from '../src/weekly-submission-flow.ts'
 import type { MonthlyPlan, Publication, Task, WeeklyRecord } from '../shared/types.ts'
+
+test('submission references preserve usable legacy administrators for personal submissions and roster corrections', t => {
+  const f = performanceFixture(1), service = new PeriodWorkspaceService(f.store); t.after(() => f.store.close())
+  assert.equal(f.actors.manager.registrationStatus, undefined, 'first administrator accounts have no registration field')
+  const references = service.submissionReferences(f.actors.manager, { weekStart: '2026-10-05' })
+  const manager = references.users.find(user => user.id === f.actors.manager.id)!
+  assert.equal(canUseAccount(manager), true, 'adding work must not be disabled by a SQL null status')
+  assert.equal(accountDisplayName(manager), manager.name, 'an approved administrator is never labelled pending')
+  assert.ok(historicalRosterAccounts(references.users).some(user => user.id === manager.id))
+  assert.ok(references.users.filter(user => user.role === 'member').every(canUseAccount))
+})
 
 test('period pages preserve frozen monthly and weekly scope and complete statistics for both business roles', t => {
   const f = performanceFixture(3), service = new PeriodWorkspaceService(f.store); t.after(() => f.store.close())

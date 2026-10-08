@@ -1,4 +1,6 @@
 import { summarizeEffort } from '../shared/effort.ts'
+import { getWorkWeekCalendar } from '../shared/china-work-calendar.ts'
+import { readWorkCalendar } from './work-calendar.ts'
 import { Router } from 'express'
 import type { AuditEvent, MonthlyPlan, Project, Publication, Task, User, WeeklyRecord } from '../shared/types.ts'
 import type { MonthlyWorkspace, PeriodCandidates, PeriodReferences, PublicationSummary, WeeklyWorkspace } from '../shared/period-workspace.ts'
@@ -91,7 +93,9 @@ export class PeriodWorkspaceService {
       const official = rows.filter(isEffectiveWeeklyRecord)
       const effortPlans = this.entities<MonthlyPlan>('plans', rows.flatMap(row => row.monthlyPlanId ? [row.monthlyPlanId] : [])).filter(plan => isManager(actor) || participates(plan, actor.id))
       const effortProjects = this.entities<Project>('projects', effortPlans.flatMap(plan => plan.projectId ? [plan.projectId] : []))
-      const effortSummary = summarizeEffort(rows, effortPlans, effortProjects)
+      const { overrides } = readWorkCalendar(this.store)
+      const calendar = getWorkWeekCalendar(week, overrides)
+      const effortSummary = summarizeEffort(rows, effortPlans, effortProjects, overrides)
       const summary = { total: rows.length, official: official.length, pending: rows.filter(row => row.submitted && !isEffectiveWeeklyRecord(row)).length, done: official.filter(row => row.status === 'done').length, blocked: official.filter(row => row.status === 'blocked').length }
       const names = new Map(this.accounts(rows.map(row => row.ownerId)).map(user => [user.id, user.name]))
       const filtered = rows.filter(row => (!origin || origin === 'all' || source(row) === origin) && (!status || status === 'all' || (status === 'draft' ? !row.submitted : status === 'pending' ? row.submitted && !isEffectiveWeeklyRecord(row) : row.submitted && row.status === status)) && (!q || `${row.commitment} ${(knownTasks.get(row.taskId)?.ownerId === actor.id || isManager(actor) ? knownTasks.get(row.taskId) : this.task(actor, row.taskId))?.title ?? ''} ${names.get(row.ownerId) ?? ''}`.toLocaleLowerCase().includes(q)))
@@ -103,7 +107,7 @@ export class PeriodWorkspaceService {
       references.weeklyRecords = page.items.map(compactRecord)
       references.plans = references.plans.map(compactPlan)
       references.tasks = references.tasks.map(compactTask)
-      return { ...page, items: references.weeklyRecords, references, summary, effortSummary, detail }
+      return { ...page, items: references.weeklyRecords, references, summary, effortSummary, calendar, detail }
     })
   }
   monthly(actor: User, input: Query): MonthlyWorkspace {
@@ -174,7 +178,7 @@ export class PeriodWorkspaceService {
     references.weeklyRecords = rows.map(row => ({ ...compactRecord(row), commitment: '', actualOutcome: '', blocker: '', nextAction: '' }))
     references.tasks = references.tasks.map(task => ({ ...compactTask(task), description: '', temporaryReason: '', currentProgress: '' }))
     references.plans = references.plans.map(plan => ({ ...compactPlan(plan), expectedOutcome: '', acceptanceCriteria: '', temporaryReason: '' }))
-    const userData = "json_object('id',id,'name',json_extract(data,'$.name'),'role',json_extract(data,'$.role'),'active',json_extract(data,'$.active'),'position',json_extract(data,'$.position'),'registrationStatus',json_extract(data,'$.registrationStatus'),'email','','createdAt','','updatedAt','','version',0)"
+    const userData = "json_object('id',id,'name',json_extract(data,'$.name'),'role',json_extract(data,'$.role'),'active',json_extract(data,'$.active'),'position',json_extract(data,'$.position'),'registrationStatus',COALESCE(json_extract(data,'$.registrationStatus'),'approved'),'email','','createdAt','','updatedAt','','version',0)"
     references.users = this.store.selectJson<User>(`SELECT ${userData} AS data FROM entities WHERE collection='users' AND (json_extract(data,'$.registrationStatus') IS NULL OR json_extract(data,'$.registrationStatus')='approved') ORDER BY rowid`).map(user => ({ ...user, active: Boolean(user.active) }))
     return references
   }

@@ -21,7 +21,7 @@ export function visibleAccounts(users: User[], includeInactive = false) {
 
 /** Historic roster corrections use employment in that period, not today's account availability. */
 export function historicalRosterAccounts(users: User[]) {
-  return users.filter(user => user.role === 'member' && registrationApproved(user))
+  return users.filter(user => (user.role === 'member' || user.role === 'manager') && registrationApproved(user))
 }
 
 export function visibleMonthlyPlan(plan: MonthlyPlan, users: User[], includeInactive = false) {

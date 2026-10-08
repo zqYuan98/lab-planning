@@ -166,7 +166,7 @@ test('bootstrap to department totals removes only explicitly cancelled work in a
   for (const period of ['all', 'month', 'week'] as const) {
     const view = buildWorkspace(deletedOnly, { period, date: '2026-09-22' }, '2026-09-22')
     assert.equal(summarizeWorkRows(view.rows).total, 2, 'deleting a schedule never silently cancels a task')
-    assert.equal(view.rows.find(item => item.taskId === f.task.id)?.status, 'unscheduled')
+    assert.equal(view.rows.find(item => item.taskId === f.task.id)?.status, period === 'all' ? 'doing' : 'unscheduled')
   }
   f.domain.cancelTask(f.manager, working.id, { version: working.version, reason: '用户确认旧任务已不用' })
   for (const actor of [f.manager, f.member]) for (const period of ['all', 'month', 'week'] as const) {

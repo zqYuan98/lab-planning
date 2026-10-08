@@ -12,6 +12,8 @@ import { endTaskRequests } from './collaboration-tracking.ts'
 import type { BlockerEpisode } from '../shared/collaboration.ts'
 import { assertWholePlanReviewer, wholePlanMatches, wholePlanRows } from './weekly-review-delegation.ts'
 import { isMember } from './authorization.ts'
+import { effectiveCalendarOverrides } from '../shared/china-work-calendar.ts'
+import { readWorkCalendar } from './work-calendar.ts'
 
 const RULE = 'weekly-submission-rule'
 const unapproved = (): NonNullable<WeeklyRecord['planApproval']> => ({ required: true, approvedSubmissionId: null, approvedFingerprint: null })
@@ -42,10 +44,14 @@ export function syncWeeklyPlanReviewPolicy(store: Store, rule: WeeklyRule, fromC
 export function ensureWeeklyPlanReviewRule(store: Store, now = new Date()): WeeklyRule {
   return store.transaction(() => {
     const old = store.get<WeeklyRule>('weeklyRules', RULE)
-    if (old?.planReviewEffectiveWeek) return old
+    if (old?.planReviewEffectiveWeek && old.deadlinePolicies?.length) return old
     const effectiveWeek = addWeekDays(shanghaiWeek(now), 7)
-    const rule = old ? store.update<WeeklyRule>('weeklyRules', RULE, old.version, { planReviewEffectiveWeek: effectiveWeek })
-      : store.insert<WeeklyRule>('weeklyRules', { id: RULE, enabled: true, effectiveWeek, timezone: 'Asia/Shanghai', windows: [{ fromWeek: effectiveWeek, toWeek: null }], planReviewEffectiveWeek: effectiveWeek })
+    // Legacy Friday periods remain untouched, including periods reconciled after an upgrade.
+    const calendarFromWeek = old && old.effectiveWeek > effectiveWeek ? old.effectiveWeek : effectiveWeek
+    const deadlinePolicies = old?.deadlinePolicies?.length ? old.deadlinePolicies : [{ version: 1, fromWeek: calendarFromWeek,
+      mode: 'last_workday' as const, calendarOverrides: effectiveCalendarOverrides(readWorkCalendar(store).overrides) }]
+    const rule = old ? store.update<WeeklyRule>('weeklyRules', RULE, old.version, { planReviewEffectiveWeek: old.planReviewEffectiveWeek ?? effectiveWeek, deadlinePolicies })
+      : store.insert<WeeklyRule>('weeklyRules', { id: RULE, enabled: true, effectiveWeek, timezone: 'Asia/Shanghai', windows: [{ fromWeek: effectiveWeek, toWeek: null }], planReviewEffectiveWeek: effectiveWeek, managerSubmissionEffectiveWeek: effectiveWeek, deadlinePolicies })
     syncWeeklyPlanReviewPolicy(store, rule, effectiveWeek, null, now)
     return rule
   })

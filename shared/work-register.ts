@@ -1,6 +1,6 @@
 import type { Bootstrap, MonthlyPlan, Task, WeeklyRecord, WorkSource } from './types'
 import { isActiveWeeklyRecord, isEffectiveWeeklyRecord } from './weekly-record-state'
-import { isActiveTask } from './task-state'
+import { isActiveTask, isTaskCompletionPending } from './task-state'
 import type { WorkProgress } from './work-progress'
 
 export type WorkRegisterView = 'active' | 'leader' | 'unscheduled' | 'week' | 'waiting' | 'done' | 'source-review' | 'completion-review'
@@ -43,7 +43,7 @@ interface WorkRegisterRowBase {
 }
 export type WorkRegisterRow = WorkRegisterRowBase & (
   { kind: 'task'; task: Task; plan?: never } |
-  { kind: 'plan'; plan: MonthlyPlan; task?: never }
+  { kind: 'plan'; plan: MonthlyPlan; task?: never; carriedForward?: boolean }
 )
 export interface WorkRegisterResult {
   owner: { id: string; name: string }
@@ -132,8 +132,8 @@ export function workRegisterTaskSource(task: Task): WorkSource | undefined {
 }
 
 /** Keep historical storage untouched until the owner confirms the overall outcome. */
-export function workRegisterNeedsCompletionReview(task: Task): boolean {
-  return task.status === 'done' && !!task.importSource && !task.completionNote?.trim()
+export function workRegisterNeedsCompletionReview(task: Pick<Task, 'status' | 'importSource' | 'completionNote'>): boolean {
+  return isTaskCompletionPending(task)
 }
 
 export const workRegisterPlanStatusLabels: Record<MonthlyPlan['status'], string> = {
@@ -142,7 +142,7 @@ export const workRegisterPlanStatusLabels: Record<MonthlyPlan['status'], string>
 
 export function buildWorkRegister(
   data: Pick<Bootstrap, 'tasks' | 'weeklyRecords' | 'user'> & Partial<Pick<Bootstrap, 'plans' | 'users' | 'taskProgress'>>,
-  options: { view?: WorkRegisterView; query?: string; today?: string } = {},
+  options: { view?: WorkRegisterView; query?: string; today?: string; carriedPlanIds?: readonly string[] } = {},
 ): WorkRegisterResult {
   const today = options.today ?? workRegisterToday()
   const weekStart = monday(today)
@@ -202,11 +202,13 @@ export function buildWorkRegister(
   }
   for (const plan of ownPlans.values()) {
     if (plan.status === 'merged' || plan.acceptanceStatus === 'accepted' || linkedPlanIds.has(plan.id)) continue
+    const carriedForward = options.carriedPlanIds?.includes(plan.id) === true
     allRows.push({ kind: 'plan', plan, id: plan.id, title: plan.title, dueDate: plan.dueDate, priority: plan.priority, createdAt: plan.createdAt,
       source: plan.workSource, sourceLabel: plan.workSource ? workSourceLabels[plan.workSource] : '来源待核对', assignedBy: plan.assignedBy || '',
-      isActive: true, needsCompletionReview: false, displayStatus: workRegisterPlanStatusLabels[plan.status],
+      ...(carriedForward ? { carriedForward: true } : {}),
+      isActive: true, needsCompletionReview: false, displayStatus: carriedForward ? '已跨月承接，原月待验收' : workRegisterPlanStatusLabels[plan.status],
       progress: plan.actualOutcome || '', progressSource: plan.actualOutcome ? 'plan' : 'none',
-      isOverdue: isCalendarDay(plan.dueDate) && plan.dueDate < today, isUnscheduled: true, needsCoordination: false,
+      isOverdue: isCalendarDay(plan.dueDate) && plan.dueDate < today, isUnscheduled: !carriedForward, needsCoordination: false,
     })
   }
   allRows.sort((a, b) =>
@@ -220,7 +222,7 @@ export function buildWorkRegister(
   }
   const search = query.toLocaleLowerCase()
   const rows = allRows.filter(row => matchesView(row, view) && (!search || [row.title, row.sourceLabel, row.assignedBy, row.progress, row.displayStatus, ...(row.kind === 'plan' ? [
-    row.plan.expectedOutcome, row.plan.acceptanceCriteria, row.plan.temporaryReason, row.plan.category, row.plan.assignedOn, '月度目标 待建立个人任务',
+    row.plan.expectedOutcome, row.plan.acceptanceCriteria, row.plan.temporaryReason, row.plan.category, row.plan.assignedOn, row.carriedForward ? '月度目标 已跨月承接 原月待验收' : '月度目标 待建立个人任务',
   ] : [row.task.description, row.task.assignedOn, row.task.temporaryReason,
     row.task.requestedOutcome, row.task.currentProgress, row.task.nextAction,
     row.task.decisionNeeded, row.task.estimatedEffort, row.task.blockerReason, row.task.supportNeeded,
@@ -236,14 +238,14 @@ export function createWorkRegisterSnapshot(
   const generatedAt = options.generatedAt ?? new Date().toISOString()
   if (!Number.isFinite(new Date(generatedAt).getTime())) throw new RangeError('汇报生成时间格式无效')
   const rows = result.rows.map((row): WorkRegisterReportRow => row.kind === 'plan' ? Object.freeze({
-    id: row.id, title: row.title, itemType: '月度目标（待建立个人任务）', source: row.sourceLabel,
+    id: row.id, title: row.title, itemType: row.carriedForward ? '月度目标（已跨月承接，原月待验收）' : '月度目标（待建立个人任务）', source: row.sourceLabel,
     assignedBy: row.assignedBy || '未注明', assignedOn: row.plan.assignedOn || '待确认',
     requestedOutcome: row.plan.expectedOutcome || '未填写', status: row.displayStatus, progress: row.progress || '未填写',
-    overallProgress: row.progress || '未填写', latestExecution: '待建立个人任务',
-    nextAction: row.plan.status === 'published' ? '建立个人任务后安排周工作' : '建立个人任务；目标发布前仅可保存周草稿',
+    overallProgress: row.progress || '未填写', latestExecution: row.carriedForward ? '原任务已跨月承接' : '待建立个人任务',
+    nextAction: row.carriedForward ? '核对原月成果与验收结论；后续执行沿用承接任务' : row.plan.status === 'published' ? '建立个人任务后安排周工作' : '建立个人任务；目标发布前仅可保存周草稿',
     dueDate: isCalendarDay(row.dueDate) ? row.dueDate : '待确认', priority: row.priority ? workPriorityLabels[row.priority] : '未注明',
-    remainingEffortDays: '未填写', estimatedEffort: '待建立个人任务后填写', decisionNeeded: row.plan.status === 'published' ? '未填写' : `目标${row.displayStatus}，尚未发布`,
-    waitingForFeedback: '未记录', schedule: '待建立个人任务',
+    remainingEffortDays: '未填写', estimatedEffort: row.carriedForward ? '见承接任务' : '待建立个人任务后填写', decisionNeeded: row.carriedForward ? '核对原月成果与验收结论' : row.plan.status === 'published' ? '未填写' : `目标${row.displayStatus}，尚未发布`,
+    waitingForFeedback: '未记录', schedule: row.carriedForward ? '已跨月承接，原月待验收' : '待建立个人任务',
   }) : Object.freeze({
     id: row.id,
     title: row.title,

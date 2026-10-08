@@ -126,7 +126,8 @@ export class WorkspaceQueryService {
       const weeklyRecords = tasks.flatMap(task => this.store.registerTaskRecords(task.id, actor.id, base.weekStart))
       const users = [...new Set(tasks.flatMap(task=>task.workOrigin?.actorId?[task.workOrigin.actorId]:[]))].flatMap(id=>{const user=this.store.get<User>('users',id);return user?[safeUser(user)]:[]})
       const taskProgress = this.store.workspaceTaskProgress(tasks, actor.id, isManager(actor), today)
-      const projected = buildWorkRegister({ user: actor, tasks, weeklyRecords, plans: [...references.values()], users, taskProgress }, { view, today })
+      const carriedPlanIds = selected.filter(row => row.kind === 'plan' && row.carriedForward).map(row => row.entity.id)
+      const projected = buildWorkRegister({ user: actor, tasks, weeklyRecords, plans: [...references.values()], users, taskProgress }, { view, today, carriedPlanIds })
       // SQL controls membership/order. The shared projector supplies the established display fields.
       const byId = new Map(projected.rows.map(row => [`${row.kind}:${row.id}`, row]))
       const items = selected.flatMap(row => { const value = byId.get(`${row.kind}:${row.entity.id}`); return value ? [{ ...value, ...(row.historicalReference ? { historicalReference: true } : {}), priority: value.priority ?? (value.kind === 'task' && value.task.monthlyPlanId ? references.get(value.task.monthlyPlanId)?.priority : undefined) }] : [] })
