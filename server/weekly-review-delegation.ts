@@ -7,7 +7,7 @@ import { assertBusinessActor } from './object-access.ts'
 import { DomainBase, manager, type Input } from './domain-common.ts'
 import { HttpError, type Store } from './store.ts'
 import { cycleWeek } from './weekly-submission-clock.ts'
-import { weeklyDutyHistory } from './weekly-duty-view.ts'
+import { weeklyDutyHistory, weeklyPlanReviewRequired } from './weekly-duty-view.ts'
 import { isManager, isMember } from './authorization.ts'
 
 export const WEEKLY_REVIEW_DELEGATION_SETTINGS_ID = 'weekly-review-delegation'
@@ -85,6 +85,7 @@ export class WeeklyReviewDelegationService extends DomainBase {
       const history = weeklyDutyHistory(duty, submissions, adjustments), receipt = history.valid.at(-1)
       if (!receipt || history.exemptionReason || reviews.some(review => review.submissionId === receipt.id)) continue
       const rows = wholePlanRows(this.store, duty)
+      if (!weeklyPlanReviewRequired(rule, duty, this.store.get<User>('users', duty.ownerId), rows, receipt)) continue
       if (!wholePlanMatches(receipt, rows)) continue
       const reviewer = resolveWholePlanReviewer(this.store, duty, receipt, rows)
       if (!isManager(actor) && (reviewer.kind !== 'goal_owner' || reviewer.reviewerId !== actor.id)) continue

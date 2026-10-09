@@ -5,7 +5,7 @@ import { isActiveWeeklyRecord, isEffectiveWeeklyRecord, isWeeklyPlanReviewCycle,
 import { DomainBase, text, type Input } from './domain-common.ts'
 import { HttpError, type Store } from './store.ts'
 import { addWeekDays, shanghaiWeek } from './weekly-submission-clock.ts'
-import { weeklyDutyHistory } from './weekly-duty-view.ts'
+import { weeklyDutyHistory, weeklyPlanReviewRequired } from './weekly-duty-view.ts'
 import type { WeeklyAdjustment } from '../shared/weekly-submissions.ts'
 import { collaborationWorkMutation } from './collaboration-hooks.ts'
 import { endTaskRequests } from './collaboration-tracking.ts'
@@ -63,10 +63,6 @@ export function weeklyPlanApprovalMetadata(store: Store, ownerId: string, weekSt
   return { ...unapproved(), ...(isWeeklyPlanReviewCycle(rule, addWeekDays(weekStart, -7)) ? {} : { suspended: true as const }) }
 }
 
-export function weeklyPlanReviewRequired(rule: WeeklyRule, duty: WeeklyDuty): boolean {
-  return duty.kind === 'plan' && isWeeklyPlanReviewCycle(rule, duty.cycleWeek)
-}
-
 export class WeeklyPlanReviewService extends DomainBase {
   constructor(store: Store, private clock: () => Date = () => new Date()) { super(store) }
 
@@ -81,11 +77,11 @@ export class WeeklyPlanReviewService extends DomainBase {
       const reason = text(input.reason, '审核意见', decision === 'returned')
       const duty = this.need<WeeklyDuty>('weeklyDuties', dutyId)
       const rule = ensureWeeklyPlanReviewRule(this.store, this.clock())
-      if (!weeklyPlanReviewRequired(rule, duty)) throw new HttpError(400, '该提报项不需要下周计划审核')
       const history = weeklyDutyHistory(duty, this.store.list<WeeklySubmission>('weeklySubmissions'), this.store.list<WeeklyAdjustment>('weeklyAdjustments'))
       const receipt = history.valid.at(-1)
-      if (!receipt || receipt.id !== submissionId || history.exemptionReason) throw new HttpError(409, '提交版本已变化、失效或已豁免，请刷新后审核')
       const rows = wholePlanRows(this.store, duty)
+      if (!weeklyPlanReviewRequired(rule, duty, this.store.get<User>('users', duty.ownerId), rows, receipt)) throw new HttpError(400, '该提报项不需要下周计划审核')
+      if (!receipt || receipt.id !== submissionId || history.exemptionReason) throw new HttpError(409, '提交版本已变化、失效或已豁免，请刷新后审核')
       // Even a retry must still have live authority over the exact current whole-plan manifest.
       assertWholePlanReviewer(this.store, actor, duty, receipt, rows)
       if (!wholePlanMatches(receipt, rows)) throw new HttpError(409, '计划内容已变化，请成员核对后重新提交')

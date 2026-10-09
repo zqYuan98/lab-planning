@@ -51,7 +51,7 @@ export class MyActionsService {
         const cycles = new Set(this.store.list<WeeklyDuty>('weeklyDuties').filter(duty => duty.kind === 'plan').map(duty => duty.cycleWeek))
         const weekly = new WeeklySubmissionService(this.store, this.clock)
         for (const week of cycles) for (const duty of weekly.preview(actor, week)?.duties || []) {
-          if (!duty.planReviewRequired || duty.planReviewStatus !== 'pending' || !duty.latestSubmission) continue
+          if (duty.status === 'exempt' || !duty.planReviewRequired || duty.planReviewStatus !== 'pending' || !duty.latestSubmission) continue
           add({ kind: 'weekly_review', sourceId: duty.id, sourceVersion: duty.version, businessGeneration: duty.latestSubmission.id, assigneeIds: managers, title: `${this.store.get<User>('users', duty.ownerId)?.name || '成员'} · ${duty.contentWeek} 周计划`, requiredAction: '审核最新有效周计划', dueAt: duty.deadlineAt, createdAt: duty.latestSubmission.submittedAt, sharedQueue: true,
             actionTarget: { page: 'weekly', id: duty.latestSubmission.id, cycleWeek: duty.cycleWeek, ownerId: duty.ownerId, kind: 'plan', action: 'review' } })
         }

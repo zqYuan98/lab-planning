@@ -159,7 +159,7 @@ export class WeeklySubmissionService extends DomainBase {
   }
 
   private dutyView(duty: WeeklyDuty): WeeklyDutyView {
-    return projectWeeklyDuty(duty, { submissions: this.rows<WeeklySubmission>('weeklySubmissions'), adjustments: this.rows<WeeklyAdjustment>('weeklyAdjustments'),
+    return projectWeeklyDuty(duty, { owner: this.store.get<User>('users', duty.ownerId), submissions: this.rows<WeeklySubmission>('weeklySubmissions'), adjustments: this.rows<WeeklyAdjustment>('weeklyAdjustments'),
       records: this.rows<WeeklyRecord>('weeklyRecords'), missing: this.rows<WeeklyMissing>('weeklyMissing'), progressEvents: this.rows<ProgressEvent>('progressEvents'),
       rule: this.store.get<WeeklyRule>('weeklyRules', RULE), planReviews: this.rows<WeeklyPlanReview>('weeklyPlanReviews') }, this.clock())
   }

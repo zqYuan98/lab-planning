@@ -39,6 +39,7 @@ function eventFactLabel(event: BusinessNotificationEvent, field: string) {
 function eventFactValue(field: string, value: unknown) {
   if (field === 'dueAt' && typeof value === 'string' && Number.isFinite(Date.parse(value))) return notificationLocalTime(new Date(value))
   if (field === 'decision' && typeof value === 'string') return ({ approved: '已批准', returned: '已退回' } as Record<string, string>)[value] ?? notificationText(value)
+  if (field === 'kind' && typeof value === 'string') return ({ results: '本周完成情况', plan: '下周计划' } as Record<string, string>)[value] ?? notificationText(value)
   return notificationText(String(value))
 }
 const publicationDeferred = storeScope<true>()

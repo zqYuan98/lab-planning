@@ -35,7 +35,7 @@ import NotificationStatus from '../components/NotificationStatus'
 import { TaskCancellationAction, TaskCancellationModal } from '../components/TaskCancellation'
 import { PriorityBadge, WorkTypeBadge, TaskLegend, ContextHelp } from '../components/TaskSignals'
 import { taskPriority, workKind } from '../task-presentation'
-import { recordTarget, advanceWeek, weeklyRecordState, type WorkTarget, type ReviewRequest } from '../weekly-submission-flow'
+import { recordTarget, planReviewTarget, weeklyTaskIntentId, weeklyNavigationWeeks, advanceWeek, weeklyRecordState, type WorkTarget, type ReviewRequest } from '../weekly-submission-flow'
 import { weeklyPageQuery } from '../period-query'
 import { useDebouncedSearch } from '../use-debounced-search'
 import {
@@ -69,11 +69,13 @@ const statusTone: Record<string, string> = {
 type WeeklyProps = PageProps & { navigate?: Navigate }
 interface WeeklyControls { value: WeeklyWorkspace | null; setQuery: (query: string) => void }
 export default function Weekly(props: WeeklyProps) {
+  const taskIntentId = weeklyTaskIntentId(props.intent)
+  const { recordWeek } = weeklyNavigationWeeks(props.intent, monday())
   // Matches WeeklyBody's first query so entering the page issues a single read.
-  const initial = weeklyPageQuery({ weekStart: props.intent?.weekStart || monday(), ownerId: props.intent?.ownerId || (props.data.user.role === 'manager' ? '' : props.data.user.id), status: props.intent?.status || 'all', q: props.intent?.query || '', source: 'all', includeInactive: false, id: props.intent?.id })
+  const initial = weeklyPageQuery({ weekStart: recordWeek, ownerId: props.intent?.ownerId || (props.data.user.role === 'manager' ? '' : props.data.user.id), status: props.intent?.status || 'all', q: props.intent?.query || '', source: 'all', includeInactive: false, id: taskIntentId })
   const [query, setQuery] = useState(initial), [cursors, setCursors] = useState<string[]>([])
   const firstPath = `/workspace/weekly?${query}`, resource = useWorkspaceQuery<WeeklyWorkspace>(firstPath + (cursors.length ? `&cursor=${encodeURIComponent(cursors.at(-1)!)}` : ''), periodScope(props.data), undefined, { onCursorStale: () => { setCursors([]); return firstPath } })
-  const [initialized, setInitialized] = useState(!props.intent?.id)
+  const [initialized, setInitialized] = useState(!taskIntentId)
   useEffect(() => { if (resource.value) setInitialized(true) }, [resource.value])
   const data = { ...props.data, users: resource.value?.references.users ?? [props.data.user], projects: resource.value?.references.projects ?? [], plans: resource.value?.references.plans ?? [], tasks: resource.value?.references.tasks ?? [], weeklyRecords: resource.value?.items ?? [], publications: [] }
   const reload = async () => { setCursors([]); await resource.reload(firstPath) }
@@ -82,14 +84,15 @@ export default function Weekly(props: WeeklyProps) {
 }
 export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: WeeklyProps & { period?: WeeklyControls }) {
   const manager = data.user.role === 'manager'
-  const initialWeek = intent?.weekStart || monday()
+  const taskIntentId = weeklyTaskIntentId(intent)
+  const { recordWeek: initialWeek, cycleWeek: initialCycleWeek } = weeklyNavigationWeeks(intent, monday())
   const initialRecord = data.weeklyRecords.find(
     (record) =>
       isActiveWeeklyRecord(record) &&
-      (record.taskId === intent?.id || record.id === intent?.id) &&
+      (record.taskId === taskIntentId || record.id === taskIntentId) &&
       record.weekStart === initialWeek,
   )
-  const initialTask = data.tasks.find((task) => task.id === intent?.id)
+  const initialTask = data.tasks.find((task) => task.id === taskIntentId)
   const initialOwner = initialRecord?.ownerId || initialTask?.ownerId || intent?.ownerId || (manager ? '' : data.user.id)
   const [includeInactive, setIncludeInactive] = useState(data.users.some(user => user.id === initialOwner && registrationApproved(user) && !user.active))
   const visibleOwners = visibleAccounts(data.users, includeInactive)
@@ -110,16 +113,16 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
   const querySearch = useDebouncedSearch(search)
   useEffect(() => {
     if (!period) return
-    period.setQuery(weeklyPageQuery({ weekStart: week, ownerId: owner, status: filter, q: querySearch, source: sourceFilter, includeInactive, id: intent?.id && !handledIntent.current ? intent.id : undefined }))
+    period.setQuery(weeklyPageQuery({ weekStart: week, ownerId: owner, status: filter, q: querySearch, source: sourceFilter, includeInactive, id: !handledIntent.current ? taskIntentId : undefined }))
   }, [week, owner, filter, querySearch, sourceFilter, includeInactive])
-  const [cycleWeek, setCycleWeek] = useState(intent?.cycleWeek || initialWeek)
+  const [cycleWeek, setCycleWeek] = useState(initialCycleWeek)
   const [submissionView, setSubmissionView] = useState<WeeklySubmissionView | null>(null)
   const noSubmissionDuty = submissionView?.week === cycleWeek && submissionView.deadlineAt === null
   const [workContext, setWorkContext] = useState<WorkTarget | null>(null)
   const [reviewRequest, setReviewRequest] = useState<ReviewRequest | null>(() => intent?.kind ? {
-    cycleWeek: intent.cycleWeek || initialWeek,
-    contentWeek: intent.kind === 'plan' ? advanceWeek(intent.cycleWeek || initialWeek, 7) : intent.cycleWeek || initialWeek,
-    ownerId: manager && intent.ownerId ? intent.ownerId : data.user.id, kind: intent.kind, token: 1,
+    cycleWeek: initialCycleWeek,
+    contentWeek: initialWeek,
+    ownerId: manager && intent.ownerId ? intent.ownerId : data.user.id, kind: intent.kind, token: 1, mode: intent.action === 'review' ? 'review' : 'submit',
   } : null)
   const reviewSequence = useRef(1)
   const submissionSection = useRef<HTMLDivElement>(null)
@@ -146,10 +149,10 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
     else if (target.create) openCreate(false)
     else requestAnimationFrame(() => { recordSection.current?.scrollIntoView({block:'start'}); recordSection.current?.focus({preventScroll:true}) })
   }
-  function reviewWork(target: WorkTarget) {
+  function reviewWork(target: WorkTarget, mode: ReviewRequest['mode'] = 'submit') {
     detailSequence.current++
     setCycleWeek(target.cycleWeek)
-    setReviewRequest({...target, token:++reviewSequence.current})
+    setReviewRequest({...target, token:++reviewSequence.current, mode})
     requestAnimationFrame(() => { submissionSection.current?.scrollIntoView({block:'start'}); submissionSection.current?.focus({preventScroll:true}) })
   }
   const [modal, setModal] = useState(
@@ -264,7 +267,7 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
         }
       />
       <div ref={submissionSection} tabIndex={-1}>
-        <WeeklySubmissionPanel data={data} refresh={refresh} notify={notify} week={cycleWeek} onChangeCycle={selectRecordWeek} onSelectWork={selectWork} reviewRequest={reviewRequest} onViewChange={setSubmissionView} />
+        <WeeklySubmissionPanel data={data} refresh={refresh} notify={notify} week={cycleWeek} onChangeCycle={selectRecordWeek} onSelectWork={selectWork} onReviewPlan={target => reviewWork(target, 'review')} reviewRequest={reviewRequest} onViewChange={setSubmissionView} />
       </div>
       <div ref={recordSection} tabIndex={-1} className="weekly-record-context">
         <h2>周工作记录 · 自然周 {week} ～ {advanceWeek(week,6)}</h2>
@@ -360,7 +363,7 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
         <span>
           已纳入周统计 <strong>{summary.official}</strong> 项
         </span>
-        {summary.pending > 0 && <span>待审核生效 <strong>{summary.pending}</strong> 项</span>}
+        {summary.pending > 0 && <span>计划未确认 <strong>{summary.pending}</strong> 项</span>}
         <span>
           成员自报完成{' '}
           <strong>
@@ -389,7 +392,7 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
         {[
           ['all', '全部记录'],
           ['draft', '草稿'],
-          ['pending', '待审核生效'],
+          ['pending', '计划未确认'],
           ...Object.entries(statusLabels),
         ].map(([value, label]) => (
           <button
@@ -507,7 +510,7 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
                     : temporaryRecord
                       ? task?.monthlyPlanId
                         ? '本周按临时工作记录，任务后续已关联月度目标'
-                        : '临时交办，直接纳入本周计划'
+                        : '临时工作安排'
                       : record.importSource
                         ? '未关联月度目标，保留原资料归属'
                         : '未关联月度目标'}
@@ -597,7 +600,7 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
                             正式保存该条计划
                           </button>
                         )}
-                        <button onClick={() => reviewWork(recordTarget(record, cycleWeek))}>核对关联整份提报</button>
+                        <WeeklyRecordSubmissionActions record={record} onOpen={reviewWork} />
                         <button
                           disabled={!availableOwner(record.ownerId)}
                           title={!availableOwner(record.ownerId) ? '责任人账号已停用，无法新安排任务' : undefined}
@@ -790,6 +793,17 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
     </>
   )
 }
+export function WeeklyRecordSubmissionActions({ record, onOpen }: {
+  record: WeeklyRecord; onOpen: (target: WorkTarget, mode?: ReviewRequest['mode']) => void
+}) {
+  // Opening a plan review changes the panel cycle, but must not redirect this result-reporting action.
+  const submission = recordTarget(record, record.weekStart)
+  return <>
+    <button onClick={() => onOpen(submission)}>{submission.kind === 'results' ? '核对本周完成情况' : '核对整份计划'}</button>
+    {record.planApproval?.required && !record.planApproval.suspended && <button onClick={() => onOpen(planReviewTarget(record), 'review')}>查看计划审核</button>}
+  </>
+}
+
 export function WeeklyRecordSubmissionGuidance({ noSubmissionDuty, wholeWeekRest = true }: { noSubmissionDuty: boolean; wholeWeekRest?: boolean }) {
   const noDutyReason = wholeWeekRest ? '本提报周期整周休息' : '按本提报周期已保存规则'
   return <>

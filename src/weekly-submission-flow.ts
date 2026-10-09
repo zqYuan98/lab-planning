@@ -2,12 +2,36 @@ import type { WeeklyDutyView, SubmissionKind } from '../shared/weekly-submission
 import type { WeeklyRecord } from '../shared/types'
 import { isActiveWeeklyRecord, isEffectiveWeeklyRecord } from '../shared/weekly-record-state'
 import { shanghaiToday, weekMonday } from './overview-data'
+import type { NavigationIntent } from './navigation'
 
 export interface WorkTarget {
   cycleWeek: string; contentWeek: string; ownerId: string; kind: SubmissionKind
   recordId?: string; create?: boolean
 }
-export interface ReviewRequest extends WorkTarget { token: number }
+export interface ReviewRequest extends WorkTarget { token: number; mode?: 'submit' | 'review' }
+
+/** Submission links carry receipt IDs, which must never be resolved as task IDs. */
+export function weeklyTaskIntentId(intent?: Pick<NavigationIntent, 'id' | 'kind'>): string | undefined {
+  return intent?.kind ? undefined : intent?.id
+}
+
+/** A submission cycle owns this week's results and next week's plans; record queries use the content week. */
+export function weeklyNavigationWeeks(intent: Pick<NavigationIntent, 'kind' | 'cycleWeek' | 'weekStart'> | undefined, fallbackWeek: string) {
+  const recordWeek = intent?.weekStart || fallbackWeek
+  const cycleWeek = intent?.cycleWeek || (intent?.kind === 'plan' ? advanceWeek(recordWeek, -7) : recordWeek)
+  return { cycleWeek, recordWeek: intent?.kind === 'plan' ? advanceWeek(cycleWeek, 7) : intent?.kind === 'results' ? cycleWeek : recordWeek }
+}
+
+export function planReviewTarget(record: Pick<WeeklyRecord, 'weekStart' | 'ownerId'>): WorkTarget {
+  return { cycleWeek: advanceWeek(record.weekStart, -7), contentWeek: record.weekStart, ownerId: record.ownerId, kind: 'plan' }
+}
+
+/** Re-read the duty before choosing a screen: a badge alone is not an auditable receipt. */
+export function submissionOpenMode(duty: WeeklyDutyView, manager: boolean, requestedMode: ReviewRequest['mode']): 'submit' | 'review' | 'detail' {
+  if (duty.status === 'exempt') return 'detail'
+  if (requestedMode !== 'review') return 'submit'
+  return manager && duty.kind === 'plan' && duty.planReviewStatus === 'pending' && !!duty.latestSubmission ? 'review' : 'detail'
+}
 
 /** getRandomValues is supported on the deployed LAN HTTP origin; randomUUID is not. */
 export function createSubmissionRequestId(source: { getRandomValues(array: Uint8Array): Uint8Array } = globalThis.crypto): string {
@@ -33,13 +57,14 @@ export function weeklyRecordState(record: WeeklyRecord) {
   if (!isActiveWeeklyRecord(record)) return { label:'已删除', tone:'neutral' }
   if (!record.submitted) return { label:'草稿 · 未纳入周统计', tone:'neutral' }
   if (record.planApproval?.suspended) return { label:'本周期无需审核 · 纳入周统计', tone:'neutral' }
-  if (record.planApproval?.required && !isEffectiveWeeklyRecord(record)) return { label:record.planApproval.approvedSubmissionId ? '计划有修改 · 待重新审核' : '计划待审核 · 未纳入周统计', tone:'amber' }
+  if (record.planApproval?.required && !isEffectiveWeeklyRecord(record)) return { label:record.planApproval.approvedSubmissionId ? '计划有修改 · 待重新确认' : '计划未获确认 · 未纳入周统计', tone:'amber' }
   if (record.planApproval?.required) return { label:'计划已审核 · 纳入周统计', tone:'green' }
   if (record.workOrigin?.kind === 'assigned') return { label:'管理员已确认 · 纳入周统计', tone:'blue' }
   return { label:'已纳入周统计', tone:'neutral' }
 }
 /** Execution-only changes never turn an approved plan back into a review request. */
 export function submissionChangeNotice(duty: WeeklyDutyView): string {
+  if (duty.status === 'exempt') return ''
   if (duty.kind === 'plan' && duty.planReviewRequired) {
     if (duty.planReviewStatus === 'changed') return '计划条目或承诺已变化，请重新核对并提交审核；原批准版本保留在历史中。'
     if (duty.planReviewStatus === 'returned') return '请按退回意见修改计划，再核对并重新提交审核。'

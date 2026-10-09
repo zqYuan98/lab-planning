@@ -18,10 +18,11 @@ const taskStatuses = { todo: '待开始', doing: '进行中', blocked: '阻塞',
 const planStatuses = { draft: '草稿', submitted: '待审核', approved: '已批准，等待发布', published: '已发布', returned: '退回待修改', merged: '已合并' }
 const acceptanceStatuses = { pending: '未提交', submitted: '待验收', accepted: '已验收', not_completed: '未完成/需处理' }
 const readableLine = (value: string) => clean(value).replace(/\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d(?:\.\d{1,3})?)?(?:Z|[+-]\d\d:\d\d)/g, localTime)
+const readableSubmissionLine = (value: string) => value.replace(/^提报类型：(results|plan)$/, (_, kind: string) => `提报类型：${kind === 'results' ? '本周完成情况' : '下周计划'}`)
 
 /** Old stored prose stays immutable; its timestamp/field labels are corrected only in the read projection. */
 function historicalLines(item: DigestItem) {
-  const lines = item.lines.map(readableLine).map(line => item.sourceKind === 'deadline_requested' ? line.replace(/^新截止：/, '原截止：') : line)
+  const lines = item.lines.map(readableLine).map(line => item.sourceKind === 'deadline_requested' ? line.replace(/^新截止：/, '原截止：') : item.sourceKind === 'weekly_submitted' ? readableSubmissionLine(line) : line)
   if (lines.length && !lines[0].startsWith('当时记录：')) lines[0] = `当时记录：${lines[0]}`
   return lines
 }
@@ -145,7 +146,7 @@ export function projectCollaborationContent(store: Store, actor: User, row: Noti
       const eventId = /^collaboration:event:([a-zA-Z0-9_-]+)$/.exec(row.eventKey)?.[1]
       const event = eventId ? store.get<BusinessNotificationEvent>('businessNotificationEvents', eventId) : undefined
       const task = target.type === 'task' ? store.get<Task>('tasks', target.id) : undefined
-      if (isManager(actor) || event?.ownerId === actor.id) content.items.push({ target, title: clean(task?.title ?? row.title), lines: row.body.split('\n').map(readableLine) })
+      if (isManager(actor) || event?.ownerId === actor.id) content.items.push({ target, title: clean(task?.title ?? row.title), lines: row.body.split('\n').map(readableLine).map(line => row.kind === 'collaboration_weekly_submitted' ? readableSubmissionLine(line) : line) })
       buttonText = target.type === 'weeklySubmission' ? '查看事项' : '查看进展'
     }
   }

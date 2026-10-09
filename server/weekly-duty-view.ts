@@ -1,7 +1,8 @@
-import type { WeeklyRecord } from '../shared/types.ts'
+import type { User, WeeklyRecord } from '../shared/types.ts'
 import type { WeeklyAdjustment, WeeklyDuty, WeeklyDutyView, WeeklyMissing, WeeklyPlanReview, WeeklyRule, WeeklySubmission } from '../shared/weekly-submissions.ts'
 import type { ProgressEvent } from '../shared/collaboration.ts'
 import { isActiveWeeklyRecord, isWeeklyPlanReviewCycle, weeklyPlanManifest, weeklyResultManifest } from '../shared/weekly-record-state.ts'
+import { isManager } from './authorization.ts'
 
 /** A task note affects the cycle containing it, never every historical week of a long task. */
 export function submissionProgressEvents(duty: WeeklyDuty, records: WeeklyRecord[], events: ProgressEvent[]): ProgressEvent[] {
@@ -32,8 +33,18 @@ export function weeklyDutyHistory(duty: WeeklyDuty, allSubmissions: WeeklySubmis
   return { submissions, adjustments, valid, exemptionReason }
 }
 
+/** Manager submissions still owe a receipt, but their own plans do not introduce a second approval gate. */
+export function weeklyPlanReviewRequired(rule: WeeklyRule | undefined, duty: WeeklyDuty, owner: Pick<User, 'role'> | undefined, records: WeeklyRecord[], receipt?: WeeklySubmission): boolean {
+  if (duty.kind !== 'plan' || !rule || !isWeeklyPlanReviewCycle(rule, duty.cycleWeek)) return false
+  // Keep the original member gate (including empty plans) and fail closed for unavailable owners.
+  // A promotion never removes an approval requirement already carried by a live row or receipt.
+  return !isManager(owner) || [...records, ...(receipt?.records ?? [])].some(record =>
+    isActiveWeeklyRecord(record) && record.ownerId === duty.ownerId && record.weekStart === duty.contentWeek
+    && record.planApproval?.required && !record.planApproval.suspended)
+}
+
 /** Shared pure projection: showing a notification never creates deadline or submission facts. */
-export function projectWeeklyDuty(duty: WeeklyDuty, data: { submissions: WeeklySubmission[]; adjustments: WeeklyAdjustment[]; records: WeeklyRecord[]; missing: WeeklyMissing[]; progressEvents?: ProgressEvent[]; rule?: WeeklyRule; planReviews?: WeeklyPlanReview[] }, now: Date): WeeklyDutyView {
+export function projectWeeklyDuty(duty: WeeklyDuty, data: { owner: Pick<User, 'role'> | undefined; submissions: WeeklySubmission[]; adjustments: WeeklyAdjustment[]; records: WeeklyRecord[]; missing: WeeklyMissing[]; progressEvents?: ProgressEvent[]; rule?: WeeklyRule; planReviews?: WeeklyPlanReview[] }, now: Date): WeeklyDutyView {
   const { submissions, adjustments, valid, exemptionReason } = weeklyDutyHistory(duty, data.submissions, data.adjustments)
   const records = data.records.filter(row => isActiveWeeklyRecord(row) && row.ownerId === duty.ownerId && row.weekStart === duty.contentWeek).sort((a, b) => a.id.localeCompare(b.id))
   const first = valid[0], latest = valid.at(-1)
@@ -43,7 +54,7 @@ export function projectWeeklyDuty(duty: WeeklyDuty, data: { submissions: WeeklyS
   const newProgress = latest ? submissionProgressEvents(duty, latest.records, data.progressEvents ?? []).some(event => latest.progressEventIds ? !latest.progressEventIds.includes(event.id) : event.occurredAt > latest.submittedAt) : false
   const planChanged = !!latest && (latest.planManifest ? JSON.stringify(weeklyPlanManifest(records)) !== JSON.stringify(latest.planManifest)
     : JSON.stringify(weeklyPlanManifest(official)) !== JSON.stringify(weeklyPlanManifest(latest.records)) || JSON.stringify(drafts) !== JSON.stringify(latest.retainedDraftManifest))
-  const planReviewRequired = duty.kind === 'plan' && !!data.rule && isWeeklyPlanReviewCycle(data.rule, duty.cycleWeek)
+  const planReviewRequired = weeklyPlanReviewRequired(data.rule, duty, data.owner, records, latest)
   const planReviews = (data.planReviews ?? []).filter(review => review.dutyId === duty.id)
   const latestPlanReview = latest ? planReviews.find(review => review.submissionId === latest.id) ?? null : null
   return { ...duty, status: exemptionReason ? 'exempt' : first ? first.submittedAt < duty.deadlineAt ? 'on_time' : 'late' : now.toISOString() >= duty.deadlineAt ? 'missing' : 'due',

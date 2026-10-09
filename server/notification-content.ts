@@ -1,7 +1,7 @@
 import type { AuditEvent, MonthlyPlan, Task, User, WeeklyRecord } from '../shared/types.ts'
 import type { Notification, NotificationChange, NotificationContent, NotificationFacts, NotificationSubject, NotificationTarget } from '../shared/notifications.ts'
 import type { Store } from './store.ts'
-import type { WeeklyDuty, WeeklySubmission, WeeklyAdjustment, WeeklyMissing } from '../shared/weekly-submissions.ts'
+import type { WeeklyDuty, WeeklySubmission, WeeklyAdjustment, WeeklyMissing, WeeklyPlanReview, WeeklyRule } from '../shared/weekly-submissions.ts'
 import { addWeekDays } from './weekly-submission-clock.ts'
 import { participates, planHasMergedSource, projectPlan } from './plan-visibility.ts'
 import { projectWeeklyDuty } from './weekly-duty-view.ts'
@@ -130,12 +130,13 @@ export function projectNotificationContent(store: Store, actor: User, row: Notif
     // never to inbox/preview GETs. The worker supplies freshly checked due targets.
     content.intro = `提醒发生于 ${notificationLocalTime(new Date(row.eventTime ?? row.createdAt))}；以下为截至 ${notificationLocalTime(now)} 的当前提报状态。`
     const data = { submissions: store.list<WeeklySubmission>('weeklySubmissions'), adjustments: store.list<WeeklyAdjustment>('weeklyAdjustments'),
-      records: store.list<WeeklyRecord>('weeklyRecords'), missing: store.list<WeeklyMissing>('weeklyMissing'), progressEvents: store.list<import('../shared/collaboration.ts').ProgressEvent>('progressEvents') }
+      records: store.list<WeeklyRecord>('weeklyRecords'), missing: store.list<WeeklyMissing>('weeklyMissing'), progressEvents: store.list<import('../shared/collaboration.ts').ProgressEvent>('progressEvents'),
+      rule: store.get<WeeklyRule>('weeklyRules', 'weekly-submission-rule'), planReviews: store.list<WeeklyPlanReview>('weeklyPlanReviews') }
     let pendingCount = 0
     content.items = targets.flatMap(target => {
       const duty = store.get<WeeklyDuty>('weeklyDuties', target.id)
       if (!duty || duty.ownerId !== actor.id && !isManager(actor)) return []
-      const current = projectWeeklyDuty(duty, data, now), records = current.records
+      const current = projectWeeklyDuty(duty, { ...data, owner: store.get<User>('users', duty.ownerId) }, now), records = current.records
       const pending = current.status !== 'exempt' && (!current.latestSubmission || current.changedSinceSubmission)
       if (pending) pendingCount++
       const state = current.status === 'exempt' ? '本周期已豁免，无需提交' : current.latestSubmission ? current.changedSinceSubmission ? '内容有修改，待重新正式提报' : '当前已正式提交，无需重复提交' : '尚未正式提报，请核对并提交'

@@ -11,7 +11,7 @@ import { notificationText } from './notification-content.ts'
 import { createDingTalkNativeClient, type DingTalkNativeClient } from './dingtalk-native.ts'
 import { getNativeSettings, nativeCapabilityState, nativeManager, verifiedNativeIdentity } from './native-settings.ts'
 import { projectWeeklyDuty } from './weekly-duty-view.ts'
-import type { WeeklyDuty } from '../shared/weekly-submissions.ts'
+import type { WeeklyDuty, WeeklyRule } from '../shared/weekly-submissions.ts'
 import type { NotificationDigest } from '../shared/collaboration-notifications.ts'
 import { visibleDigestItems } from './collaboration-content.ts'
 import { isManager, isObserver } from './authorization.ts'
@@ -52,7 +52,8 @@ export function nativeDesired(store: Store, recipientId: string, action: NativeA
   } else if (action.kind === 'weekly') {
     const duty = store.get<WeeklyDuty>('weeklyDuties', action.id)
     if (!duty || duty.ownerId !== actor.id) return
-    const projected = projectWeeklyDuty(duty, { submissions: store.list('weeklySubmissions'), adjustments: store.list('weeklyAdjustments'), records: store.list('weeklyRecords'), missing: store.list('weeklyMissing'), progressEvents: store.list('progressEvents') }, new Date())
+    const projected = projectWeeklyDuty(duty, { owner: store.get<User>('users', duty.ownerId), rule: store.get<WeeklyRule>('weeklyRules', 'weekly-submission-rule'), planReviews: store.list('weeklyPlanReviews'),
+      submissions: store.list('weeklySubmissions'), adjustments: store.list('weeklyAdjustments'), records: store.list('weeklyRecords'), missing: store.list('weeklyMissing'), progressEvents: store.list('progressEvents') }, new Date())
     title = `正式提交：${duty.kind === 'results' ? '本周完成情况' : '下周计划'} ${duty.contentWeek}`
     summary = '进入平台核对完整条目后正式提报。'; done = projected.status === 'exempt' || !!projected.latestSubmission && !projected.changedSinceSubmission; dueTime = Date.parse(duty.deadlineAt); state = [duty.version, projected.latestSubmission?.id, projected.changedSinceSubmission]
   } else if (action.kind === 'blocker') {
