@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { HttpError } from './store.ts'
 const id = z.string().min(1).max(200), version = z.number().int().positive(), text = z.string().max(20000)
 const dataset = z.enum(['outcomes', 'risks', 'next_week', 'next_month', 'effort', 'annual_goals'])
-export const reportAgentColumnSchema = z.object({ label: z.string().min(1).max(200), field: z.enum(['title', 'owner', 'commitment', 'outcome', 'status', 'evidence', 'blocker', 'next_action', 'monthly_goal', 'manual']), required: z.boolean() }).strict()
+export const reportAgentColumnSchema = z.object({ label: z.string().min(1).max(200), field: z.enum(['title', 'owner', 'commitment', 'outcome', 'status', 'evidence', 'blocker', 'next_action', 'monthly_goal', 'support', 'due', 'criteria', 'manual']), required: z.boolean() }).strict()
 export const reportAgentBindingSchema = z.object({ regionId: id, label: z.string().min(1).max(200), kind: z.enum(['keep', 'clear', 'meta', 'section', 'dataset', 'manual']), required: z.boolean(), value: text.optional(),
   meta: z.enum(['period', 'week_end', 'week_range', 'captured_at', 'title', 'author', 'department']).optional(), section: dataset.optional(), dataset: dataset.optional(), startRow: z.number().int().min(0).optional(), endRow: z.number().int().positive().optional(), columns: z.array(reportAgentColumnSchema).max(30).optional() }).strict()
 export const reportAgentCellSchema = z.object({ text, factIds: z.array(id).max(1000), manual: z.boolean(), confirmed: z.boolean(), source: z.string().max(2000) }).strict()

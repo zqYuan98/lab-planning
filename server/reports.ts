@@ -53,9 +53,12 @@ export function buildReportSnapshot(store: Store, type: Report['type'], period: 
   const plans = allPlans.filter(p => (p.month >= firstMonth && p.month <= lastMonth) || (type === 'weekly' && linkedIds.has(p.id)))
   const nextMonth = shiftMonth(lastMonth, 1)
   const nextPlans = allPlans.filter(p => p.month === nextMonth && p.status !== 'merged')
-  const nextWeeklyRecords = type === 'weekly' ? store.list<WeeklyRecord>('weeklyRecords').filter(isActiveWeeklyRecord).filter(r => r.weekStart === addDays(period, 7)) : []
+  // A monthly report also freezes execution under next month's goals so their support requests can be reported.
+  const nextPlanIds = new Set(type === 'monthly' ? nextPlans.map(p => p.id) : [])
+  const nextWeeklyRecords = store.list<WeeklyRecord>('weeklyRecords').filter(isActiveWeeklyRecord).filter(r => type === 'weekly'
+    ? r.weekStart === addDays(period, 7) : !!r.monthlyPlanId && nextPlanIds.has(r.monthlyPlanId) && !weeklyRecords.some(current => current.id === r.id))
   const recordTaskIds = new Set([...weeklyRecords, ...nextWeeklyRecords].map(r => r.taskId))
-  const tasks = store.list<Task>('tasks').filter(task => recordTaskIds.has(task.id) || !task.cancellation && plans.some(p => p.id === task.monthlyPlanId))
+  const tasks = store.list<Task>('tasks').filter(task => recordTaskIds.has(task.id) || !task.cancellation && (plans.some(p => p.id === task.monthlyPlanId) || !!task.monthlyPlanId && nextPlanIds.has(task.monthlyPlanId)))
   // References outside the reporting months are context only. Including them in
   // plans would change the monthly denominator of a cross-month weekly record.
   const contextPlanIds = new Set([...weeklyRecords, ...nextWeeklyRecords].map(r => r.monthlyPlanId).concat(tasks.map(t => t.monthlyPlanId)).filter(Boolean))

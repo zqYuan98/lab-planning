@@ -221,3 +221,22 @@ test('company metadata keeps the report-date heading and composite action-owner 
   assert.equal(riskBinding.kind, 'dataset')
   assert.equal(riskBinding.columns![3].field, 'manual')
 })
+
+test('weekly support requests reach the risk table from the weekly record itself', async () => {
+  const store = new Store(':memory:')
+  const actor = store.insert<User>('users', { name: '支持管理者', email: 'weekly-support@example.test', role: 'manager', position: '', active: true })
+  const task = store.insert<Task>('tasks', { title: '模型评测', monthlyPlanId: null, ownerId: actor.id, description: '', dueDate: '', status: 'doing', isTemporary: true, temporaryReason: '支持需求测试' })
+  store.insert<WeeklyRecord>('weeklyRecords', { taskId: task.id, monthlyPlanId: null, ownerId: actor.id, weekStart: '2026-09-07', commitment: '完成评测', actualOutcome: '评测进行中', evidenceUrl: '', blocker: '', nextAction: '', status: 'doing', submitted: true, supportNeeded: '需要标注团队支持' })
+  const bytes = await fixture(p('周报') + table([['序号', '风险事项', '需要的支持', '责任人'], ['1', '旧风险', '旧支持', '旧人']]))
+  const asset = await uploadReportAsset(store, actor.id, { filename: '支持模板.docx', contentBase64: bytes.toString('base64'), purpose: 'template' })
+  let template = createReportTemplate(store, actor.id, { name: '支持', sourceAssetId: asset.id, effectiveWeek: '2026-09-07' })
+  const risk = template.bindings.find(binding => binding.kind === 'dataset')!
+  assert.equal(risk.dataset, 'risks'); assert.equal(risk.columns![2].field, 'support')
+  template = updateReportTemplate(store, actor.id, template.id, { expectedVersion: template.version, name: template.name, bindings: template.bindings, rules: ['忠于冻结依据'], rulesConfirmed: true, exampleAssetIds: [], effectiveWeek: template.effectiveWeek })
+  template = await previewReportTemplate(store, actor.id, template.id, template.version)
+  template = activateReportTemplate(store, actor.id, template.id, { expectedVersion: template.version, layoutVerified: true, layoutNote: '合成模板已核对' })
+  const job = enqueueReportAgent(store, actor.id, { requestId: 'weekly-support', templateId: template.id, period: '2026-09-07', useAi: false })
+  const block = getAgentReport(store, actor.id, job.reportId!).agent!.blocks.find(item => item.kind === 'table')!
+  assert.equal(block.rows[0][2].text, '需要标注团队支持')
+  store.close()
+})

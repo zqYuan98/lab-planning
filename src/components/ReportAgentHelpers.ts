@@ -3,7 +3,7 @@ import type { EnqueueReportAgentInput, ReportAgentBinding, ReportAgentDataset, R
 export const agentDatasetLabels: Record<ReportAgentDataset, string> = { outcomes: '本期成果（周进展 / 月验收）', risks: '问题与阻塞', next_week: '下周工作安排', next_month: '下月安排（含发布状态）', effort: '冻结人日投入', annual_goals: '冻结年度关联进度' }
 export const agentFieldLabels: Record<ReportAgentField, string> = {
   title: '工作事项', owner: '负责人', commitment: '本期承诺 / 预计投入', outcome: '实际成果', status: '周状态 / 月验收状态',
-  evidence: '成果证据', blocker: '问题与阻塞', next_action: '下一步', monthly_goal: '关联月目标', manual: '人工补充（公司口径）',
+  evidence: '成果证据', blocker: '问题与阻塞', next_action: '下一步', monthly_goal: '关联月目标', support: '所需支撑 / 需要支持', due: '截止日期（月目标）', criteria: '验收标准（月目标）', manual: '人工补充（公司口径）',
 }
 export const agentBindingLabels: Record<ReportAgentBinding['kind'], string> = { keep: '保留原文（已核对固定内容）', clear: '清除原文', meta: '报告日期或标题', section: '生成文字段落', dataset: '按事项填入表格', manual: '每期由管理者补充' }
 export const agentJobLabels: Record<ReportAgentJobStatus, string> = { queued: '排队中', running: '正在生成', ready: '已完成', needs_input: '需要补充', failed: '生成失败', cancelled: '已取消' }

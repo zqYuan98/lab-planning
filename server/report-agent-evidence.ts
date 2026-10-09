@@ -20,7 +20,7 @@ export function buildReportFacts(snapshot: ReportSnapshot, period: string): Repo
     const work = task(record.taskId), formal = isEffectiveWeeklyRecord(record)
     const values: Record<string, string> = { title: work?.title || '任务标题待核实', owner: owner(record.ownerId), commitment: record.commitment,
       outcome: record.actualOutcome, status: `${formal ? '' : '未生效计划：'}${weeklyStatusLabel(record)}`, evidence: record.evidenceUrl,
-      blocker: record.blocker, next_action: record.nextAction,
+      blocker: record.blocker, support: record.supportNeeded || '', next_action: record.nextAction,
       monthly_goal: [...snapshot.plans, ...(snapshot.contextPlans || [])].find(p => p.id === record.monthlyPlanId)?.title || '本周记录未关联月目标' }
     for (const [field, value] of Object.entries(values)) facts.push({ id: `weekly:${record.id}:${field}`, sourceType: 'weeklyRecord', sourceId: record.id,
       sourceVersion: record.version, subjectId: record.taskId, subject: work?.title || '任务标题待核实', field, value, unit: '', period: record.weekStart, status: formal ? record.status : 'ineffective' })
@@ -57,6 +57,8 @@ export function validateFactText(text: string, factIds: string[], facts: ReportF
   if (subjects.size > 1 && numbers(text).length) issues.push(issue('ambiguous_attribution', location, '同一句含多个事项及数字，请分开表述，使每个数字只引用对应事项。'))
   const records = new Set(cited.filter(f => f.sourceType !== 'metric').map(f => `${f.sourceType}:${f.sourceId}:${f.sourceVersion}:${f.period}`))
   if (records.size > 1 && numbers(text).length) issues.push(issue('ambiguous_record', location, '同一数字不能同时引用不同记录或周期，请拆分内容。'))
+  // A cell that copies one cited source value verbatim restates the record; claim checks apply to rewritten text.
+  if (cited.some(f => f.sourceType !== 'metric' && f.value.trim() && f.value.trim() === text.trim())) return issues
   if (/(?:已|整体|全部|全面)完成|完成了|已交付|已解决/.test(text) && cited.every(f => !['outcome', 'acceptance'].includes(f.field) && !(f.field === 'status' && f.status === 'done'))) issues.push(issue('plan_as_outcome', location, '计划或承诺不能改写为已经完成的成果。'))
   if (/(?:已(?:经)?(?:通过)?|通过(?:了)?|完成)验收|验收(?:已)?(?:通过|完成)/.test(text) && !cited.some(f => f.sourceType === 'monthlyPlan' && f.field === 'acceptance' && f.status === 'accepted')) issues.push(issue('acceptance_overstatement', location, '没有对应月目标已验收的冻结依据。'))
   const namedCompletion = cited.some(f => f.subject.length >= 2 && text.includes(`${f.subject}已完成`) && new RegExp(`${f.subject.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}已完成(?:[。；，！]|$)`).test(text))
@@ -88,10 +90,11 @@ export function validateReportBlocks(blocks: ReportAgentBlock[], facts: ReportFa
   }
   return issues
 }
+const emptyFieldText: Partial<Record<ReportAgentField, string>> = { outcome: '未填写实际成果', evidence: '未提供', blocker: '未记录', support: '未提出', next_action: '未填写', criteria: '未填写', due: '未填写' }
 export function factCell(text = '', factIds: string[] = [], manual = false): ReportAgentCell { return { text, factIds, manual, confirmed: false, source: '' } }
 function recordsFor(snapshot: ReportSnapshot, dataset: ReportAgentDataset) {
   if (dataset === 'next_week') return snapshot.nextWeeklyRecords.filter(isEffectiveWeeklyRecord)
-  return snapshot.weeklyRecords.filter(isEffectiveWeeklyRecord).filter(r => dataset !== 'risks' || r.blocker.trim() || r.status === 'blocked' || r.status === 'not_done')
+  return snapshot.weeklyRecords.filter(isEffectiveWeeklyRecord).filter(r => dataset !== 'risks' || r.blocker.trim() || (r.supportNeeded || '').trim() || r.status === 'blocked' || r.status === 'not_done')
 }
 export function buildRuleBlocks(bindings: ReportAgentBinding[], snapshot: ReportSnapshot, facts: ReportFact[], period: string, capturedAt: string, title: string): ReportAgentBlock[] {
   return bindings.filter(b => !['keep', 'clear'].includes(b.kind)).map(binding => {
@@ -106,7 +109,8 @@ export function buildRuleBlocks(bindings: ReportAgentBinding[], snapshot: Report
       const get = (id: string, field: ReportAgentField) => {
         if (field === 'manual') return factCell('', [], true)
         const fact = facts.find(f => f.id === `${id}:${monthly && !summary ? monthlyField(field) : field}`)
-        return factCell(fact?.value || '待补充', fact ? [fact.id] : [])
+        // An empty optional source field is reported as such instead of blocking finalization.
+        return factCell(fact?.value.trim() ? fact.value : fact && emptyFieldText[field] || '待补充', fact ? [fact.id] : [])
       }
       if (binding.kind === 'dataset') {
         block.rows = records.map((r, index) => block.columns.map(c => /序号/.test(c.label) ? { ...factCell(String(index + 1), [], true), confirmed: true, source: '系统按本表行顺序编号' } : get(r.id, c.field)))

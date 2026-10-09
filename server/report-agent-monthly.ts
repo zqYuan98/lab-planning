@@ -2,6 +2,7 @@ import type { ReportSnapshot } from '../shared/types.ts'
 import type { ReportAgentBinding, ReportAgentDataset, ReportAgentField, ReportFact, ReportTemplate } from '../shared/report-agent.ts'
 import type { DocxEdit, DocxInspection } from '../shared/report-docx.ts'
 import { acceptanceLabels } from './report-metrics.ts'
+import { isEffectiveWeeklyRecord } from '../shared/weekly-record-state.ts'
 
 export function monthEnd(period: string) {
   const date = new Date(`${period}-01T00:00:00Z`)
@@ -9,16 +10,31 @@ export function monthEnd(period: string) {
   return date.toISOString().slice(0, 10)
 }
 
+const publishedNextPlans = (snapshot: ReportSnapshot) => snapshot.nextPlans.filter(p => p.status === 'published')
+// Members often write "无" when no support is needed; that is not a request.
+const noRequest = /^(?:无|暂无|没有|不需要|暂不需要|无需|无需支持|暂无需要|\/|—|-)[。.]?$/
+/** Execution notes the plan's own tasks and weekly records carry: latest task state plus effective weekly records. */
+function executionNotes(snapshot: ReportSnapshot, planId: string, kind: 'support' | 'blocker'): string {
+  const notes: string[] = []
+  const add = (text: string | undefined, label: string) => { const value = (text || '').trim(); if (value && !noRequest.test(value) && !notes.includes(`${label}：${value}`)) notes.push(`${label}：${value}`) }
+  for (const task of snapshot.tasks.filter(t => t.monthlyPlanId === planId && !t.cancellation && t.status === 'blocked')) add(kind === 'support' ? task.supportNeeded : task.blockerReason, task.title)
+  for (const record of [...snapshot.weeklyRecords, ...snapshot.nextWeeklyRecords].filter(r => r.monthlyPlanId === planId && isEffectiveWeeklyRecord(r))) {
+    add(kind === 'support' ? record.supportNeeded : record.blocker, `${snapshot.tasks.find(t => t.id === record.taskId)?.title || '周工作'}（${record.weekStart} 周）`)
+  }
+  return notes.join('；')
+}
+
 /** Monthly outcomes have the monthly acceptance authority, never a weekly done flag. */
 export function monthlyReportFacts(snapshot: ReportSnapshot, period: string): ReportFact[] {
   const facts: ReportFact[] = []
-  for (const plan of [...snapshot.plans.filter(p => p.month === period && p.status === 'published'), ...snapshot.nextPlans.filter(p => p.status !== 'merged')]) {
+  for (const plan of [...snapshot.plans.filter(p => p.month === period && p.status === 'published'), ...publishedNextPlans(snapshot)]) {
     const next = plan.month !== period
+    const blocker = [plan.acceptanceStatus === 'not_completed' && !next ? plan.acceptanceNote.trim() : '', executionNotes(snapshot, plan.id, 'blocker')].filter(Boolean).join('；')
     const values = { title: plan.title, owner: snapshot.users.find(u => u.id === plan.ownerId)?.name || '负责人待核实',
-      commitment: plan.expectedOutcome, expected: plan.expectedOutcome, outcome: next ? '下月安排，尚非本月成果' : plan.actualOutcome,
-      acceptance: next ? (plan.status === 'published' ? '下月已发布承诺' : '下月未发布草案，待审核发布') : acceptanceLabels[plan.acceptanceStatus],
-      evidence: '', blocker: plan.acceptanceStatus === 'not_completed' ? plan.acceptanceNote : '', next_action: next ? plan.acceptanceCriteria : '',
-      monthly_goal: plan.title, due: plan.dueDate }
+      commitment: plan.expectedOutcome, expected: plan.expectedOutcome, outcome: next ? '计划中，尚无成果' : plan.actualOutcome,
+      acceptance: next ? '已发布计划' : acceptanceLabels[plan.acceptanceStatus],
+      evidence: '', blocker, support: executionNotes(snapshot, plan.id, 'support'), next_action: next ? plan.acceptanceCriteria : '',
+      criteria: plan.acceptanceCriteria, monthly_goal: plan.title, due: plan.dueDate }
     for (const [field, value] of Object.entries(values)) facts.push({ id: `plan:${plan.id}:${field}`, sourceType: 'monthlyPlan', sourceId: plan.id, sourceVersion: plan.version,
       subjectId: plan.id, subject: plan.title, field, value, unit: '', period: plan.month, status: next ? 'next_plan' : plan.acceptanceStatus })
   }
@@ -55,8 +71,16 @@ export function frozenSummaryFacts(snapshot: ReportSnapshot, period: string): Re
 }
 
 export function monthlyDatasetIds(snapshot: ReportSnapshot, dataset: ReportAgentDataset, period: string): string[] {
-  if (dataset === 'next_month' || dataset === 'next_week') return snapshot.nextPlans.filter(p => p.status !== 'merged').map(p => `plan:${p.id}`)
-  return snapshot.plans.filter(p => p.month === period && p.status === 'published' && (dataset !== 'risks' || p.acceptanceStatus === 'not_completed')).map(p => `plan:${p.id}`)
+  if (dataset === 'next_month' || dataset === 'next_week') return publishedNextPlans(snapshot).map(p => `plan:${p.id}`)
+  const current = snapshot.plans.filter(p => p.month === period && p.status === 'published')
+  if (dataset !== 'risks') return current.map(p => `plan:${p.id}`)
+  // Problems and support: unfinished goals plus any goal whose execution raised a blocker or support request.
+  const raised = (planId: string) => !!executionNotes(snapshot, planId, 'blocker') || !!executionNotes(snapshot, planId, 'support')
+  return [...current.filter(p => p.acceptanceStatus === 'not_completed' || raised(p.id)), ...publishedNextPlans(snapshot).filter(p => raised(p.id))].map(p => `plan:${p.id}`)
+}
+/** Published next-month goals; drafts and returned plans never enter a company report. */
+export function monthlyCoveragePlans(snapshot: ReportSnapshot, period: string) {
+  return [...snapshot.plans.filter(p => p.month === period && p.status === 'published'), ...publishedNextPlans(snapshot)]
 }
 export function summaryDatasetIds(facts: ReportFact[], dataset: ReportAgentDataset): string[] {
   return facts.filter(f => f.field === 'title' && f.id.startsWith(dataset === 'effort' ? 'effort:' : 'annual:')).map(f => f.id.slice(0, -6))

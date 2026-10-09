@@ -22,7 +22,7 @@ function completedPeriods(store: Store, type: ReportAgentType = 'weekly') {
 }
 export function getReportAgentSchedule(store: Store, type: ReportAgentType = 'weekly'): ReportAgentSchedule {
   const ID = scheduleId(type)
-  return store.transaction(() => publicSchedule(store.get<StoredSchedule>('settings', ID) || store.insert<StoredSchedule>('settings', { id: ID, ...(type === 'monthly' ? { type, monthlyDay: 0, targetMonth: 'current' as const } : {}), enabled: false, actorId: '', templateId: '', weekday: 5, time: '17:30', targetWeek: 'current', timezone: 'Asia/Shanghai', effectiveAt: new Date().toISOString(), useAi: false, missedPeriods: [] })))
+  return store.transaction(() => publicSchedule(store.get<StoredSchedule>('settings', ID) || store.insert<StoredSchedule>('settings', { id: ID, ...(type === 'monthly' ? { type, monthlyDay: 5, targetMonth: 'previous' as const } : {}), enabled: false, actorId: '', templateId: '', weekday: 5, time: '17:30', targetWeek: 'current', timezone: 'Asia/Shanghai', effectiveAt: new Date().toISOString(), useAi: false, missedPeriods: [] })))
 }
 export function updateReportAgentSchedule(store: Store, actorId: string, raw: UpdateReportAgentScheduleInput, now = new Date()): ReportAgentSchedule {
   requireReportManager(store, actorId)

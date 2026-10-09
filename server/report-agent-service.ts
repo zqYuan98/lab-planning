@@ -9,7 +9,7 @@ import { buildReportFacts, buildRuleBlocks, reportAgentHash, reportBlocksNarrati
 import { createReportTemplateSchema, editReportAgentSchema, enqueueReportAgentSchema, finalizeReportAgentSchema, learnReportTemplateSchema, parseAgentInput, reportTemplateReviewSchema, rewriteReportAgentSchema, updateReportTemplateSchema, uploadReportAssetSchema } from './report-agent-schemas.ts'
 import { getReportAgentSchedule, reportAgentMissedPeriods } from './report-agent-schedule.ts'
 import { recordLifecycleEvent, publishCollaborationEvents } from './collaboration-notifications.ts'
-import { monthlyBindings, monthlyHeaderEdits } from './report-agent-monthly.ts'
+import { monthlyBindings, monthlyCoveragePlans, monthlyHeaderEdits } from './report-agent-monthly.ts'
 import { reportTypeManaged } from './report-agent-policy.ts'
 import { readCollaborationSettings } from './collaboration-policy.ts'
 
@@ -52,9 +52,24 @@ export async function uploadReportAsset(store: Store, actorId: string, raw: Uplo
     return reportAssetSummary(existing || assetInsert(store, actorId, input.filename, bytes, input.purpose, inspection))
   })
 }
-function fieldFor(label: string): import('../shared/report-agent.ts').ReportAgentField {
+/** Monthly columns map to the published goal itself: its title, expected result, criteria, due date and acceptance. */
+function monthlyFieldFor(label: string): import('../shared/report-agent.ts').ReportAgentField | undefined {
+  if (/支撑|支持|协调|资源/.test(label)) return 'support'
+  if (/验收标准/.test(label)) return 'criteria'
+  if (/截止|时限|完成时间|完成日期|计划完成|节点时间/.test(label)) return 'due'
+  if (/完成率|达成率|验收|完成状态/.test(label)) return 'status'
+  if (/预期|目标成果|交付物|考核指标/.test(label)) return 'commitment'
+  if (/实际|完成情况|进展|成果/.test(label)) return 'outcome'
+  if (/负责人|责任人/.test(label)) return 'owner'
+  if (/目标|计划|工作|事项|项目|任务|内容/.test(label) && !/原因|问题|风险|措施/.test(label)) return 'title'
+  return undefined
+}
+function fieldFor(label: string, type: import('../shared/report-agent.ts').ReportAgentType = 'weekly'): import('../shared/report-agent.ts').ReportAgentField {
+  const monthly = type === 'monthly' ? monthlyFieldFor(label) : undefined
+  if (monthly) return monthly
   if (/方案|代价|决策|截止|完成日期|恢复时间|验收标准/.test(label)) return 'manual'
   if (/措施.*责任|责任.*措施/.test(label)) return 'manual'
+  if (/支撑|支持|协调|资源/.test(label)) return 'support'
   if (/必须完成的结果/.test(label)) return 'commitment'
   if (/异常|风险/.test(label)) return 'blocker'
   if (/负责人|责任人/.test(label)) return 'owner'
@@ -68,7 +83,13 @@ function fieldFor(label: string): import('../shared/report-agent.ts').ReportAgen
   if (/状态/.test(label)) return 'status'
   return 'manual'
 }
-export function suggestReportBindings(inspection: DocxInspection): ReportAgentBinding[] {
+/** Monthly tables: completion of the reported month, next month's published goals, or problems and support. */
+function monthlyDataset(headerText: string): ReportAgentBinding['dataset'] {
+  const done = /上月|完成情况|完成率|达成率|实际|验收/.test(headerText), planned = /计划|安排|预期|下月|本月目标/.test(headerText)
+  if (/风险|问题|阻塞|异常|协调/.test(headerText) || /支持|支撑/.test(headerText) && !done && !planned) return 'risks'
+  return done ? 'outcomes' : planned ? 'next_month' : 'outcomes'
+}
+export function suggestReportBindings(inspection: DocxInspection, type: import('../shared/report-agent.ts').ReportAgentType = 'weekly'): ReportAgentBinding[] {
   const bindings: ReportAgentBinding[] = []
   for (const region of inspection.regions.filter(r => r.kind !== 'cell')) {
     if (region.kind === 'paragraph') {
@@ -77,12 +98,14 @@ export function suggestReportBindings(inspection: DocxInspection): ReportAgentBi
       continue
     }
     const header = region.rows[0] || [], headerText = header.join(' ')
-    const isMetric = /月目标|月累计|完成率|达成率/.test(headerText) && !/事项|项目名称|工作名称/.test(headerText)
+    // A monthly goal list with an owner column is a row table even when it has a completion-rate column.
+    const isMetric = /月目标|月累计|完成率|达成率/.test(headerText) && !(type === 'monthly' ? /事项|项目名称|工作名称|负责人|责任人/ : /事项|项目名称|工作名称/).test(headerText)
     const canRows = region.rows.length >= 2 && region.columnCounts.every(n => n === region.columnCounts[0]) && !isMetric && (header.some(cell => /负责人|责任人/.test(cell)) || /序号/.test(headerText) && /工作|风险|异常/.test(headerText))
     if (canRows) {
-      const dataset = /风险|问题|阻塞|异常/.test(headerText) ? 'risks' : /计划|安排|预期|必须完成/.test(headerText) && !/本周完成|实际/.test(headerText) ? 'next_week' : 'outcomes'
+      const dataset = type === 'monthly' ? monthlyDataset(headerText) : /风险|问题|阻塞|异常/.test(headerText) ? 'risks' : /计划|安排|预期|必须完成/.test(headerText) && !/本周完成|实际/.test(headerText) ? 'next_week' : 'outcomes'
+      // System data fills the report; a column without a system source stays optional so the template alone is enough.
       bindings.push({ regionId: region.id, label: `表格：${headerText.slice(0, 70)}`, kind: 'dataset', required: true, dataset, startRow: 1, endRow: region.rows.length,
-        columns: header.map(label => ({ label: label.trim() || '补充信息', field: fieldFor(label), required: true })) })
+        columns: header.map(label => { const field = fieldFor(label, type); return { label: label.trim() || '补充信息', field, required: field !== 'manual' || /序号/.test(label) } }) })
     } else {
       region.rows.forEach((row, r) => row.forEach((value, c) => {
         const previous = row[c - 1] || ''
@@ -135,7 +158,7 @@ export function createReportTemplate(store: Store, actorId: string, raw: CreateR
       return existing
     }
     return store.insert<ReportTemplate>('reportTemplates', { ...(id ? { id } : {}), name: input.name, type: input.type || 'weekly', status: 'draft', sourceAssetId: source.id, sourceHash: source.sha256, exampleAssetIds: input.exampleAssetIds || [],
-      bindings: input.type === 'monthly' ? monthlyBindings(suggestReportBindings(source.inspection), source.inspection) : suggestReportBindings(source.inspection), rules: ['只使用本期冻结事实，先说明成果，再说明问题与下一步。', input.type === 'monthly' ? '月完成只按已发布月目标的验收结论；下月安排来自下月目标。投入按周一所属月份归集，空值不当作零。' : '周阶段自报完成与任务整体完成、月目标验收分开表述。'], rulesConfirmed: false,
+      bindings: input.type === 'monthly' ? monthlyBindings(suggestReportBindings(source.inspection, 'monthly'), source.inspection) : suggestReportBindings(source.inspection), rules: ['只使用本期冻结事实，先说明成果，再说明问题与下一步。', input.type === 'monthly' ? '月完成只按已发布月目标的验收结论；下月安排只列已发布月目标；支撑来自目标下任务和周记录提出的需要支持。投入按周一所属月份归集，空值不当作零。' : '周阶段自报完成与任务整体完成、月目标验收分开表述。'], rulesConfirmed: false,
       learningCandidates: [], learningNotes: [], confirmedBy: null, layoutVerified: false, layoutNote: '', previewAssetId: null, previewFingerprint: null, effectiveWeek, activatedAt: null, createdBy: actorId })
   })
 }
@@ -240,7 +263,7 @@ export function enqueueReportAgent(store: Store, actorId: string, raw: EnqueueRe
     const schemaVersion = type === 'monthly' ? MONTHLY_REPORT_AGENT_VERSION : REPORT_AGENT_VERSION
     const title = `人工智能实验室${type === 'monthly' ? '月报' : '周报'} · ${period}`, { facts, blocks } = ruleBlocks(store, actorId, row, { snapshot, period, title }, capturedAt)
     const agent: ReportAgentPayload = { schemaVersion, capturedAt, snapshotHash: reportAgentHash(snapshot), template: structuredClone(row), templateHash: templateFingerprint(row), facts, blocks,
-      issues: validateReportBlocks(blocks, facts), coverage: (type === 'monthly' ? [...snapshot.plans.filter(p => p.status === 'published'), ...snapshot.nextPlans] : snapshot.weeklyRecords).map(r => ({ sourceId: r.id, disposition: blocks.some(b => JSON.stringify(b).includes(`${type === 'monthly' ? 'plan' : 'weekly'}:${r.id}:`)) ? 'included' : 'not_displayed', reason: blocks.some(b => JSON.stringify(b).includes(`${type === 'monthly' ? 'plan' : 'weekly'}:${r.id}:`)) ? '' : '未生效记录或模板未配置本类明细；保留于冻结快照' })),
+      issues: validateReportBlocks(blocks, facts), coverage: (type === 'monthly' ? monthlyCoveragePlans(snapshot, period) : snapshot.weeklyRecords).map(r => ({ sourceId: r.id, disposition: blocks.some(b => JSON.stringify(b).includes(`${type === 'monthly' ? 'plan' : 'weekly'}:${r.id}:`)) ? 'included' : 'not_displayed', reason: blocks.some(b => JSON.stringify(b).includes(`${type === 'monthly' ? 'plan' : 'weekly'}:${r.id}:`)) ? '' : '未生效记录或模板未配置本类明细；保留于冻结快照' })),
       ruleBlocks: structuredClone(blocks), modelCandidates: [], promptVersion: schemaVersion, validatorVersion: schemaVersion, rendererVersion: reportAgentAsset(store, row.sourceAssetId).inspection!.rendererVersion,
       modelIdentifier: null, finalAssetId: null, finalHash: null, reviewNote: '' }
     const report = store.insert<Report>('reports', { type, period, title, status: 'draft', revision, narrative: reportBlocksNarrative(blocks), snapshot, authorId: actorId, finalizedAt: null, agent })

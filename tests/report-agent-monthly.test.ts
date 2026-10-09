@@ -1,7 +1,7 @@
 import test, { type TestContext } from 'node:test'
 import assert from 'node:assert/strict'
 import JSZip from 'jszip'
-import type { AnnualGoal, MonthlyPlan, Report, Task, WeeklyRecord } from '../shared/types.ts'
+import type { AnnualGoal, MonthlyPlan, Publication, Report, Task, WeeklyRecord } from '../shared/types.ts'
 import type { ReportAgentBinding, ReportAgentSchedule } from '../shared/report-agent.ts'
 import { Store } from '../server/store.ts'
 import { Domain } from '../server/domain.ts'
@@ -39,7 +39,8 @@ function plan(f: ReturnType<typeof account>, overrides: Partial<MonthlyPlan> = {
 }
 
 test('monthly facts use published goals and acceptance; next month uses nextPlans and real leap-month boundaries', async t => {
-  const f = await setup(t), current = plan(f), next = plan(f, { month: '2024-03', title: '下月目标', expectedOutcome: '交付两项能力', status: 'draft', dueDate: '2024-03-31' })
+  const f = await setup(t), current = plan(f), next = plan(f, { month: '2024-03', title: '下月目标', expectedOutcome: '交付两项能力', dueDate: '2024-03-31' })
+  const nextDraft = plan(f, { month: '2024-03', title: '下月草稿目标', status: 'draft', dueDate: '2024-03-31' })
   plan(f, { title: '未发布本月目标', status: 'draft' })
   const task = f.store.insert<Task>('tasks', { title: '周自报任务', monthlyPlanId: current.id, ownerId: f.manager.id, description: '', dueDate: '', status: 'done', isTemporary: false, temporaryReason: '', remainingEffortDays: 99 })
   for (const [weekStart, actualEffortDays] of [['2024-01-29', 5], ['2024-02-05', 1.5], ['2024-02-26', null]] as const) f.store.insert<WeeklyRecord>('weeklyRecords', { taskId: task.id, monthlyPlanId: current.id, ownerId: f.manager.id, weekStart, commitment: '周承诺', actualOutcome: '周已完成', evidenceUrl: '', blocker: '', nextAction: '', status: 'done', submitted: true, plannedEffortDays: 2, actualEffortDays })
@@ -49,8 +50,10 @@ test('monthly facts use published goals and acceptance; next month uses nextPlan
   const report = getAgentReport(f.store, f.manager.id, f.enqueue().reportId!)
   assert.equal(report.type, 'monthly'); assert.equal(report.agent!.schemaVersion, 'monthly-v1')
   assert.match(report.narrative, /2024-02-01—2024-02-29/)
-  assert.match(report.narrative, /下月目标/); assert.match(report.narrative, /未发布草案/)
+  assert.match(report.narrative, /下月目标/); assert.match(report.narrative, /已发布计划/)
   assert.ok(report.agent!.facts.some(fact => fact.id === `plan:${next.id}:commitment`))
+  // Drafts and returned plans never enter the company report.
+  assert.ok(!report.narrative.includes('下月草稿目标')); assert.ok(!report.agent!.facts.some(fact => fact.sourceId === nextDraft.id))
   assert.ok(!report.agent!.facts.some(fact => fact.sourceType === 'weeklyRecord'))
   assert.ok(!report.narrative.includes('周已完成')); assert.ok(!report.narrative.includes('未发布本月目标'))
   assert.equal(report.agent!.facts.find(fact => fact.id === 'metric:monthly_accepted')!.value, '0')
@@ -129,7 +132,8 @@ test('activation locks same-type legacy mutations even with paused schedules; ot
 
 test('monthly final Word and frozen summaries survive migration; mismatched type/version/period are rejected without replay', async t => {
   const f = await setup(t, '2024-12'), target = account(t)
-  plan(f, { month: '2025-01', title: '跨年下月安排', status: 'draft', dueDate: '2025-01-31' })
+  const crossYear = plan(f, { month: '2025-01', title: '跨年下月安排', dueDate: '2025-01-31' })
+  f.store.insert<Publication>('publications', { month: crossYear.month, revision: 1, actorId: f.manager.id, reason: '发布下月计划', plans: [crossYear] })
   let report = getAgentReport(f.store, f.manager.id, f.enqueue().reportId!)
   report = editAgentReport(f.store, f.manager.id, report.id, { expectedVersion: report.version, title: report.title, blocks: report.agent!.blocks })
   report = await finalizeAgentReport(f.store, f.manager.id, report.id, { expectedVersion: report.version, reviewNote: '月报合成验收' })
@@ -186,4 +190,43 @@ test('monthly reuse leaves unchanged complex fixed regions as keep and preserves
   const xml = await (await JSZip.loadAsync(Buffer.from(rendered.contentBase64, 'base64'))).file('word/document.xml')!.async('string')
   assert.match(xml, /月报/); assert.ok(xml.includes(fixed))
   assert.deepEqual(Buffer.from(f.store.get<{ contentBase64: string }>('reportAssets', asset.id)!.contentBase64, 'base64'), bytes)
+})
+
+test('monthly support and problems come from each goal tasks and weekly records, for both the reported and the next month', async t => {
+  const f = await setup(t), current = plan(f, { acceptanceStatus: 'accepted' }), next = plan(f, { month: '2024-03', title: '下月目标', dueDate: '2024-03-31', acceptanceCriteria: '上线验收' })
+  const task = (monthlyPlanId: string, overrides: Partial<Task>) => f.store.insert<Task>('tasks', { title: '任务', monthlyPlanId, ownerId: f.manager.id, description: '', dueDate: '', status: 'doing', isTemporary: false, temporaryReason: '', ...overrides })
+  const work = task(current.id, { title: '数据接入' })
+  f.store.insert<WeeklyRecord>('weeklyRecords', { taskId: work.id, monthlyPlanId: current.id, ownerId: f.manager.id, weekStart: '2024-02-05', commitment: '接入', actualOutcome: '', evidenceUrl: '', blocker: '接口未开放', nextAction: '', status: 'blocked', submitted: true, supportNeeded: '需要信息中心开放接口' })
+  f.store.insert<WeeklyRecord>('weeklyRecords', { taskId: work.id, monthlyPlanId: current.id, ownerId: f.manager.id, weekStart: '2024-02-12', commitment: '接入', actualOutcome: '完成', evidenceUrl: '', blocker: '', nextAction: '', status: 'done', submitted: true, supportNeeded: '无' })
+  task(next.id, { title: '算力准备', status: 'blocked', blockerReason: '算力不足', supportNeeded: '申请两台服务器' })
+  task(next.id, { title: '已撤回', status: 'blocked', supportNeeded: '不应出现', cancellation: { cancelledAt: '2024-02-20T00:00:00Z', cancelledBy: f.manager.id, reason: '撤回' } })
+  const snapshot = buildReportSnapshot(f.store, 'monthly', '2024-02'), facts = buildReportFacts(snapshot, '2024-02')
+  const value = (id: string, field: string) => facts.find(fact => fact.id === `plan:${id}:${field}`)!.value
+  assert.equal(value(current.id, 'support'), '数据接入（2024-02-05 周）：需要信息中心开放接口')
+  assert.equal(value(current.id, 'blocker'), '数据接入（2024-02-05 周）：接口未开放')
+  assert.equal(value(next.id, 'support'), '算力准备：申请两台服务器')
+  assert.equal(value(next.id, 'criteria'), '上线验收'); assert.equal(value(next.id, 'due'), '2024-03-31')
+  const columns = [{ label: '目标', field: 'title' as const, required: true }, { label: '所需支撑', field: 'support' as const, required: true }]
+  const risk = buildRuleBlocks([{ regionId: 't:0', label: '支撑', kind: 'dataset', required: true, dataset: 'risks', startRow: 1, endRow: 2, columns }], snapshot, facts, '2024-02', new Date().toISOString(), '月报')[0]
+  assert.deepEqual(risk.rows.map(row => row[1].text), ['数据接入（2024-02-05 周）：需要信息中心开放接口', '算力准备：申请两台服务器'])
+  const plain = plan(f, { title: '无支持目标' }), outcome = buildRuleBlocks([{ regionId: 't:0', label: '完成', kind: 'dataset', required: true, dataset: 'outcomes', startRow: 1, endRow: 2, columns }], buildReportSnapshot(f.store, 'monthly', '2024-02'), buildReportFacts(buildReportSnapshot(f.store, 'monthly', '2024-02'), '2024-02'), '2024-02', new Date().toISOString(), '月报')[0]
+  // An empty source field is stated, not left as a blocking placeholder.
+  assert.equal(outcome.rows.find(row => row[0].text === plain.title)![1].text, '未提出')
+})
+
+test('monthly company templates map completion, plan and support tables to system data without manual mapping', async t => {
+  const f = account(t)
+  const grid = (header: string[]) => `<w:tbl><w:tblPr/><w:tblGrid>${header.map(() => '<w:gridCol w:w="1600"/>').join('')}</w:tblGrid>${row(header)}${row(header.map(() => '示例'))}</w:tbl>`
+  const headers = [['序号', '上月计划目标', '完成情况', '负责人'], ['序号', '月度目标', '完成情况', '完成率', '负责人'], ['序号', '本月工作计划', '预期成果', '所需支撑', '完成时限', '负责人'], ['序号', '需协调支持事项', '责任人', '备注']]
+  const bytes = await fixture(p('月报') + headers.map(grid).join(p('')))
+  const asset = await uploadReportAsset(f.store, f.manager.id, { filename: '公司月报.docx', contentBase64: bytes.toString('base64'), purpose: 'template' })
+  const template = createReportTemplate(f.store, f.manager.id, { type: 'monthly', name: '公司月报', sourceAssetId: asset.id, effectiveWeek: '2024-01' })
+  const tables = template.bindings.filter(binding => binding.kind === 'dataset')
+  assert.deepEqual(tables.map(binding => binding.dataset), ['outcomes', 'outcomes', 'next_month', 'risks'])
+  assert.deepEqual(tables.map(binding => binding.columns!.map(column => column.field)), [
+    ['manual', 'title', 'outcome', 'owner'], ['manual', 'title', 'outcome', 'status', 'owner'],
+    ['manual', 'title', 'commitment', 'support', 'due', 'owner'], ['manual', 'support', 'owner', 'manual'],
+  ])
+  // Columns without a system source are optional; the template alone is enough to finalize.
+  assert.equal(tables[3].columns![3].required, false)
 })

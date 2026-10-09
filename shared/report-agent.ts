@@ -6,7 +6,7 @@ export const REPORT_AGENT_VERSION = 'weekly-v1'
 export const MONTHLY_REPORT_AGENT_VERSION = 'monthly-v1'
 export type ReportAgentType = 'weekly' | 'monthly'
 export type ReportAgentDataset = 'outcomes' | 'risks' | 'next_week' | 'next_month' | 'effort' | 'annual_goals'
-export type ReportAgentField = 'title' | 'owner' | 'commitment' | 'outcome' | 'status' | 'evidence' | 'blocker' | 'next_action' | 'monthly_goal' | 'manual'
+export type ReportAgentField = 'title' | 'owner' | 'commitment' | 'outcome' | 'status' | 'evidence' | 'blocker' | 'next_action' | 'monthly_goal' | 'support' | 'due' | 'criteria' | 'manual'
 export interface ReportAgentColumn { label: string; field: ReportAgentField; required: boolean }
 /** Map each paragraph and either a whole table or all its cells; keep is an explicit manager decision. */
 export interface ReportAgentBinding {
