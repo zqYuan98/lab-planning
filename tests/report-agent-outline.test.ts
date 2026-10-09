@@ -58,8 +58,8 @@ test('outline templates turn headings and requirements into generated sections, 
 
 test('a monthly outline report is written from system data, keeps gaps visible and renders plain paragraphs in the original document', async t => {
   const f = await setup(t)
-  const done = f.plan({ title: '机具OCR模型迭代', actualOutcome: '识别准确率提升至 96%', acceptanceStatus: 'accepted' })
-  const missed = f.plan({ title: '输电线路变焦摄像头', acceptanceStatus: 'not_completed', acceptanceNote: '设备到货延迟' })
+  const done = f.plan({ title: '机具OCR模型迭代', actualOutcome: '识别准确率提升至 96%\r\n线上误报率下降至 1%', acceptanceStatus: 'accepted' })
+  const missed = f.plan({ title: '输电线路变焦摄像头', acceptanceStatus: 'not_completed', acceptanceNote: '设备到货延迟\n现场条件不足' })
   f.plan({ month: '2026-10', title: '输电线路变焦摄像头', sourcePlanId: missed.id, expectedOutcome: '完成安装调试', acceptanceCriteria: '现场联调报告通过', dueDate: '2026-10-25', priority: 'high' })
   const edge = f.plan({ month: '2026-10', title: '边缘代理多端功能优化', expectedOutcome: '完成三端适配', dueDate: '2026-10-31', priority: 'low' })
   const task = f.store.insert<Task>('tasks', { title: '多端适配', monthlyPlanId: edge.id, ownerId: f.manager.id, description: '', dueDate: '', status: 'blocked', isTemporary: false, temporaryReason: '', blockerReason: '缺少测试终端', supportNeeded: '申请 3 台测试终端' })
@@ -70,11 +70,14 @@ test('a monthly outline report is written from system data, keeps gaps visible a
   let report = getAgentReport(f.store, f.manager.id, enqueueReportAgent(f.store, f.manager.id, { requestId: 'outline', templateId: row.id, period: '2026-09', useAi: false }).reportId!)
   const text = (narrative: string) => report.agent!.blocks.find(block => block.regionId === row.bindings.find(binding => binding.narrative === narrative)!.regionId)!.content.text
   assert.match(text('review'), /^本月目标共 2 项：确认完成 1 项，确认未完成 1 项。/)
-  assert.match(text('review'), /机具OCR模型迭代：确认完成。实际结果：识别准确率提升至 96%/)
-  assert.equal(text('causes'), '输电线路变焦摄像头：现象：目标确认未完成；直接原因：设备到货延迟；根本原因：【待补充】。')
+  assert.match(text('review'), /机具OCR模型迭代：确认完成。实际结果：识别准确率提升至 96% 线上误报率下降至 1%/)
+  assert.equal(text('causes'), '输电线路变焦摄像头：现象：目标确认未完成；直接原因：设备到货延迟 现场条件不足；根本原因：【待补充】。')
   assert.equal(text('remedies'), '输电线路变焦摄像头：措施：【待补充】；责任人：袁经理；完成时间：2026-10-25；完成标准：现场联调报告通过。')
   assert.deepEqual(text('plan').split('\n').map(line => line.split('：')[0]), ['输电线路变焦摄像头', '边缘代理多端功能优化'])
   assert.equal(text('support'), `边缘代理多端功能优化：${task.title}：申请 3 台测试终端`)
+  for (const block of report.agent!.blocks.filter(block => block.content.lineFactIds)) assert.equal(block.content.lineFactIds!.length, block.content.text.split('\n').length)
+  const review = report.agent!.blocks.find(block => block.regionId === row.bindings.find(binding => binding.narrative === 'review')!.regionId)!.content
+  assert.equal(review.text.split('\n').length, 3); assert.equal(review.lineFactIds?.length, 3)
   assert.deepEqual(report.agent!.issues.map(issue => issue.code), ['pending_content', 'pending_content'])
   await assert.rejects(finalizeAgentReport(f.store, f.manager.id, report.id, { expectedVersion: report.version, reviewNote: '核对' }), { status: 409 })
 

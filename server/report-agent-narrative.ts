@@ -7,13 +7,15 @@ export const PENDING = '【待补充】'
 interface Line { text: string; factIds: string[] }
 const priorityRank: Record<MonthlyPlan['priority'], number> = { high: 0, medium: 1, low: 2 }
 const verdicts: Record<string, string> = { accepted: '确认完成', not_completed: '确认未完成', submitted: '已提交成果，待验收', pending: '尚未提交成果' }
+const oneLine = (text: string) => text.replace(/[ \t]*(?:\r\n?|[\n\u2028\u2029])+[ \t]*/g, ' ')
 
 /**
  * Deterministic draft of one outline section. Every line names one subject and cites only that
  * subject's frozen facts (or a frozen count), so AI rewriting is validated line by line.
  */
 export function narrativeCell(kind: ReportAgentNarrative, snapshot: ReportSnapshot, facts: ReportFact[], period: string): ReportAgentCell {
-  const lines = period.length === 7 ? monthlyLines(kind, snapshot, facts, period) : weeklyLines(kind, snapshot, facts)
+  const rawLines = period.length === 7 ? monthlyLines(kind, snapshot, facts, period) : weeklyLines(kind, snapshot, facts)
+  const lines = rawLines.map(line => ({ ...line, text: oneLine(line.text) }))
   return { text: lines.map(line => line.text).join('\n'), factIds: [...new Set(lines.flatMap(line => line.factIds))], lineFactIds: lines.map(line => line.factIds), manual: false, confirmed: false, source: '' }
 }
 function reader(facts: ReportFact[], prefix: string) {
