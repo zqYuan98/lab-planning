@@ -1,17 +1,18 @@
 import type { Report, User } from '../shared/types.ts'
 import type { DocxEdit, DocxInspection } from '../shared/report-docx.ts'
-import type { CreateReportTemplateInput, EditReportAgentInput, EnqueueReportAgentInput, FinalizeReportAgentInput, LearnReportTemplateInput, ReportAgentBinding, ReportAgentBlock, ReportAgentBootstrap, ReportAgentDownload, ReportAgentJob, ReportAgentPayload, ReportAsset, ReportAssetSummary, ReportTemplate, ReportTemplateReviewInput, RewriteReportAgentInput, UpdateReportTemplateInput, UploadReportAssetInput } from '../shared/report-agent.ts'
+import type { CreateReportTemplateInput, EditReportAgentInput, EnqueueReportAgentInput, FinalizeReportAgentInput, LearnReportTemplateInput, ReportAgentBinding, ReportAgentBlock, ReportAgentBootstrap, ReportAgentDownload, ReportAgentJob, ReportAgentPayload, ReportAgentReadiness, ReportAsset, ReportAssetSummary, ReportTemplate, ReportTemplateReviewInput, RewriteReportAgentInput, UpdateReportTemplateInput, UploadReportAssetInput } from '../shared/report-agent.ts'
 import { MONTHLY_REPORT_AGENT_VERSION, REPORT_AGENT_VERSION } from '../shared/report-agent.ts'
 import { HttpError, Store } from './store.ts'
 import { inspectDocx, renderDocx } from './report-docx.ts'
 import { aiConfigured, buildReportSnapshot, normalizeReportPeriod, requireReportManager } from './reports.ts'
 import { buildReportFacts, buildRuleBlocks, reportAgentHash, reportBlocksNarrative, validateReportBlocks } from './report-agent-evidence.ts'
 import { createReportTemplateSchema, editReportAgentSchema, enqueueReportAgentSchema, finalizeReportAgentSchema, learnReportTemplateSchema, parseAgentInput, reportTemplateReviewSchema, rewriteReportAgentSchema, updateReportTemplateSchema, uploadReportAssetSchema } from './report-agent-schemas.ts'
-import { getReportAgentSchedule, reportAgentMissedPeriods } from './report-agent-schedule.ts'
+import { getReportAgentSchedule, repointReportAgentSchedule, reportAgentMissedPeriods } from './report-agent-schedule.ts'
 import { recordLifecycleEvent, publishCollaborationEvents } from './collaboration-notifications.ts'
 import { monthlyBindings, monthlyCoveragePlans, monthlyHeaderEdits } from './report-agent-monthly.ts'
 import { reportTypeManaged } from './report-agent-policy.ts'
 import { readCollaborationSettings } from './collaboration-policy.ts'
+import { isEffectiveWeeklyRecord } from '../shared/weekly-record-state.ts'
 
 const MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 export function reportAssetSummary(asset: ReportAsset): ReportAssetSummary { const { contentBase64: _bytes, ...summary } = asset; return summary }
@@ -194,11 +195,14 @@ function ruleBlocks(store: Store, actorId: string, row: ReportTemplate, report: 
   }
   return { facts, blocks }
 }
-export async function previewReportTemplate(store: Store, actorId: string, id: string, expectedVersion: number): Promise<ReportTemplate> {
+/** The trial fill reads a real period (default: the effective one) so the manager sees their own data in the template. */
+export async function previewReportTemplate(store: Store, actorId: string, id: string, expectedVersion: number, rawPeriod?: unknown): Promise<ReportTemplate> {
   const row = template(store, actorId, id, expectedVersion, true), source = reportAgentAsset(store, row.sourceAssetId)
   validateTemplateBindings(source.inspection!, row.bindings)
-  const snapshot = buildReportSnapshot(store, row.type || 'weekly', row.effectiveWeek)
-  const { blocks } = ruleBlocks(store, actorId, row, { snapshot, period: row.effectiveWeek, title: row.type === 'monthly' ? '月报版式试填' : '周报版式试填' }, new Date().toISOString())
+  if (rawPeriod !== undefined && typeof rawPeriod !== 'string') throw new HttpError(400, '试填周期无效。')
+  const period = rawPeriod === undefined ? row.effectiveWeek : normalizeReportPeriod(row.type || 'weekly', rawPeriod)
+  const snapshot = buildReportSnapshot(store, row.type || 'weekly', period)
+  const { blocks } = ruleBlocks(store, actorId, row, { snapshot, period, title: row.type === 'monthly' ? '月报版式试填' : '周报版式试填' }, new Date().toISOString())
   for (const block of blocks) for (const cell of block.kind === 'text' ? [block.content] : block.rows.flat()) if (cell.manual && !cell.text) cell.text = '【需人工补充，请核对本区域版式】'
   const bytes = await renderAgent(store, row, blocks)
   return store.transaction(() => {
@@ -216,6 +220,19 @@ export function activateReportTemplate(store: Store, actorId: string, id: string
     reportAgentAsset(store, current.previewAssetId)
     const result = store.update<ReportTemplate>('reportTemplates', id, current.version, { status: 'active', activatedAt: new Date().toISOString(), confirmedBy: actorId, layoutVerified: true, layoutNote: input.layoutNote })
     audit(store, actorId, 'reportTemplate', id, 'activate', { version: current.version }, { version: result.version, sourceHash: result.sourceHash })
+    return result
+  })
+}
+/** One-step adoption: activate this template, retire the other active templates of its type and move the schedule onto it. */
+export function adoptReportTemplate(store: Store, actorId: string, id: string, raw: ReportTemplateReviewInput): ReportTemplate {
+  return store.transaction(() => {
+    const result = activateReportTemplate(store, actorId, id, raw), type = result.type || 'weekly'
+    const replaced = store.list<ReportTemplate>('reportTemplates').filter(row => row.id !== id && (row.type || 'weekly') === type && row.status === 'active')
+    for (const row of replaced) {
+      store.update<ReportTemplate>('reportTemplates', row.id, row.version, { status: 'archived' })
+      audit(store, actorId, 'reportTemplate', row.id, 'archive', { status: 'active' }, { status: 'archived', replacedBy: id })
+    }
+    repointReportAgentSchedule(store, type, replaced.map(row => row.id), id)
     return result
   })
 }
@@ -354,6 +371,19 @@ export async function downloadAgentReport(store: Store, actorId: string, id: str
   requireReportManager(store, actorId)
   if (store.get<Report>('reports', id)?.version !== report.version) throw new HttpError(409, '报告已更新，请重新下载。')
   return { bytes, filename: `${report.title}-第${report.revision}版-草稿.docx`, sha256: reportAgentHashBytes(bytes) }
+}
+export function reportAgentReadiness(store: Store, actorId: string, rawType: unknown, rawPeriod: unknown): ReportAgentReadiness {
+  requireReportManager(store, actorId)
+  if (rawType !== 'weekly' && rawType !== 'monthly' || typeof rawPeriod !== 'string') throw new HttpError(400, '请指定报告类型和周期。')
+  const type = rawType, period = normalizeReportPeriod(type, rawPeriod), snapshot = buildReportSnapshot(store, type, period)
+  const support = buildReportFacts(snapshot, period).filter(fact => fact.field === 'support' && fact.value.trim()).length
+  if (type === 'monthly') {
+    const plans = snapshot.plans.filter(plan => plan.month === period && plan.status === 'published')
+    const accepted = plans.filter(plan => plan.acceptanceStatus === 'accepted').length, notCompleted = plans.filter(plan => plan.acceptanceStatus === 'not_completed').length
+    return { type, period, current: plans.length, accepted, notCompleted, waiting: plans.length - accepted - notCompleted, done: accepted, support, next: snapshot.nextPlans.filter(plan => plan.status === 'published').length }
+  }
+  const records = snapshot.weeklyRecords.filter(isEffectiveWeeklyRecord)
+  return { type, period, current: records.length, accepted: 0, notCompleted: 0, waiting: 0, done: records.filter(record => record.status === 'done').length, support, next: snapshot.nextWeeklyRecords.filter(isEffectiveWeeklyRecord).length }
 }
 export function getReportAgentBootstrap(store: Store, actorId: string): ReportAgentBootstrap {
   requireReportManager(store, actorId)

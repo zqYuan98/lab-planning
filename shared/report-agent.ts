@@ -72,6 +72,10 @@ export interface ReportAgentBootstrap {
   schedule: ReportAgentSchedule; missedPeriods: string[]; aiConfigured: boolean
   monthlySchedule: ReportAgentSchedule; monthlyMissedPeriods: string[]; managedTypes: ReportAgentType[]
 }
+/** Counts from the same snapshot a report would freeze, shown before generating. */
+export interface ReportAgentReadiness {
+  type: ReportAgentType; period: string; current: number; accepted: number; notCompleted: number; waiting: number; done: number; support: number; next: number
+}
 export interface UploadReportAssetInput { filename: string; contentBase64: string; purpose: 'template' | 'example'; requestId?: string }
 export interface CreateReportTemplateInput { type?: ReportAgentType; name: string; sourceAssetId: string; exampleAssetIds?: string[]; effectiveWeek: string; requestId?: string }
 export interface UpdateReportTemplateInput {

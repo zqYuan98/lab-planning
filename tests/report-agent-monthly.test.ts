@@ -5,7 +5,7 @@ import type { AnnualGoal, MonthlyPlan, Publication, Report, Task, WeeklyRecord }
 import type { ReportAgentBinding, ReportAgentSchedule } from '../shared/report-agent.ts'
 import { Store } from '../server/store.ts'
 import { Domain } from '../server/domain.ts'
-import { activateReportTemplate, archiveReportTemplate, createReportTemplate, downloadAgentReport, editAgentReport, enqueueReportAgent, getAgentReport, previewReportTemplate, templateFingerprint, updateReportTemplate, uploadReportAsset, finalizeAgentReport } from '../server/report-agent-service.ts'
+import { activateReportTemplate, adoptReportTemplate, archiveReportTemplate, reportAgentReadiness, createReportTemplate, downloadAgentReport, editAgentReport, enqueueReportAgent, getAgentReport, previewReportTemplate, templateFingerprint, updateReportTemplate, uploadReportAsset, finalizeAgentReport } from '../server/report-agent-service.ts'
 import { buildReportFacts, buildRuleBlocks, reportAgentHash } from '../server/report-agent-evidence.ts'
 import { buildReportSnapshot, editReport, finalizeReport, generateReport, polishReport } from '../server/reports.ts'
 import { getReportAgentSchedule, reportAgentMissedPeriods, runReportAgentSchedule, updateReportAgentSchedule } from '../server/report-agent-schedule.ts'
@@ -229,4 +229,40 @@ test('monthly company templates map completion, plan and support tables to syste
   ])
   // Columns without a system source are optional; the template alone is enough to finalize.
   assert.equal(tables[3].columns![3].required, false)
+})
+
+test('adopting a template retires the previous one, keeps the schedule running on the new one and previews a chosen period', async t => {
+  const f = await setup(t)
+  plan(f, { title: '试填可见目标' })
+  const initial = getReportAgentSchedule(f.store, 'monthly')
+  updateReportAgentSchedule(f.store, f.manager.id, { type: 'monthly', expectedVersion: initial.version, enabled: true, actorId: f.manager.id, templateId: f.template.id, weekday: 5, time: '18:00', targetWeek: 'current', monthlyDay: 5, targetMonth: 'previous', useAi: false })
+  let next = createReportTemplate(f.store, f.manager.id, { type: 'monthly', name: '新模板', sourceAssetId: f.asset.id, effectiveWeek: '2000-01' })
+  next = updateReportTemplate(f.store, f.manager.id, next.id, { expectedVersion: next.version, name: next.name, bindings: f.template.bindings, rules: next.rules, rulesConfirmed: true, exampleAssetIds: [], effectiveWeek: next.effectiveWeek })
+  next = await previewReportTemplate(f.store, f.manager.id, next.id, next.version, '2024-02')
+  const preview = await downloadAgentAsset(f, next.previewAssetId!)
+  assert.match(preview, /试填可见目标/)
+  await assert.rejects(previewReportTemplate(f.store, f.manager.id, next.id, next.version, 42), { status: 400 })
+  const adopted = adoptReportTemplate(f.store, f.manager.id, next.id, { expectedVersion: next.version, layoutVerified: true, layoutNote: '已查看试填效果' })
+  assert.equal(adopted.status, 'active')
+  assert.equal(f.store.get<{ status: string }>('reportTemplates', f.template.id)!.status, 'archived')
+  assert.equal(getReportAgentSchedule(f.store, 'monthly').templateId, next.id)
+  const job = enqueueReportAgent(f.store, f.manager.id, { requestId: 'after-adopt', templateId: next.id, period: '2023-06', useAi: false })
+  assert.equal(getAgentReport(f.store, f.manager.id, job.reportId!).period, '2023-06')
+})
+async function downloadAgentAsset(f: ReturnType<typeof account>, id: string) {
+  const asset = f.store.get<{ contentBase64: string }>('reportAssets', id)!
+  return (await JSZip.loadAsync(Buffer.from(asset.contentBase64, 'base64'))).file('word/document.xml')!.async('string')
+}
+
+test('readiness counts match the snapshot a report would freeze, and support tables skip goals without a request', async t => {
+  const f = await setup(t)
+  plan(f, { acceptanceStatus: 'accepted' }); const quiet = plan(f, { title: '无支持目标' }); const next = plan(f, { month: '2024-03', title: '下月需支持' }); plan(f, { month: '2024-03', status: 'draft' })
+  f.store.insert<Task>('tasks', { title: '准备', monthlyPlanId: next.id, ownerId: f.manager.id, description: '', dueDate: '', status: 'blocked', isTemporary: false, temporaryReason: '', supportNeeded: '申请预算' })
+  assert.deepEqual(reportAgentReadiness(f.store, f.manager.id, 'monthly', '2024-02'), { type: 'monthly', period: '2024-02', current: 2, accepted: 1, notCompleted: 0, waiting: 1, done: 1, support: 1, next: 1 })
+  assert.throws(() => reportAgentReadiness(f.store, f.manager.id, 'yearly', '2024'), { status: 400 })
+  const snapshot = buildReportSnapshot(f.store, 'monthly', '2024-02'), facts = buildReportFacts(snapshot, '2024-02')
+  const columns = [{ label: '需协调支持事项', field: 'support' as const, required: true }, { label: '责任人', field: 'owner' as const, required: true }]
+  const block = buildRuleBlocks([{ regionId: 't:0', label: '支撑', kind: 'dataset', required: true, dataset: 'risks', startRow: 1, endRow: 2, columns }], snapshot, facts, '2024-02', new Date().toISOString(), '月报')[0]
+  assert.deepEqual(block.rows.map(row => row[0].text), ['准备：申请预算'])
+  assert.ok(!JSON.stringify(block.rows).includes(quiet.id))
 })

@@ -113,7 +113,9 @@ export function buildRuleBlocks(bindings: ReportAgentBinding[], snapshot: Report
         return factCell(fact?.value.trim() ? fact.value : fact && emptyFieldText[field] || '待补充', fact ? [fact.id] : [])
       }
       if (binding.kind === 'dataset') {
-        block.rows = records.map((r, index) => block.columns.map(c => /序号/.test(c.label) ? { ...factCell(String(index + 1), [], true), confirmed: true, source: '系统按本表行顺序编号' } : get(r.id, c.field)))
+        const raised = block.columns.filter(c => c.field === 'blocker' || c.field === 'support')
+        const shown = dataset === 'risks' && raised.length ? records.filter(r => raised.some(c => facts.find(f => f.id === `${r.id}:${c.field}`)?.value.trim())) : records
+        block.rows = shown.map((r, index) => block.columns.map(c => /序号/.test(c.label) ? { ...factCell(String(index + 1), [], true), confirmed: true, source: '系统按本表行顺序编号' } : get(r.id, c.field)))
         if (!block.rows.length) block.rows = [block.columns.map((column, i) => ({ ...factCell(i === 0 ? '本期无已生效记录' : '暂无', [], column.field === 'manual'), ...(column.field === 'manual' ? { confirmed: true, source: '冻结快照没有本类已生效记录，系统占位' } : {}) }))]
       } else {
         const fields: ReportAgentField[] = ['next_week', 'next_month'].includes(binding.section || '') ? ['title', 'owner', 'commitment', 'status'] : binding.section === 'risks' ? ['title', 'blocker', 'next_action', 'status'] : summary ? ['title', 'commitment', 'outcome', 'status'] : ['title', 'outcome', 'status']

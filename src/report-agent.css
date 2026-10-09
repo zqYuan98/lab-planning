@@ -87,3 +87,63 @@
 .report-agent .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; }
 @media (max-width: 1050px) { .agent-template-layout { grid-template-columns: 220px minmax(0, 1fr); gap: 14px; } .agent-column-mappings { grid-template-columns: 1fr; } }
 @media (max-width: 760px) { .agent-template-layout, .agent-form-grid, .agent-report-list { grid-template-columns: 1fr; } .agent-template { padding: 14px; } .agent-editor-body { padding: 0 14px 20px; } .agent-steps { display: grid; gap: 5px; } .agent-toolbar { align-items: flex-start; } .agent-actions .button { max-width: 100%; white-space: normal; } .agent-region-body { padding: 8px; } .agent-preview .agent-word-page-wrapper { padding: 12px; } .agent-validation { padding: 12px; } }
+/* One-page report workbench: template → period → report. */
+.workbench { max-width: 1120px; }
+.workbench-switch { display: inline-flex; gap: 4px; padding: 4px; margin: 4px 0 18px; background: #eef1f6; border-radius: 8px; }
+.workbench-switch button { min-width: 88px; padding: 8px 18px; border: 0; border-radius: 6px; background: transparent; color: var(--text-secondary); font: inherit; font-size: 14px; cursor: pointer; }
+.workbench-switch button.is-active { background: #fff; color: var(--primary); font-weight: 600; box-shadow: 0 1px 3px rgba(20, 30, 60, .12); }
+.workbench-card { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 16px; padding: 22px 24px; margin-bottom: 16px; background: #fff; border: 1px solid var(--border); border-radius: 10px; }
+.workbench-card.is-disabled { opacity: .72; }
+.workbench-step { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--primary-soft); color: var(--primary); font-weight: 700; }
+.workbench-body { min-width: 0; }
+.workbench-body > h2 { margin: 4px 0 14px; font-size: 17px; }
+.workbench-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.workbench-row > p { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.workbench-row > p small { color: var(--text-secondary); font-size: 12px; }
+.workbench-row .agent-actions { margin: 0; }
+.workbench-drop { display: grid; justify-items: center; gap: 6px; width: 100%; padding: 28px 16px; border: 1.5px dashed #c5cde0; border-radius: 10px; background: #f8faff; color: var(--text-body); font: inherit; cursor: pointer; text-align: center; }
+.workbench-drop:hover { border-color: var(--primary); background: var(--primary-soft); }
+.workbench-drop span { color: var(--text-secondary); font-size: 13px; }
+.workbench-period { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.report-agent .workbench-period input { width: 200px; }
+.workbench-period p { margin: 0; font-size: 14px; }
+.workbench-check { margin: 14px 0 6px; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 13px; }
+.workbench-check li { padding-left: 18px; position: relative; color: var(--text-secondary); }
+.workbench-check li::before { content: '✓'; position: absolute; left: 0; color: #2e8b57; }
+.workbench-check li.is-warning { color: #8a5200; }
+.workbench-check li.is-warning::before { content: '!'; color: #c77700; font-weight: 700; left: 3px; }
+.workbench-check .text-button { margin-left: 8px; }
+.workbench-generate { margin-top: 12px; padding: 11px 22px; font-size: 15px; }
+.workbench-alert { margin: 14px 0; padding: 12px 14px; border-radius: 6px; background: #fff7e8; border: 1px solid #f3d9a4; color: #6b4300; font-size: 13px; line-height: 1.8; }
+.workbench-alert strong { display: block; }
+.workbench-alert ul { margin: 6px 0; padding-left: 18px; }
+.workbench-busy { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; padding: 10px 14px; border-radius: 6px; background: var(--primary-soft); color: var(--primary); font-size: 13px; }
+.workbench .spin { animation: workbench-spin 1s linear infinite; }
+@keyframes workbench-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .workbench .spin { animation: none; } }
+.workbench-setup > p:first-child { margin-top: 0; }
+.workbench-mapping { margin: 10px 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.workbench-mapping li { padding: 10px 12px; background: #f7f9fc; border-radius: 6px; font-size: 13px; display: grid; gap: 4px; }
+.workbench-mapping li span { color: var(--text-secondary); font-size: 12px; line-height: 1.7; }
+.workbench-editor { margin-top: 12px; }
+.workbench-block { margin: 18px 0; }
+.workbench-block h3 { margin: 0 0 8px; font-size: 15px; }
+.report-agent .workbench-editor td textarea { min-height: 0; min-width: 120px; padding: 6px 8px; border-color: transparent; background: transparent; resize: none; field-sizing: content; }
+.report-agent .workbench-editor td.workbench-index textarea { min-width: 44px; width: 52px; }
+.report-agent .workbench-editor td.workbench-index { width: 56px; }
+.report-agent .workbench-editor td textarea:focus { border-color: var(--primary); background: #fff; outline: none; }
+.report-agent .workbench-editor td { padding: 2px; }
+.workbench-row-action { width: 36px; text-align: center !important; vertical-align: middle !important; }
+.workbench-editor .agent-table-scroll > .text-button { display: inline-flex; align-items: center; gap: 4px; margin-top: 8px; }
+.workbench-editor-actions { position: sticky; bottom: 0; padding: 12px 0; background: linear-gradient(transparent, #fff 30%); }
+.workbench-history { margin: 6px 0 24px; padding: 14px 18px; background: #fff; border: 1px solid var(--border); border-radius: 10px; }
+.workbench-history > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; }
+.workbench-history ul { margin: 12px 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.workbench-history li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 13px; }
+.workbench-history li small { color: var(--text-secondary); }
+@media (max-width: 700px) {
+  .workbench-card { grid-template-columns: minmax(0, 1fr); padding: 16px; gap: 8px; }
+  .workbench-step { width: 26px; height: 26px; font-size: 13px; }
+  .report-agent .workbench-period input { width: 100%; }
+  .workbench-row .agent-actions { width: 100%; }
+}

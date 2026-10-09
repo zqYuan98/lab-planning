@@ -156,3 +156,22 @@ test('weekly scheduler Sunday selection uses the server ISO weekday 7', () => {
   assert.doesNotMatch(html, /<option value="0">周日/)
   assert.match(html, /<option value="previous" selected="">触发时的上一周<\/option>/)
 })
+
+test('workbench explains the period, flags missing acceptance and plain-language issues', async () => {
+  const { DataCheck, TemplateSetup, coverageText, issueText } = await import('../src/components/ReportWorkbench.tsx')
+  assert.equal(coverageText('monthly', '2026-09'), '9月目标完成情况 + 10月计划及所需支撑')
+  assert.equal(coverageText('monthly', '2026-12'), '12月目标完成情况 + 1月计划及所需支撑')
+  const readiness = { type: 'monthly' as const, period: '2026-09', current: 2, accepted: 1, notCompleted: 0, waiting: 1, done: 1, support: 1, next: 0 }
+  const html = renderToStaticMarkup(createElement(DataCheck, { readiness, type: 'monthly', period: '2026-09', navigate: () => {} }))
+  assert.match(renderToStaticMarkup(createElement(DataCheck, { readiness, type: 'monthly', period: '2026-08' })), /正在核对系统数据/)
+  assert.match(html, /9月已发布目标 2 项：已验收 1 项，待验收 1 项/)
+  assert.match(html, /还有 1 项没有验收/); assert.match(html, /去验收/)
+  assert.match(html, /10月已发布目标 0 项，计划部分会是空的/)
+  const block = { id: 't:0', regionId: 't:0', label: '表格：序号 目标 完成情况', kind: 'table' as const, required: true, content: cell, columns: [{ label: '目标', field: 'title' as const, required: true }, { label: '完成情况', field: 'outcome' as const, required: true }], rows: [] }
+  const binding = { regionId: 't:0', label: block.label, kind: 'dataset' as const, required: true, dataset: 'outcomes' as const }
+  assert.equal(issueText({ id: 'i', severity: 'error', code: 'required_missing', location: 't:0[2,2]', message: '必填内容尚未补充。' }, [block], [binding], 'monthly', '2026-09'), '9月目标完成情况 第 2 行「完成情况」：必填内容尚未补充。')
+  const setup = renderToStaticMarkup(createElement(TemplateSetup, { template: { ...template, type: 'monthly', previewAssetId: null, bindings: [{ ...binding, columns: block.columns }] }, type: 'monthly', period: '2026-09', busy: false, onAdopt: () => {}, onDiscard: () => {}, onReplace: () => {} }))
+  assert.match(setup, /表格 1 → 9月目标完成情况/); assert.match(setup, /完成情况：实际完成情况/); assert.match(setup, /确认使用/)
+  const none = renderToStaticMarkup(createElement(TemplateSetup, { template: { ...template, previewAssetId: null, bindings: [] }, type: 'weekly', period: '2026-09-07', busy: false, onAdopt: () => {}, onDiscard: () => {}, onReplace: () => {} }))
+  assert.match(none, /没有识别到可以自动填写的表格/)
+})

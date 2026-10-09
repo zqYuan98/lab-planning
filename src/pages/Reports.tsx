@@ -39,9 +39,9 @@ import {
 import '../reports.css'
 import '../report-agent.css'
 import { allowDraftLeave } from '../draft-recovery'
-const ReportAgentCenter = retryableLazy(() => import('../components/ReportAgentCenter'))
 const ReportAgentEditor = retryableLazy(() => import('../components/ReportAgentEditor'))
-import type { NavigationIntent } from '../navigation'
+const ReportWorkbench = retryableLazy(() => import('../components/ReportWorkbench'))
+import type { Navigate, NavigationIntent } from '../navigation'
 import type { ReportMetadata, WorkspacePage } from '../../shared/workspace-query'
 import { useWorkspaceQuery } from '../workspace-query'
 import { captureMutationContext } from '../mutation-response'
@@ -52,6 +52,7 @@ type Props = {
   notify: (message: string) => void
   onDirtyChange?: (dirty: boolean) => void
   intent?: NavigationIntent
+  navigate?: Navigate
 }
 const dateTime = (date: string) =>
   new Date(date).toLocaleString('zh-CN', {
@@ -59,13 +60,22 @@ const dateTime = (date: string) =>
     hour12: false,
   })
 
-export default function Reports({
+/** The report center opens on the one-page workbench; the earlier archive stays reachable for legacy reports. */
+export default function Reports(props: Props) {
+  const [legacy, setLegacy] = useState<{ intent?: NavigationIntent } | null>(null)
+  if (props.data.user.role !== 'manager') return <Empty title="报告中心面向部门管理者" description="你的周计划和实际成果会进入管理者汇报。" />
+  if (legacy) return <LegacyReports {...props} intent={legacy.intent} onBack={() => setLegacy(null)} />
+  return <Suspense fallback={<p role="status">正在加载报告中心…</p>}><ReportWorkbench data={props.data} refresh={props.refresh} notify={props.notify} navigate={props.navigate} intent={props.intent} onDirtyChange={props.onDirtyChange} onLegacy={intent => setLegacy({ intent })} /></Suspense>
+}
+
+function LegacyReports({
   data,
   refresh,
   notify,
   onDirtyChange,
   intent,
-}: Props) {
+  onBack,
+}: Props & { onBack: () => void }) {
   const entryWeek = weekMonday(intent?.action === 'write-weekly' && intent.weekStart ? intent.weekStart : shanghaiToday())
   const [selectedId, setSelectedId] = useState(''),
     [selected, setSelected] = useState<Report | null>(null)
@@ -80,9 +90,8 @@ export default function Reports({
   const [schedule, setSchedule] = useState<ReportSchedule | null>(null),
     [scheduleOpen, setScheduleOpen] = useState(false)
   const [finalizeOpen, setFinalizeOpen] = useState(false)
-  const [agentOpen, setAgentOpen] = useState(false)
   const [managedTypes, setManagedTypes] = useState<Report['type'][]>([])
-  useEffect(() => { const controller = new AbortController(); if (data.user.role === 'manager') void api<{ managedTypes: Report['type'][] }>('/report-agent/policy', { signal: controller.signal }).then(value => setManagedTypes(value.managedTypes)).catch(() => {}); return () => controller.abort() }, [data.user.id, data.accessScopeVersion, agentOpen])
+  useEffect(() => { const controller = new AbortController(); if (data.user.role === 'manager') void api<{ managedTypes: Report['type'][] }>('/report-agent/policy', { signal: controller.signal }).then(value => setManagedTypes(value.managedTypes)).catch(() => {}); return () => controller.abort() }, [data.user.id, data.accessScopeVersion])
   const scope = `${data.user.id}:${data.operationEpoch}:${data.accessScopeVersion}`
   const [cursors, setCursors] = useState<string[]>([])
   const historyQuery = useWorkspaceQuery<WorkspacePage<ReportMetadata>>(`/workspace/reports?limit=50${cursors.length ? `&cursor=${encodeURIComponent(cursors.at(-1)!)}` : ''}`, scope, undefined, { onCursorStale: () => { setCursors([]); return '/workspace/reports?limit=50' } })
@@ -217,20 +226,14 @@ export default function Reports({
         description="你的周计划和实际成果会进入管理者汇报。"
       />
     )
-  if (agentOpen) return (
-    <div className="reports-page">
-      <PageHeader eyebrow="MANAGEMENT / REPORTS" title="报告中心" description="沿用公司 Word 模板，生成有据可查的周报与月报。" actions={<button className="button secondary" onClick={() => { if (canLeave()) setAgentOpen(false) }}>返回汇报档案</button>} />
-      <Suspense fallback={<p role="status">正在加载报告模板与生成…</p>}><ReportAgentCenter key={data.user.id} initialType={type} data={data} refresh={refresh} notify={notify} onOpenReport={report => { choose(report); setAgentOpen(false) }} /></Suspense>
-    </div>
-  )
   return (
     <div className="reports-page">
       <PageHeader
         eyebrow="MANAGEMENT / REPORTS"
         title="报告中心"
-        description="让计划、成果与管理判断各有依据。"
+        description="旧版汇报档案：保留只读归档和下载。"
         actions={
-          <><button className="button primary" disabled={busy} onClick={() => { if (canLeave()) setAgentOpen(true) }}><Sparkles size={17} />周报 / 月报模板与生成</button>
+          <><button className="button primary" disabled={busy} onClick={() => { if (canLeave()) onBack() }}>返回报告中心</button>
           <button
             className="button secondary"
             disabled={busy}

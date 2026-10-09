@@ -5,9 +5,9 @@ import { HttpError, type Store } from './store.ts'
 import { reportTypeManaged } from './report-agent-policy.ts'
 import { requireReportManager } from './reports.ts'
 import {
-  activateReportTemplate, archiveReportTemplate, createReportTemplate, downloadAgentReport, downloadReportAsset,
+  activateReportTemplate, adoptReportTemplate, archiveReportTemplate, createReportTemplate, downloadAgentReport, downloadReportAsset,
   editAgentReport, enqueueReportAgent, enqueueReportRewrite, enqueueTemplateLearning, finalizeAgentReport,
-  getAgentReport, getReportAgentBootstrap, previewReportTemplate, updateReportTemplate, uploadReportAsset,
+  getAgentReport, getReportAgentBootstrap, reportAgentReadiness, previewReportTemplate, updateReportTemplate, uploadReportAsset,
 } from './report-agent-service.ts'
 import { cancelReportAgentJob, getReportAgentJob, retryReportAgentJob } from './report-agent-jobs.ts'
 import { getReportAgentSchedule, updateReportAgentSchedule } from './report-agent-schedule.ts'
@@ -31,14 +31,16 @@ export function createReportAgentRouter(store: Store) {
     try { requireReportManager(store, actor(req)); next() } catch (error) { next(error) }
   })
   router.get('/report-agent', (req, res) => res.json(getReportAgentBootstrap(store, actor(req))))
+  router.get('/report-agent/readiness', (req, res) => res.json(reportAgentReadiness(store, actor(req), req.query.type, req.query.period)))
   router.get('/report-agent/policy', (_req, res) => res.json({ managedTypes: ['weekly', 'monthly'].filter(type => reportTypeManaged(store, type as 'weekly' | 'monthly')) }))
   router.post('/report-agent/assets', async (req, res) => res.status(201).json(await uploadReportAsset(store, actor(req), req.body)))
   router.get('/report-agent/assets/:id/download', async (req, res) => sendDocument(res, await downloadReportAsset(store, actor(req), String(req.params.id))))
   router.post('/report-agent/templates', (req, res) => res.status(201).json(createReportTemplate(store, actor(req), req.body)))
   router.patch('/report-agent/templates/:id', (req, res) => res.json(updateReportTemplate(store, actor(req), String(req.params.id), req.body)))
   router.post('/report-agent/templates/:id/learn', (req, res) => res.status(202).json(enqueueTemplateLearning(store, actor(req), String(req.params.id), req.body)))
-  router.post('/report-agent/templates/:id/preview', async (req, res) => res.json(await previewReportTemplate(store, actor(req), String(req.params.id), req.body.expectedVersion)))
+  router.post('/report-agent/templates/:id/preview', async (req, res) => res.json(await previewReportTemplate(store, actor(req), String(req.params.id), req.body.expectedVersion, req.body.period)))
   router.post('/report-agent/templates/:id/activate', (req, res) => res.json(activateReportTemplate(store, actor(req), String(req.params.id), req.body)))
+  router.post('/report-agent/templates/:id/adopt', (req, res) => res.json(adoptReportTemplate(store, actor(req), String(req.params.id), req.body)))
   router.post('/report-agent/templates/:id/archive', (req, res) => res.json(archiveReportTemplate(store, actor(req), String(req.params.id), req.body.expectedVersion)))
   router.post('/report-agent/jobs', (req, res) => res.status(202).json(enqueueReportAgent(store, actor(req), req.body)))
   router.get('/report-agent/jobs/:id', (req, res) => res.json(getReportAgentJob(store, actor(req), String(req.params.id))))

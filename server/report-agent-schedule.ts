@@ -48,6 +48,11 @@ export function updateReportAgentSchedule(store: Store, actorId: string, raw: Up
     return publicSchedule(store.update<StoredSchedule>('settings', ID, input.expectedVersion, { ...(type === 'monthly' ? { type, monthlyDay: input.monthlyDay, targetMonth: input.targetMonth } : {}), enabled: input.enabled, actorId: input.actorId, templateId: input.templateId, weekday: input.weekday, time: input.time, targetWeek: input.targetWeek, useAi: input.useAi, effectiveAt: newWindow ? now.toISOString() : current.effectiveAt, missedPeriods }))
   })
 }
+/** A replaced template hands its schedule to the adopted one; timing, owner and backlog stay unchanged. */
+export function repointReportAgentSchedule(store: Store, type: ReportAgentType, fromIds: string[], toId: string) {
+  const stored = store.get<StoredSchedule>('settings', scheduleId(type))
+  if (stored && fromIds.includes(stored.templateId)) store.update<StoredSchedule>('settings', stored.id, stored.version, { templateId: toId })
+}
 function occurrences(schedule: ReportAgentSchedule, now: Date) {
   if (!schedule.enabled) return []
   const localDate = new Date(now.getTime() + 8 * 3600000).toISOString().slice(0, 10), thisMonday = normalizeReportPeriod('weekly', localDate)

@@ -440,7 +440,7 @@ export default function App() {
     messages: <Messages {...props} navigate={navigate} onUnreadChange={setUnreadCount} onSessionChanged={sessionChanged} />,
     'notification-settings': manager ? <NotificationSettings {...props} /> : null,
     reports: manager ? (
-      <Reports {...props} onDirtyChange={setReportDirty} />
+      <Reports {...props} navigate={navigate} onDirtyChange={setReportDirty} />
     ) : null,
     team: manager ? <Team {...props} /> : null,
   }[page] || <Overview {...props} navigate={navigate} />

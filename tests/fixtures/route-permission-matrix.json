@@ -311,6 +311,12 @@
   "member": 403,
   "manager": 200
  },
+ "GET /api/report-agent/readiness": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 400
+ },
  "GET /api/report-agent/reports/:id": {
   "anonymous": 401,
   "observer": 404,
@@ -1116,6 +1122,12 @@
   "manager": 400
  },
  "POST /api/report-agent/templates/:id/activate": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/report-agent/templates/:id/adopt": {
   "anonymous": 401,
   "observer": 403,
   "member": 403,

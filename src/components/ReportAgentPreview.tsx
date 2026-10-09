@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Download, RefreshCw } from 'lucide-react'
 
 /** Loaded only when a manager opens a preview; the document is never executable HTML. */
-export default function ReportAgentPreview({ url, title }: { url: string; title: string }) {
+export default function ReportAgentPreview({ url, title, bare = false }: { url: string; title: string; bare?: boolean }) {
   const host = useRef<HTMLDivElement>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -42,10 +42,10 @@ export default function ReportAgentPreview({ url, title }: { url: string; title:
     return () => { active = false; controller.abort() }
   }, [url, attempt])
   return <section className="agent-preview" aria-label={title}>
-    <div className="agent-toolbar">
+    {!bare && <div className="agent-toolbar">
       <div><strong>{title}</strong><p className="agent-note">网页为近似预览，分页与字体以 Word 客户端为准。请下载核对表格、页眉页脚、长文字和换页。</p></div>
       <a className="button secondary" href={url} download><Download size={16} />下载 Word</a>
-    </div>
+    </div>}
     {loading && <p role="status">正在载入 Word 预览…</p>}
     {error && <div role="alert" className="error">{error}<button type="button" className="button secondary" onClick={() => setAttempt(value => value + 1)}><RefreshCw size={15} />重试预览</button></div>}
     <div className="agent-preview-scroll" ref={host} aria-busy={loading} onClick={event => {
