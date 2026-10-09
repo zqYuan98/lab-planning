@@ -51,7 +51,9 @@ export function validateFactText(text: string, factIds: string[], facts: ReportF
   const issues: ReportAgentIssue[] = [], cited = facts.filter(f => factIds.includes(f.id))
   if (factIds.some(id => !facts.some(f => f.id === id))) issues.push(issue('unknown_reference', location, '引用不存在于本次冻结事实。'))
   if (text.trim() && !factIds.length) issues.push(issue('missing_reference', location, '此内容没有事实引用；请选择依据，或作为有来源的人工补充确认。'))
-  const allowed = new Set(cited.flatMap(f => quantities(`${f.value}${f.unit} ${f.subject}`)))
+  // Parse the fact value and subject independently. Joining them lets a trailing number in the value
+  // absorb a unit-like first character from the subject (for example a date followed by “人员…”).
+  const allowed = new Set(cited.flatMap(f => [...quantities(`${f.value}${f.unit}`), ...quantities(f.subject)]))
   if (quantities(text).some(n => !allowed.has(n))) issues.push(issue('unsupported_number', location, '数字、单位或日期无法由本单元引用的事实证明。'))
   const subjects = new Set(cited.filter(f => f.sourceType !== 'metric').map(f => f.subjectId))
   const named = facts.filter(f => f.sourceType !== 'metric' && f.subject.length >= 2 && text.includes(f.subject))

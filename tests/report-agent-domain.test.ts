@@ -91,6 +91,9 @@ test('fact validation checks subject, numeric attribution and monthly acceptance
     assert.ok(validateFactText('完成', ['not-a-fact'], facts).some(i => i.code === 'unknown_reference'))
     const other = { ...facts[0], id: 'other', subjectId: 'other', subject: '项目乙', value: '项目乙' }
     assert.ok(validateFactText('项目乙完成 620 人试点', [own], [...facts, other]).some(i => i.code === 'subject_mismatch'))
+    const due = { ...facts[0], id: 'personnel-due', subjectId: 'personnel', subject: '人员识别算法', field: 'due', value: '2026-10-30', unit: '' }
+    assert.deepEqual(validateFactText('人员识别算法：完成时间：2026-10-30。', [due.id], [due]), [])
+    assert.ok(validateFactText('人员识别算法新增 30 人。', [due.id], [due]).some(i => i.code === 'unsupported_number'))
     assert.equal(reportAgentHash({ b: 2, a: 1 }), reportAgentHash({ a: 1, b: 2 }))
   } finally { f.store.close() }
 })
