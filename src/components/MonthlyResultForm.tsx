@@ -31,6 +31,8 @@ export default function MonthlyResultForm({ plan, manager, userId, onSaved, onCa
         <option value="accepted">达到验收标准，确认完成</option><option value="not_completed">未完成，保留本月结果</option>
       </select></Field>}
       <Field label={incomplete ? '未完成原因（必填）' : manager ? '验收说明' : '补充说明'}><textarea name="acceptanceNote" defaultValue={plan.acceptanceNote} required={incomplete} maxLength={LIMITS.text} rows={3} /></Field>
+      {incomplete && <><Field label="根本原因（选填）" hint="按“现象 → 直接原因 → 根本原因”往下挖，月报会直接引用。"><textarea name="rootCause" defaultValue={plan.rootCause || ''} maxLength={LIMITS.text} rows={2} placeholder="例如：需求变更未走评审，导致排期被压缩" /></Field>
+      <Field label="补救措施（选填）" hint="写清动作、责任人、完成时间和怎么算完成，月报会直接引用。"><textarea name="remedy" defaultValue={plan.remedy || ''} maxLength={LIMITS.text} rows={2} placeholder="例如：10月15日前由张三完成接口联调，以测试报告通过为准" /></Field></>}
     </Form>
   </>
 }

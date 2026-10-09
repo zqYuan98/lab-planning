@@ -59,7 +59,7 @@ const effortSchema = z.number().nonnegative().multipleOf(0.5).nullable().optiona
 const goalSchema = z.object({ ...entity, title: z.string().min(1).max(LIMITS.title), year: z.number().int().min(1900).max(2200), target: line.min(1), progress: z.number().min(0).max(100), progressMode: z.enum(PROGRESS_MODES).optional(), description: line, ownerId: id, status: z.enum(ANNUAL_GOAL_STATUSES) }).strict()
 const planSchema = z.object({ ...entity, annualGoalId: id.nullable().optional(), month, title: z.string().min(1).max(LIMITS.title), projectId: id.nullable(), category: z.string().max(LIMITS.category), ownerId: id, collaboratorIds: z.array(id).max(100),
   expectedOutcome: line, acceptanceCriteria: line, dueDate: z.union([day, z.literal('')]), priority: z.enum(PRIORITIES), status: z.enum(PLAN_STATUSES),
-  reviewComment: line, publishedVersion: z.number().int().positive().nullable(), sourcePlanId: id.nullable(), actualOutcome: line, acceptanceStatus: z.enum(ACCEPTANCE_STATUSES), acceptanceNote: line,
+  reviewComment: line, publishedVersion: z.number().int().positive().nullable(), sourcePlanId: id.nullable(), actualOutcome: line, acceptanceStatus: z.enum(ACCEPTANCE_STATUSES), acceptanceNote: line, rootCause: line.optional(), remedy: line.optional(),
   mergedFromIds: z.array(id).max(50).optional(), mergedIntoId: id.optional(), importSource: importSourceSchema.optional(), visibility: z.enum(PLAN_VISIBILITIES).optional(),
   isTemporary: z.boolean().optional(), temporaryReason: line.optional(),
   workSource: z.enum(WORK_SOURCES).optional(), assignedBy: z.string().max(LIMITS.assignedBy).optional(), assignedOn: z.union([day, z.literal('')]).optional(),

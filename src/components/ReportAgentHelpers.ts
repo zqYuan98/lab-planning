@@ -5,7 +5,10 @@ export const agentFieldLabels: Record<ReportAgentField, string> = {
   title: '工作事项', owner: '负责人', commitment: '本期承诺 / 预计投入', outcome: '实际成果', status: '周状态 / 月验收状态',
   evidence: '成果证据', blocker: '问题与阻塞', next_action: '下一步', monthly_goal: '关联月目标', support: '所需支撑 / 需要支持', due: '截止日期（月目标）', criteria: '验收标准（月目标）', manual: '人工补充（公司口径）',
 }
-export const agentBindingLabels: Record<ReportAgentBinding['kind'], string> = { keep: '保留原文（已核对固定内容）', clear: '清除原文', meta: '报告日期或标题', section: '生成文字段落', dataset: '按事项填入表格', manual: '每期由管理者补充' }
+export const agentBindingLabels: Record<ReportAgentBinding['kind'], string> = { keep: '保留原文（已核对固定内容）', clear: '清除原文', remove: '生成时删除此段', narrative: '按模板要求生成文字', meta: '报告日期或标题', section: '生成文字段落', dataset: '按事项填入表格', manual: '每期由管理者补充' }
+export const agentNarrativeLabels = (monthly: boolean): Record<import('../../shared/report-agent').ReportAgentNarrative, string> => ({
+  review: monthly ? '本月目标完成情况' : '本周完成情况', causes: '未完成事项的原因', remedies: '补救措施', plan: monthly ? '下月计划（按优先级 3–5 项）' : '下周计划', support: '需要的支持',
+})
 export const agentJobLabels: Record<ReportAgentJobStatus, string> = { queued: '排队中', running: '正在生成', ready: '已完成', needs_input: '需要补充', failed: '生成失败', cancelled: '已取消' }
 export const agentTime = (value: string) => new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
 export const agentLabel = (label: string) => label.replace(/^t:(\d+)\s*/, (_, index: string) => `表格 ${Number(index) + 1} `)

@@ -28,7 +28,9 @@ export interface DocxInspection {
 /** Only materialized values cross this boundary; no paths, expressions or business bindings. */
 export type DocxEdit =
   | { kind: 'text'; regionId: DocxRegionId; text: string }
-  | { kind: 'clear' | 'keep'; regionId: DocxRegionId }
+  | { kind: 'clear' | 'keep' | 'remove'; regionId: DocxRegionId }
+  /** Replace one paragraph with one paragraph per line, cloned from it; plain drops bold from the clones. */
+  | { kind: 'paragraphs'; regionId: DocxRegionId; lines: string[]; plain: boolean }
   | { kind: 'rows'; regionId: DocxRegionId; headerRows: number; templateRow: number; startRow: number; endRow: number; rows: string[][] }
 // Row endRow is exclusive. An empty rows array removes the selected data rows.
 export interface DocxLimits {

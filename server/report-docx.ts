@@ -310,7 +310,7 @@ export async function renderDocx(bytes: Buffer, edits: DocxEdit[], options: Docx
   const rowEdits: Array<Extract<DocxEdit, { kind: 'rows' }>> = []
   let chars = 0, addedRows = 0, addedCells = 0
   for (const edit of edits) {
-    if (!edit || typeof edit.regionId !== 'string' || !['text', 'clear', 'keep', 'rows'].includes(edit.kind)) fail('DOCX 编辑操作无效')
+    if (!edit || typeof edit.regionId !== 'string' || !['text', 'clear', 'keep', 'remove', 'paragraphs', 'rows'].includes(edit.kind)) fail('DOCX 编辑操作无效')
     const region = regionMap.get(edit.regionId)
     if (!region) fail(`DOCX 区域 ${edit.regionId} 不存在`)
     if (touched.has(edit.regionId)) fail('DOCX 区域编辑重复或重叠')
@@ -331,6 +331,12 @@ export async function renderDocx(bytes: Buffer, edits: DocxEdit[], options: Docx
         for (const value of row) { checkText(value, limits); chars += value.length }
       }
       rowEdits.push(edit)
+    } else if (edit.kind === 'remove' || edit.kind === 'paragraphs') {
+      if (region.kind !== 'paragraph') fail('段落删除或分段填写只能用于正文段落')
+      if (edit.kind === 'paragraphs') {
+        if (!Array.isArray(edit.lines) || !edit.lines.length || edit.lines.length > limits.maxRows) fail('DOCX 分段内容无效或过多')
+        for (const line of edit.lines) { checkText(line, limits); chars += line.length }
+      }
     } else {
       if (region.kind === 'table') fail('表格内容必须通过单元格或重复行操作修改')
       if (edit.kind === 'text') { checkText(edit.text, limits); chars += edit.text.length }
@@ -356,6 +362,17 @@ export async function renderDocx(bytes: Buffer, edits: DocxEdit[], options: Docx
         node.insertBefore(cloned, sourceRows[edit.startRow])
       }
       for (let index = edit.startRow; index < edit.endRow; index++) node.removeChild(sourceRows[index])
+    } else if (edit.kind === 'remove') node.parentNode!.removeChild(node)
+    else if (edit.kind === 'paragraphs') {
+      // Each line becomes its own paragraph with the region's paragraph properties; requirement text is often bold.
+      for (const line of edit.lines) {
+        const paragraph = node.cloneNode(true) as XmlElement
+        stripCopiedIds(paragraph)
+        fillParagraph(paragraph, line, document)
+        if (edit.plain) for (const mark of [...descendants(paragraph, 'b'), ...descendants(paragraph, 'bCs')]) if (is(mark.parentNode as XmlNode, 'rPr')) mark.parentNode!.removeChild(mark)
+        node.parentNode!.insertBefore(paragraph, node)
+      }
+      node.parentNode!.removeChild(node)
     } else {
       const value = edit.kind === 'text' ? edit.text : ''
       if (is(node, 'p')) fillParagraph(node, value, document)

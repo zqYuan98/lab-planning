@@ -173,5 +173,5 @@ test('workbench explains the period, flags missing acceptance and plain-language
   const setup = renderToStaticMarkup(createElement(TemplateSetup, { template: { ...template, type: 'monthly', previewAssetId: null, bindings: [{ ...binding, columns: block.columns }] }, type: 'monthly', period: '2026-09', busy: false, onAdopt: () => {}, onDiscard: () => {}, onReplace: () => {} }))
   assert.match(setup, /表格 1 → 9月目标完成情况/); assert.match(setup, /完成情况：实际完成情况/); assert.match(setup, /确认使用/)
   const none = renderToStaticMarkup(createElement(TemplateSetup, { template: { ...template, previewAssetId: null, bindings: [] }, type: 'weekly', period: '2026-09-07', busy: false, onAdopt: () => {}, onDiscard: () => {}, onReplace: () => {} }))
-  assert.match(none, /没有识别到可以自动填写的表格/)
+  assert.match(none, /没有识别出需要填写的表格或章节/)
 })

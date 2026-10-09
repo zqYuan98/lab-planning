@@ -8,10 +8,16 @@ export type ReportAgentType = 'weekly' | 'monthly'
 export type ReportAgentDataset = 'outcomes' | 'risks' | 'next_week' | 'next_month' | 'effort' | 'annual_goals'
 export type ReportAgentField = 'title' | 'owner' | 'commitment' | 'outcome' | 'status' | 'evidence' | 'blocker' | 'next_action' | 'monthly_goal' | 'support' | 'due' | 'criteria' | 'manual'
 export interface ReportAgentColumn { label: string; field: ReportAgentField; required: boolean }
+/** Prose sections of outline templates (headings plus writing requirements). */
+export type ReportAgentNarrative = 'review' | 'causes' | 'remedies' | 'plan' | 'support'
+export const REPORT_AGENT_NARRATIVES = ['review', 'causes', 'remedies', 'plan', 'support'] as const
 /** Map each paragraph and either a whole table or all its cells; keep is an explicit manager decision. */
 export interface ReportAgentBinding {
-  regionId: string; label: string; kind: 'keep' | 'clear' | 'meta' | 'section' | 'dataset' | 'manual'; required: boolean
-  value?: string; meta?: 'period' | 'week_end' | 'week_range' | 'captured_at' | 'title' | 'author' | 'department'; section?: ReportAgentDataset
+  regionId: string; label: string; kind: 'keep' | 'clear' | 'remove' | 'meta' | 'section' | 'narrative' | 'dataset' | 'manual'; required: boolean
+  /** meta 'template' fills {{department}}, {{author}}, {{date}} and {{month}} inside the original line. */
+  value?: string; meta?: 'period' | 'week_end' | 'week_range' | 'captured_at' | 'title' | 'author' | 'department' | 'template'; section?: ReportAgentDataset
+  /** A narrative region is written as paragraphs following the template's own requirement text. */
+  narrative?: ReportAgentNarrative; instruction?: string
   dataset?: ReportAgentDataset; startRow?: number; endRow?: number; columns?: ReportAgentColumn[]
 }
 export interface ReportAsset extends Entity {
@@ -34,6 +40,8 @@ export interface ReportFact {
 }
 export interface ReportAgentCell {
   text: string; factIds: string[]; manual: boolean; confirmed: boolean; source: string
+  /** Per-line citations for multi-subject prose, one entry per text line. */
+  lineFactIds?: string[][]
 }
 export interface ReportAgentBlock {
   id: string; regionId: string; label: string; kind: 'text' | 'table'; required: boolean

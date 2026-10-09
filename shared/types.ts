@@ -18,6 +18,8 @@ export interface MonthlyPlan extends Entity {
   priority: Priority; status: PlanStatus; reviewComment: string;
   publishedVersion: number | null; sourcePlanId: string | null; actualOutcome: string;
   acceptanceStatus: Of<typeof ACCEPTANCE_STATUSES>; acceptanceNote: string;
+  /** Optional analysis recorded with a not-completed verdict; monthly reports quote it as the root cause and remedy. */
+  rootCause?: string; remedy?: string;
   mergedFromIds?: string[]; mergedIntoId?: string;
   /** Absent on legacy goals; temporary goals still use monthly review and publication. */
   isTemporary?: boolean; temporaryReason?: string;

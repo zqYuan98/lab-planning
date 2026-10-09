@@ -1133,6 +1133,12 @@
   "member": 403,
   "manager": 400
  },
+ "POST /api/report-agent/templates/:id/ai-outline": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
  "POST /api/report-agent/templates/:id/archive": {
   "anonymous": 401,
   "observer": 403,

@@ -241,7 +241,9 @@ export class MonthlyService extends DomainBase {
         if (error instanceof HttpError && error.status === 400) throw new HttpError(400, error.message, undefined, { acceptanceNote: error.message })
         throw error
       }
-      const plan = this.store.update<MonthlyPlan>('plans', id, before.version, { actualOutcome, acceptanceStatus: status, acceptanceNote })
+      // Root cause and remedy belong to a not-completed verdict; other verdicts keep earlier analysis untouched.
+      const analysis = status === 'not_completed' ? { rootCause: text(input.rootCause ?? before.rootCause ?? '', '根本原因', false), remedy: text(input.remedy ?? before.remedy ?? '', '补救措施', false) } : {}
+      const plan = this.store.update<MonthlyPlan>('plans', id, before.version, { actualOutcome, acceptanceStatus: status, acceptanceNote, ...analysis })
       this.audit(actor, 'plan', id, 'result', before, plan, acceptanceNote)
       return projectPlan(actor, plan, this.store)
     })

@@ -14,12 +14,13 @@ const publishedNextPlans = (snapshot: ReportSnapshot) => snapshot.nextPlans.filt
 // Members often write "无" when no support is needed; that is not a request.
 const noRequest = /^(?:无|暂无|没有|不需要|暂不需要|无需|无需支持|暂无需要|\/|—|-)[。.]?$/
 /** Execution notes the plan's own tasks and weekly records carry: latest task state plus effective weekly records. */
-function executionNotes(snapshot: ReportSnapshot, planId: string, kind: 'support' | 'blocker'): string {
+function executionNotes(snapshot: ReportSnapshot, planId: string, kind: 'support' | 'blocker' | 'next_action'): string {
   const notes: string[] = []
   const add = (text: string | undefined, label: string) => { const value = (text || '').trim(); if (value && !noRequest.test(value) && !notes.includes(`${label}：${value}`)) notes.push(`${label}：${value}`) }
-  for (const task of snapshot.tasks.filter(t => t.monthlyPlanId === planId && !t.cancellation && t.status === 'blocked')) add(kind === 'support' ? task.supportNeeded : task.blockerReason, task.title)
+  // Support and blockers are current only while a task is blocked; next steps apply to any unfinished task.
+  for (const task of snapshot.tasks.filter(t => t.monthlyPlanId === planId && !t.cancellation && (kind === 'next_action' ? t.status !== 'done' : t.status === 'blocked'))) add(kind === 'support' ? task.supportNeeded : kind === 'blocker' ? task.blockerReason : task.nextAction, task.title)
   for (const record of [...snapshot.weeklyRecords, ...snapshot.nextWeeklyRecords].filter(r => r.monthlyPlanId === planId && isEffectiveWeeklyRecord(r))) {
-    add(kind === 'support' ? record.supportNeeded : record.blocker, `${snapshot.tasks.find(t => t.id === record.taskId)?.title || '周工作'}（${record.weekStart} 周）`)
+    add(kind === 'support' ? record.supportNeeded : kind === 'blocker' ? record.blocker : record.nextAction, `${snapshot.tasks.find(t => t.id === record.taskId)?.title || '周工作'}（${record.weekStart} 周）`)
   }
   return notes.join('；')
 }
@@ -29,17 +30,25 @@ export function monthlyReportFacts(snapshot: ReportSnapshot, period: string): Re
   const facts: ReportFact[] = []
   for (const plan of [...snapshot.plans.filter(p => p.month === period && p.status === 'published'), ...publishedNextPlans(snapshot)]) {
     const next = plan.month !== period
-    const blocker = [plan.acceptanceStatus === 'not_completed' && !next ? plan.acceptanceNote.trim() : '', executionNotes(snapshot, plan.id, 'blocker')].filter(Boolean).join('；')
+    const executionBlocker = executionNotes(snapshot, plan.id, 'blocker'), acceptanceNote = plan.acceptanceStatus === 'not_completed' && !next ? plan.acceptanceNote.trim() : ''
+    const blocker = [acceptanceNote, executionBlocker].filter(Boolean).join('；')
+    // A goal carried into next month supplies the remedy's deadline and completion standard.
+    const carried = next ? undefined : snapshot.nextPlans.find(p => p.sourcePlanId === plan.id && p.status !== 'merged')
     const values = { title: plan.title, owner: snapshot.users.find(u => u.id === plan.ownerId)?.name || '负责人待核实',
       commitment: plan.expectedOutcome, expected: plan.expectedOutcome, outcome: next ? '计划中，尚无成果' : plan.actualOutcome,
       acceptance: next ? '已发布计划' : acceptanceLabels[plan.acceptanceStatus],
       evidence: '', blocker, support: executionNotes(snapshot, plan.id, 'support'), next_action: next ? plan.acceptanceCriteria : '',
-      criteria: plan.acceptanceCriteria, monthly_goal: plan.title, due: plan.dueDate }
+      criteria: plan.acceptanceCriteria, monthly_goal: plan.title, due: plan.dueDate,
+      acceptance_note: acceptanceNote, execution_blocker: executionBlocker, root_cause: next ? '' : plan.rootCause?.trim() || '', remedy: next ? '' : plan.remedy?.trim() || '',
+      next_actions: executionNotes(snapshot, plan.id, 'next_action'), carry_due: carried?.dueDate || '', carry_criteria: carried?.acceptanceCriteria || '',
+      key_actions: snapshot.tasks.filter(t => t.monthlyPlanId === plan.id && !t.cancellation).map(t => t.title).join('、') }
     for (const [field, value] of Object.entries(values)) facts.push({ id: `plan:${plan.id}:${field}`, sourceType: 'monthlyPlan', sourceId: plan.id, sourceVersion: plan.version,
       subjectId: plan.id, subject: plan.title, field, value, unit: '', period: plan.month, status: next ? 'next_plan' : plan.acceptanceStatus })
   }
   const plans = snapshot.plans.filter(p => p.month === period && p.status === 'published')
-  for (const [field, value] of Object.entries({ monthly_total: plans.length, monthly_accepted: plans.filter(p => p.acceptanceStatus === 'accepted').length })) {
+  const accepted = plans.filter(p => p.acceptanceStatus === 'accepted').length, notCompleted = plans.filter(p => p.acceptanceStatus === 'not_completed').length
+  const supportTotal = new Set(facts.filter(f => f.field === 'support' && f.value.trim()).map(f => f.subjectId)).size
+  for (const [field, value] of Object.entries({ monthly_total: plans.length, monthly_accepted: accepted, monthly_not_completed: notCompleted, monthly_waiting: plans.length - accepted - notCompleted, next_total: publishedNextPlans(snapshot).length, support_total: supportTotal })) {
     facts.push({ id: `metric:${field}`, sourceType: 'metric', sourceId: 'snapshot', sourceVersion: 1, subjectId: 'snapshot', subject: '冻结月度验收统计', field, value: String(value), unit: '项', period, status: 'computed' })
   }
   return facts

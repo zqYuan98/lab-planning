@@ -7,7 +7,7 @@ import { Badge, Modal, PageHeader } from '../ui'
 import { shanghaiToday, weekMonday } from '../overview-data'
 import type { Navigate, NavigationIntent } from '../navigation'
 import { retryableLazy } from './LazyPage'
-import { agentAssetUrl, agentJobPending, agentReportUrl, agentRequestId, agentTime, readAgentFile } from './ReportAgentHelpers'
+import { agentAssetUrl, agentJobPending, agentNarrativeLabels, agentReportUrl, agentRequestId, agentTime, readAgentFile } from './ReportAgentHelpers'
 const ReportAgentPreview = retryableLazy(() => import('./ReportAgentPreview'))
 const ReportAgentCenter = retryableLazy(() => import('./ReportAgentCenter'))
 
@@ -41,6 +41,7 @@ const fieldText: Record<ReportAgentField, string> = {
 function blockTitle(block: ReportAgentBlock, bindings: ReportAgentBinding[], type: ReportType, period: string) {
   const binding = bindings.find(item => item.regionId === block.regionId)
   if (binding?.kind === 'dataset' || binding?.kind === 'section') return datasetText(type, binding.dataset || binding.section, period)
+  if (binding?.kind === 'narrative' || binding?.kind === 'manual' && binding.instruction) return binding.label
   return block.label.replace(/^t:(\d+)(?::r:\d+:c:\d+)?\s*/, (_, index: string) => `表格 ${Number(index) + 1} `)
 }
 export function issueText(issue: ReportAgentIssue, blocks: ReportAgentBlock[], bindings: ReportAgentBinding[], type: ReportType, period: string) {
@@ -127,6 +128,14 @@ export default function ReportWorkbench({ data, refresh, notify, navigate, inten
       setSetup(null); await load(); notify(`模板已启用，可以生成${typeWord(type)}了。`)
     })
   }
+  async function aiOutline() {
+    if (!setup) return
+    await run('AI 正在重新识别模板结构，通常需要半分钟…', async () => {
+      let row = await api<ReportTemplate>(`/report-agent/templates/${setup.id}/ai-outline`, json({ expectedVersion: setup.version }))
+      row = await api<ReportTemplate>(`/report-agent/templates/${row.id}/preview`, json({ expectedVersion: row.version, period }))
+      setSetup(row); notify('已按 AI 识别结果重新试填，请核对。')
+    })
+  }
   async function discardSetup() {
     if (!setup) return
     await run('正在取消…', async () => { await api(`/report-agent/templates/${setup.id}/archive`, json({ expectedVersion: setup.version })); setSetup(null); await load() })
@@ -183,7 +192,7 @@ export default function ReportWorkbench({ data, refresh, notify, navigate, inten
         <div className="workbench-body">
           <h2>公司模板</h2>
           <input ref={fileInput} type="file" accept=".docx" hidden onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void uploadTemplate(file) }} />
-          {setup ? <TemplateSetup template={setup} type={type} period={period} busy={!!busy} onAdopt={() => void adopt()} onDiscard={() => void discardSetup()} onReplace={() => fileInput.current?.click()} />
+          {setup ? <TemplateSetup template={setup} type={type} period={period} busy={!!busy} aiConfigured={boot.aiConfigured} onAiOutline={() => void aiOutline()} onAdopt={() => void adopt()} onDiscard={() => void discardSetup()} onReplace={() => fileInput.current?.click()} />
             : active ? <div className="workbench-row"><p><strong>{active.name}</strong> <Badge tone="green">可以使用</Badge><small>启用于 {agentTime(active.activatedAt || active.updatedAt).split(' ')[0]}</small></p>
               <div className="agent-actions">{active.previewAssetId && <button className="button secondary" onClick={() => setTemplatePreview(true)}>查看试填效果</button>}<button className="button secondary" disabled={!!busy} onClick={() => fileInput.current?.click()}><FileUp size={16} />更换模板</button></div></div>
               : <button className="workbench-drop" disabled={!!busy} onClick={() => fileInput.current?.click()}><FileUp size={22} /><strong>上传公司{typeWord(type)} Word 模板（.docx）</strong><span>只需上传一次。系统会自动识别模板里的表格，并用系统数据试填给你看效果。</span></button>}
@@ -237,21 +246,26 @@ export default function ReportWorkbench({ data, refresh, notify, navigate, inten
   </div>
 }
 
-export function TemplateSetup({ template, type, period, busy, onAdopt, onDiscard, onReplace }: {
-  template: ReportTemplate; type: ReportType; period: string; busy: boolean; onAdopt: () => void; onDiscard: () => void; onReplace: () => void
+export function TemplateSetup({ template, type, period, busy, aiConfigured = false, onAiOutline, onAdopt, onDiscard, onReplace }: {
+  template: ReportTemplate; type: ReportType; period: string; busy: boolean; aiConfigured?: boolean; onAiOutline?: () => void; onAdopt: () => void; onDiscard: () => void; onReplace: () => void
 }) {
   const tables = template.bindings.filter(binding => binding.kind === 'dataset' || binding.kind === 'section')
-  const manual = template.bindings.filter(binding => binding.kind === 'manual').length
+  const sections = template.bindings.filter(binding => binding.kind === 'narrative' || binding.kind === 'manual' && !!binding.instruction)
+  const removed = template.bindings.filter(binding => binding.kind === 'remove').length
+  const manual = template.bindings.filter(binding => binding.kind === 'manual' && !binding.instruction).length
   const auto = template.bindings.filter(binding => binding.kind === 'meta').length
+  const narrativeLabels = agentNarrativeLabels(type === 'monthly')
   const label = (binding: ReportAgentBinding) => binding.regionId.startsWith('t:') ? `表格 ${Number(binding.regionId.split(':')[1]) + 1}` : '段落'
   return <div className="workbench-setup">
     <p>已识别 <strong>{template.name}</strong>，下面是用{periodLabel(type, period)}的系统数据试填的效果。确认没有问题后点「确认使用」。</p>
-    {tables.length ? <ul className="workbench-mapping">{tables.map(binding => <li key={binding.regionId}><strong>{label(binding)} → {datasetText(type, binding.dataset || binding.section, period)}</strong>
-      {binding.columns && <span>{binding.columns.map(column => `${column.label}：${fieldText[column.field]}`).join('；')}</span>}</li>)}</ul>
-      : <div className="workbench-alert"><strong>没有识别到可以自动填写的表格。</strong>报告会是空的。请确认模板中的表格带有表头（例如“序号、目标、完成情况、负责人”），或在「高级设置」中手动设置。</div>}
-    <p className="agent-note">{auto ? `${auto} 处日期、周期等信息自动填写；` : ''}{manual ? `${manual} 处系统没有对应数据，需要每期手动填写。` : ''}</p>
+    {sections.length > 0 && <ul className="workbench-mapping">{sections.map(binding => <li key={binding.regionId}><strong>「{binding.label}」→ {binding.kind === 'narrative' ? `按模板要求写：${narrativeLabels[binding.narrative || 'review']}` : '系统没有对应数据，每期手动填写'}</strong>
+      {binding.instruction && <span>要求：{binding.instruction.replace(/\s+/g, ' ').slice(0, 160)}{binding.instruction.length > 160 ? '…' : ''}</span>}</li>)}</ul>}
+    {tables.length > 0 && <ul className="workbench-mapping">{tables.map(binding => <li key={binding.regionId}><strong>{label(binding)} → {datasetText(type, binding.dataset || binding.section, period)}</strong>
+      {binding.columns && <span>{binding.columns.map(column => `${column.label}：${fieldText[column.field]}`).join('；')}</span>}</li>)}</ul>}
+    {!tables.length && !sections.length && <div className="workbench-alert"><strong>没有识别出需要填写的表格或章节。</strong>报告会是空的。{aiConfigured ? '可以点下方「用 AI 重新识别」，' : '请确认模板中有带表头的表格或“一、二、三”这样的章节标题，'}或在「高级设置」中手动设置。</div>}
+    <p className="agent-note">{auto ? `${auto} 处标题、报告人、日期等信息自动填写；` : ''}{removed ? `${removed} 段填写要求、建议或附录在生成时删除；` : ''}{manual ? `${manual} 处系统没有对应数据，需要每期手动填写。` : ''}</p>
     {template.previewAssetId && <Suspense fallback={<p role="status">正在载入试填效果…</p>}><ReportAgentPreview bare url={agentAssetUrl(template.previewAssetId)} title="模板试填效果" /></Suspense>}
-    <div className="agent-actions"><button className="button primary" disabled={busy} onClick={onAdopt}><CheckCheck size={16} />确认使用</button><button className="button secondary" disabled={busy} onClick={onReplace}><FileUp size={16} />换一个文件</button><button className="button secondary" disabled={busy} onClick={onDiscard}><X size={16} />取消</button></div>
+    <div className="agent-actions"><button className="button primary" disabled={busy} onClick={onAdopt}><CheckCheck size={16} />确认使用</button>{aiConfigured && onAiOutline && <button className="button secondary" disabled={busy} onClick={onAiOutline}>识别不准？用 AI 重新识别</button>}<button className="button secondary" disabled={busy} onClick={onReplace}><FileUp size={16} />换一个文件</button><button className="button secondary" disabled={busy} onClick={onDiscard}><X size={16} />取消</button></div>
   </div>
 }
 
@@ -284,6 +298,7 @@ function QuickEditor({ blocks, bindings, type, period, busy, dirty, onCell, onRo
     <p className="agent-note">直接修改文字即可。修改只影响这份报告，不会改动月度目标或周记录。</p>
     {blocks.map(block => <section key={block.id} className="workbench-block">
       <h3>{blockTitle(block, bindings, type, period)}</h3>
+      {(() => { const instruction = bindings.find(binding => binding.regionId === block.regionId)?.instruction; return instruction ? <details className="workbench-requirement"><summary>查看模板要求</summary><p>{instruction}</p></details> : null })()}
       {block.kind === 'text' ? <textarea aria-label={blockTitle(block, bindings, type, period)} value={block.content.text} rows={Math.max(2, rows(block.content.text))} disabled={busy} onChange={event => onCell(block.id, event.target.value)} />
         : <div className="agent-table-scroll"><table><thead><tr>{block.columns.map((column, index) => <th key={index}>{column.label}</th>)}<th aria-label="操作" /></tr></thead>
           <tbody>{block.rows.map((row, r) => <tr key={r}>{row.map((cell, c) => <td key={c} className={/序号/.test(block.columns[c]?.label || '') ? 'workbench-index' : undefined}><textarea aria-label={`${block.columns[c]?.label || '内容'} 第 ${r + 1} 行`} value={cell.text} rows={rows(cell.text)} disabled={busy} onChange={event => onCell(block.id, event.target.value, r, c)} /></td>)}

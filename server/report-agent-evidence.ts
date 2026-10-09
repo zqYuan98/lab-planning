@@ -6,6 +6,7 @@ import { acceptanceLabels, reportMetrics, weeklyStatusLabel } from './report-met
 import { addDays } from './reports.ts'
 import { frozenSummaryFacts, monthEnd, monthlyDatasetIds, monthlyField, monthlyReportFacts, summaryDatasetIds } from './report-agent-monthly.ts'
 import { HttpError } from './store.ts'
+import { narrativeCell, PENDING } from './report-agent-narrative.ts'
 
 export function reportAgentHash(value: unknown): string {
   const canonical = (v: unknown): unknown => Array.isArray(v) ? v.map(canonical) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)).map(([k, entry]) => [k, canonical(entry)])) : v
@@ -32,7 +33,8 @@ export function buildReportFacts(snapshot: ReportSnapshot, period: string): Repo
   }
   for (const work of snapshot.tasks) facts.push({ id: `task:${work.id}:status`, sourceType: 'task', sourceId: work.id, sourceVersion: work.version, subjectId: work.id, subject: work.title, field: 'status', value: work.status === 'done' ? '任务整体完成' : '任务尚未整体完成', unit: '', period, status: work.status })
   const metrics = reportMetrics(snapshot)
-  for (const [field, value] of Object.entries({ weekly_total: metrics.weekly.total, weekly_done: metrics.weekly.done, weekly_rate: metrics.weekly.rate, monthly_total: metrics.monthly.total, monthly_accepted: metrics.monthly.accepted })) {
+  const supportTotal = snapshot.weeklyRecords.filter(r => isEffectiveWeeklyRecord(r) && (r.supportNeeded || '').trim()).length
+  for (const [field, value] of Object.entries({ weekly_total: metrics.weekly.total, weekly_done: metrics.weekly.done, weekly_rate: metrics.weekly.rate, monthly_total: metrics.monthly.total, monthly_accepted: metrics.monthly.accepted, support_total: supportTotal })) {
     facts.push({ id: `metric:${field}`, sourceType: 'metric', sourceId: 'snapshot', sourceVersion: 1, subjectId: 'snapshot', subject: '全量冻结统计', field, value: value === null ? '不可计算' : String(value), unit: field.includes('rate') ? '%' : '项', period, status: 'computed' })
   }
   return [...facts, ...frozenSummaryFacts(snapshot, period)]
@@ -53,7 +55,8 @@ export function validateFactText(text: string, factIds: string[], facts: ReportF
   if (quantities(text).some(n => !allowed.has(n))) issues.push(issue('unsupported_number', location, '数字、单位或日期无法由本单元引用的事实证明。'))
   const subjects = new Set(cited.filter(f => f.sourceType !== 'metric').map(f => f.subjectId))
   const named = facts.filter(f => f.sourceType !== 'metric' && f.subject.length >= 2 && text.includes(f.subject))
-  if (named.some(f => !subjects.has(f.subjectId))) issues.push(issue('subject_mismatch', location, '正文中的事项与引用事实的主体不一致。'))
+  // A carried goal keeps its title; naming it is fine when a cited fact has the same subject text.
+  if (named.some(f => !subjects.has(f.subjectId) && !cited.some(c => c.sourceType !== 'metric' && c.subject === f.subject))) issues.push(issue('subject_mismatch', location, '正文中的事项与引用事实的主体不一致。'))
   if (subjects.size > 1 && numbers(text).length) issues.push(issue('ambiguous_attribution', location, '同一句含多个事项及数字，请分开表述，使每个数字只引用对应事项。'))
   const records = new Set(cited.filter(f => f.sourceType !== 'metric').map(f => `${f.sourceType}:${f.sourceId}:${f.sourceVersion}:${f.period}`))
   if (records.size > 1 && numbers(text).length) issues.push(issue('ambiguous_record', location, '同一数字不能同时引用不同记录或周期，请拆分内容。'))
@@ -70,14 +73,17 @@ export function validateReportBlocks(blocks: ReportAgentBlock[], facts: ReportFa
   const issues: ReportAgentIssue[] = []
   const check = (cell: ReportAgentCell, required: boolean, location: string) => {
     if (!cell.text.trim() || cell.text.trim() === '待补充') { if (required) issues.push(issue('required_missing', location, '必填内容尚未补充。')); return }
+    if (cell.text.includes(PENDING)) issues.push(issue('pending_content', location, `还有标为${PENDING}的内容，系统中没有这项记录，请补充或删去。`))
     if (cell.manual) {
       if (!cell.confirmed || !cell.source.trim()) issues.push(issue('manual_unconfirmed', location, '人工补充须填写来源并确认。'))
     } else if (cell.factIds.length) {
-      for (const line of cell.text.split('\n').filter(line => line.trim())) {
+      const lines = cell.text.split('\n'), perLine = cell.lineFactIds?.length === lines.length ? cell.lineFactIds : undefined
+      lines.forEach((line, index) => {
+        if (!line.trim()) return
         const named = facts.filter(f => cell.factIds.includes(f.id) && f.subject.length >= 2 && line.includes(f.subject))
-        const ids = named.length ? cell.factIds.filter(id => facts.some(f => f.id === id && named.some(n => n.subjectId === f.subjectId))) : cell.factIds
+        const ids = perLine ? perLine[index] : named.length ? cell.factIds.filter(id => facts.some(f => f.id === id && named.some(n => n.subjectId === f.subjectId))) : cell.factIds
         issues.push(...validateFactText(line, ids, facts, location))
-      }
+      })
     }
     else if (!['暂无', '待补充', '本期无已生效记录', '下周尚无已生效安排', '本周记录未关联月目标'].includes(cell.text.trim())) issues.push(issue('missing_reference', location, '请为此内容选择依据或确认人工来源。'))
   }
@@ -97,9 +103,15 @@ function recordsFor(snapshot: ReportSnapshot, dataset: ReportAgentDataset) {
   return snapshot.weeklyRecords.filter(isEffectiveWeeklyRecord).filter(r => dataset !== 'risks' || r.blocker.trim() || (r.supportNeeded || '').trim() || r.status === 'blocked' || r.status === 'not_done')
 }
 export function buildRuleBlocks(bindings: ReportAgentBinding[], snapshot: ReportSnapshot, facts: ReportFact[], period: string, capturedAt: string, title: string): ReportAgentBlock[] {
-  return bindings.filter(b => !['keep', 'clear'].includes(b.kind)).map(binding => {
+  return bindings.filter(b => !['keep', 'clear', 'remove'].includes(b.kind)).map(binding => {
     const block: ReportAgentBlock = { id: binding.regionId, regionId: binding.regionId, label: binding.label, kind: binding.kind === 'dataset' ? 'table' : 'text', required: binding.required, content: factCell(), columns: binding.columns || [], rows: [] }
-    if (binding.kind === 'meta') block.content = { ...factCell(({ period, week_end: period.length === 7 ? monthEnd(period) : addDays(period, 6), week_range: period.length === 7 ? `${period}-01—${monthEnd(period)}` : `${period}—${addDays(period, 4)}`, captured_at: new Date(capturedAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }), title, author: '汇报人待确认', department: '人工智能实验室' })[binding.meta || 'period']), manual: true, confirmed: true, source: '系统冻结的报告元信息' }
+    if (binding.kind === 'narrative') block.content = narrativeCell(binding.narrative || 'review', snapshot, facts, period)
+    else if (binding.kind === 'meta' && binding.meta === 'template') {
+      const values: Record<string, string> = { department: '人工智能实验室', date: new Date(capturedAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }), month: `${Number(period.slice(5, 7))}月` }
+      // {{author}} is the acting manager, filled by the service that knows who generates the report.
+      block.content = { ...factCell((binding.value || '').replace(/\{\{(department|date|month)\}\}/g, (_, key: string) => values[key])), manual: true, confirmed: true, source: '系统冻结的报告元信息' }
+    }
+    else if (binding.kind === 'meta') block.content = { ...factCell(({ period, week_end: period.length === 7 ? monthEnd(period) : addDays(period, 6), week_range: period.length === 7 ? `${period}-01—${monthEnd(period)}` : `${period}—${addDays(period, 4)}`, captured_at: new Date(capturedAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }), title, author: '汇报人待确认', department: '人工智能实验室', template: binding.value || '' })[binding.meta || 'period']), manual: true, confirmed: true, source: '系统冻结的报告元信息' }
     else if (binding.kind === 'manual') block.content = factCell('', [], true)
     else {
       const dataset = binding.dataset || binding.section || 'outcomes'

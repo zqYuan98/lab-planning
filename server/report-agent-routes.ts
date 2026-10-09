@@ -5,7 +5,7 @@ import { HttpError, type Store } from './store.ts'
 import { reportTypeManaged } from './report-agent-policy.ts'
 import { requireReportManager } from './reports.ts'
 import {
-  activateReportTemplate, adoptReportTemplate, archiveReportTemplate, createReportTemplate, downloadAgentReport, downloadReportAsset,
+  activateReportTemplate, adoptReportTemplate, aiOutlineReportTemplate, archiveReportTemplate, createReportTemplate, downloadAgentReport, downloadReportAsset,
   editAgentReport, enqueueReportAgent, enqueueReportRewrite, enqueueTemplateLearning, finalizeAgentReport,
   getAgentReport, getReportAgentBootstrap, reportAgentReadiness, previewReportTemplate, updateReportTemplate, uploadReportAsset,
 } from './report-agent-service.ts'
@@ -40,6 +40,7 @@ export function createReportAgentRouter(store: Store) {
   router.post('/report-agent/templates/:id/learn', (req, res) => res.status(202).json(enqueueTemplateLearning(store, actor(req), String(req.params.id), req.body)))
   router.post('/report-agent/templates/:id/preview', async (req, res) => res.json(await previewReportTemplate(store, actor(req), String(req.params.id), req.body.expectedVersion, req.body.period)))
   router.post('/report-agent/templates/:id/activate', (req, res) => res.json(activateReportTemplate(store, actor(req), String(req.params.id), req.body)))
+  router.post('/report-agent/templates/:id/ai-outline', async (req, res) => res.json(await aiOutlineReportTemplate(store, actor(req), String(req.params.id), req.body.expectedVersion)))
   router.post('/report-agent/templates/:id/adopt', (req, res) => res.json(adoptReportTemplate(store, actor(req), String(req.params.id), req.body)))
   router.post('/report-agent/templates/:id/archive', (req, res) => res.json(archiveReportTemplate(store, actor(req), String(req.params.id), req.body.expectedVersion)))
   router.post('/report-agent/jobs', (req, res) => res.status(202).json(enqueueReportAgent(store, actor(req), req.body)))
