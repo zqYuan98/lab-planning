@@ -14,6 +14,9 @@ export default function DingTalkBinding({ user, onSessionChanged, notify }: {
   const [error, setError] = useState('')
   const [confirmUnbind, setConfirmUnbind] = useState(false)
   const loadSequence = useRef(0)
+  const section = useRef<HTMLElement>(null)
+  // The card sits below the inbox; bring a pending confirmation into view on phones.
+  useEffect(() => { if (binding?.pending) section.current?.scrollIntoView({ block: 'center', behavior: 'smooth' }) }, [!!binding?.pending])
   async function load() {
     const sequence = ++loadSequence.current
     const status = await api<DingTalkBindingStatus>('/dingtalk/binding')
@@ -30,7 +33,7 @@ export default function DingTalkBinding({ user, onSessionChanged, notify }: {
     try { await action() } catch (error) { setError(error instanceof Error ? error.message : '操作失败') }
     finally { setBusy(false) }
   }
-  return <section className="notification-binding" aria-labelledby="binding-title">
+  return <section ref={section} className="notification-binding" aria-labelledby="binding-title">
     <div className="notification-section-heading"><Link2 size={19} /><h2 id="binding-title">我的钉钉身份</h2>
       <span className={`badge badge-${binding?.bound ? 'green' : 'neutral'}`}>{binding ? binding.bound ? '已绑定' : '未绑定' : '读取中'}</span></div>
     {binding?.bound ? <>

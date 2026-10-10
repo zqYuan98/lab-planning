@@ -227,7 +227,11 @@ export default function App() {
       const result = await identityThenWorkspace({ dingTalk: true, verify: exchangeDingTalk, normalSession: async () => {}, load: () => loadIdentityWorkspace(sequence) })
       if (!identityCurrent(sequence)) return
       if (result.data) { setDingTalkNotice('') }
-      else if (result.bindingRequired) setDingTalkNotice('钉钉身份已验证。请先登录已开通的团队账号，再确认本人身份并完成绑定。')
+      else if (result.bindingRequired) {
+        // Unbound identities must prove the team account first, so show the form directly.
+        setOrdinaryLogin(true)
+        setDingTalkNotice('钉钉身份已验证，但尚未绑定团队账号。请在下方登录已开通的团队账号，登录后在“消息”页确认本人身份并完成绑定。')
+      }
       else setDingTalkNotice('请使用团队账号登录。')
     } catch (error) {
       if (!identityCurrent(sequence)) return
@@ -245,6 +249,19 @@ export default function App() {
       setDingTalkNotice('正在使用普通团队账号登录；此方式不代表当前钉钉身份已核验。')
     } catch { if (identityCurrent(sequence)) setDingTalkNotice('暂时无法退出原账号，请重试。') }
     finally { if (identityCurrent(sequence)) setDingTalkBusy(false) }
+  }
+  // Verifying from inside the workspace keeps the password session; an unbound
+  // identity is sent to the binding card instead of back to the login screen.
+  async function verifyDingTalkInWorkspace() {
+    setDingTalkBusy(true)
+    try {
+      const result = await exchangeDingTalk()
+      if (result.authenticated) { setOrdinaryLogin(false); await sessionChanged(); return }
+      setToast('钉钉身份已验证，请在“消息”页底部确认绑定本人账号。')
+      if (page === 'messages') setNavigationKey(value => value + 1)
+      else navigate('messages')
+    } catch (error) { setToast(error instanceof Error ? error.message : '钉钉验证失败，请重试。') }
+    finally { setDingTalkBusy(false) }
   }
   async function switchDingTalkIdentity() {
     const sequence = changeIdentity()
@@ -452,7 +469,7 @@ export default function App() {
         if (reportDirty) setPendingLeave('logout')
         else void logout()
       }}>
-        {ordinaryLogin && isDingTalk() && <div className="dingtalk-auth-notice" role="status">普通账号登录，当前钉钉身份尚未核验。<button className="button secondary" disabled={dingTalkBusy} onClick={() => void dingTalkLogin()}>验证当前钉钉身份</button></div>}
+        {ordinaryLogin && isDingTalk() && <div className="dingtalk-auth-notice" role="status">普通账号登录，当前钉钉身份尚未核验。<button className="button secondary" disabled={dingTalkBusy} onClick={() => void verifyDingTalkInWorkspace()}>{dingTalkBusy ? '正在验证…' : '验证当前钉钉身份'}</button></div>}
         <PageErrorBoundary key={`${data.user.id}:${data.operationEpoch}:${data.accessScopeVersion}:${page}-${navigationKey}`}>{data.user.role==='observer'?<AuthorizedWork {...props}/>:route}</PageErrorBoundary>
       </WorkspaceShell>
       </div>
