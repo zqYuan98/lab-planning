@@ -156,6 +156,9 @@ export function createApp(options: AppOptions = {}) {
     registrationAttempts.set(key, state)
     res.status(202).json(domain.register(req.body))
   })
+  // Logout is idempotent: a browser without a valid session (e.g. a first visit
+  // from DingTalk) must still be able to switch to the account login form.
+  app.post('/api/auth/logout', (req, res) => { clearSession(store, req.headers.cookie, res); res.json({ ok: true }) })
   app.use('/api/v1', requireIntegrationAuth(store), createImportRouter(store), createDataRouter(store, true), (_req, _res, next) => next(new HttpError(404, '集成接口不存在')))
   app.use('/api', dingtalkRouter(store, dingtalk))
   app.use('/api', requireAuth(store))
@@ -174,7 +177,6 @@ export function createApp(options: AppOptions = {}) {
   app.get('/api/weekly-records/:id/editable', (req, res) => res.json(taskViews.editableWeekly(req.user, String(req.params.id))))
   app.get('/api/my-actions', (req, res) => res.json(myActions.list(req.user, { kind: req.query.kind, cursor: req.query.cursor, limit: req.query.limit })))
   app.get('/api/auth/me', (req, res) => res.json(req.user))
-  app.post('/api/auth/logout', (req, res) => { clearSession(store, req.headers.cookie, res); res.json({ ok: true }) })
   app.use('/api', createWeeklySubmissionRouter(store))
   app.use('/api', notificationRouter(store, dingtalk))
   app.use('/api', collaborationRouter(store))

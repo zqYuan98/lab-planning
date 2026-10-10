@@ -82,6 +82,11 @@ test('first-manager setup and same-origin JSON guard; safe users and expiring re
     await member.request('/workspace', undefined, 'GET', 401)
     const reuseRevokedCookie = await fetch(`${f.origin}/api/auth/me`, { headers: { cookie: logoutCookie } })
     assert.equal(reuseRevokedCookie.status, 401)
+    // A first-time DingTalk visitor has no session but must still reach the login form.
+    assert.deepEqual(await stranger.request('/auth/logout', {}), { ok: true })
+    assert.deepEqual(await member.request('/auth/logout', {}), { ok: true })
+    const crossSiteLogout = await fetch(`${f.origin}/api/auth/logout`, { method: 'POST', headers: { cookie: manager.cookie, 'content-type': 'application/json', origin: 'https://attacker.example' }, body: '{}' })
+    assert.equal(crossSiteLogout.status, 403)
     const crossSite = await fetch(`${f.origin}/api/users`, { method: 'POST', headers: { cookie: manager.cookie, 'content-type': 'application/json', origin: 'https://attacker.example' }, body: JSON.stringify({ name: '越权', email: 'x@example.test', password, role: 'manager' }) })
     assert.equal(crossSite.status, 403)
   } finally { await f.close() }
