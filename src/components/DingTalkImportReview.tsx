@@ -5,6 +5,7 @@ import type { DingTalkBatchReview, DingTalkImportReviewRow, DingTalkResolveResul
 import { api, json } from '../api'
 import type { Navigate } from '../navigation'
 import { Badge, Field, dateTime } from '../ui'
+import { dingtalkConfirmedExclusions, dingtalkRowNeedsReview, dingtalkSourceRelations, dingtalkSourceReviewReady, type ImportSourceRelations } from '../import-review'
 
 interface Props {
   batch: ImportBatch
@@ -12,7 +13,7 @@ interface Props {
   editing: boolean
   run: (label: string, action: () => Promise<void>) => Promise<void>
   onResolved: (batch: ImportBatch) => void
-  onReadinessChange: (batchId: string, version: number, ready: boolean) => void
+  onReadinessChange: (batchId: string, version: number, ready: boolean, relations?: ImportSourceRelations) => void
   notify: (message: string) => void
   navigate?: Navigate
 }
@@ -29,6 +30,10 @@ function RowDecision({ row, disabled, onSave }: {
   const [planId, setPlanId] = useState(row.resolution?.planId || (row.plans.length === 1 ? row.plans[0].id : ''))
   const [reason, setReason] = useState(row.resolution?.reason || '')
   const canSave = !!action && !!reason.trim() && (action !== 'new' || row.status === 'ambiguous') && (action !== 'link' || row.plans.some(plan => plan.id === planId))
+  const actionHelp = action === 'link' ? '关联已有目标会保留原目标内容，不再新建同一目标。'
+    : action === 'new' ? '确认为独立的新事项后，才会在最后导入时创建新草稿。'
+      : action === 'exclude' ? '本次不导入这条来源，原有目标和钉钉原表不会删除。'
+        : '先选择关联已有、确为新增或本次排除，再填写判断依据。'
 
   return <form className="dingtalk-row-decision" onSubmit={event => {
     event.preventDefault()
@@ -40,12 +45,16 @@ function RowDecision({ row, disabled, onSave }: {
       {row.status === 'ambiguous' && <option value="new">确认为新事项</option>}
       <option value="exclude">本次排除</option>
     </select></Field>
+    <p className="dingtalk-decision-help">{actionHelp}</p>
     {action === 'link' && <Field label="关联目标"><select required disabled={disabled} value={planId} onChange={event => setPlanId(event.target.value)}>
       <option value="">请选择已有目标</option>
       {row.plans.map(plan => <option value={plan.id} key={plan.id}>{plan.month} · {plan.title} · {plan.ownerName || '负责人待核对'}</option>)}
     </select></Field>}
     <Field label="处理依据"><textarea required disabled={disabled} rows={2} maxLength={1000} value={reason} onChange={event => setReason(event.target.value)} placeholder="说明关联、确认新增或排除的依据，便于再次获取时核对。" /></Field>
-    <button type="submit" className="button secondary" disabled={disabled || !canSave}>保存处理结果</button>
+    <div className="dingtalk-decision-footer">
+      <p>{!canSave ? '请选择处理方式，并填写处理依据。' : '这一步只保存核对结果，不会导入或发布目标。'}</p>
+      <button type="submit" className="button primary" disabled={disabled || !canSave}>{action === 'link' ? '保存关联选择' : action === 'new' ? '保存新增选择' : action === 'exclude' ? '保存排除选择' : '保存此项选择'}</button>
+    </div>
   </form>
 }
 
@@ -72,7 +81,7 @@ export default function DingTalkImportReview({ batch, disabled, editing, run, on
       if (controller.signal.aborted) return
       if (value.batchId !== batch.id || value.batchVersion !== batch.version) throw new Error('批次已发生变化，请刷新批次后继续核对。')
       setReview(value)
-      readiness.current(value.batchId, value.batchVersion, value.rows.every(row => !row.requiresResolution))
+      readiness.current(value.batchId, value.batchVersion, dingtalkSourceReviewReady(value, batch.rows), dingtalkSourceRelations(value, batch.rows))
     }).catch(cause => {
       if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : '来源差异读取失败，请重试。')
     }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
@@ -83,8 +92,8 @@ export default function DingTalkImportReview({ batch, disabled, editing, run, on
   // Keep mounted forms while a new version is read so unfinished decision notes survive.
   const displayedReview = review?.batchId === batch.id ? review : null
   const source = batch.dingtalk!
-  const pending = currentReview?.rows.filter(row => row.requiresResolution).length || 0
-  const excluded = batch.rows.filter(row => !row.selected).length
+  const pending = currentReview?.rows.filter(row => dingtalkRowNeedsReview(row, batch.rows.find(candidate => candidate.id === row.rowId))).length || 0
+  const excluded = displayedReview ? dingtalkConfirmedExclusions(displayedReview, batch.rows) : 0
   const unmatched = batch.rows.filter(row => row.selected && !row.ownerId).length
   const immutable = batch.status === 'committed'
   const locked = disabled || loading || editing || immutable || !currentReview
@@ -122,14 +131,15 @@ export default function DingTalkImportReview({ batch, disabled, editing, run, on
       <div className="dingtalk-review-counts" aria-label="来源对账数量">
         <Badge>新增 {displayedReview.counts.new}</Badge><Badge tone="green">已导入 {displayedReview.counts.imported}</Badge>
         <Badge>变更 {displayedReview.counts.changed}</Badge><Badge tone={pending ? 'orange' : 'neutral'}>待处理 {currentReview ? pending : '核对中'}</Badge>
-        <Badge>未匹配 {unmatched}</Badge><Badge>已排除 {excluded}</Badge>
+        <Badge>负责人待匹配 {unmatched}</Badge><Badge>已确认排除 {excluded}</Badge>
       </div>
-      {displayedReview.warnings.map((warning, index) => <p className="import-notice" key={index}>{warning}</p>)}
+      {displayedReview.warnings.filter(warning => !batch.warnings.includes(warning)).map((warning, index) => <p className="import-notice" key={index}>{warning}</p>)}
       {pending > 0 && <p className="import-notice">还有 {pending} 项来源关系待处理。逐项记录处理依据后，再完成原文核对并确认导入。</p>}
       <div className="dingtalk-review-rows">
         {displayedReview.rows.map(row => {
           const sourceRow = batch.rows.find(candidate => candidate.id === row.rowId)
-          return <details className="dingtalk-review-row" key={row.rowId} open={row.requiresResolution && !row.resolution ? true : undefined}>
+          const needsReview = dingtalkRowNeedsReview(row, sourceRow)
+          return <details className="dingtalk-review-row" key={row.rowId} open={needsReview ? true : undefined}>
             <summary><span>第 {row.sourceRow} 行 · {row.title || '未命名事项'}</span><Badge tone={row.status === 'imported' ? 'green' : 'neutral'}>{statusLabels[row.status]}</Badge></summary>
             <p>{row.reason}</p>
             <div className="dingtalk-review-source">
@@ -141,7 +151,8 @@ export default function DingTalkImportReview({ batch, disabled, editing, run, on
               {navigate && <button type="button" className="import-edit-button" onClick={() => navigate('monthly', { id: plan.id, month: plan.month })}>打开原目标<ArrowRight size={12} /></button>}
             </li>)}</ul>}
             {row.resolution && <p className="import-valid">已记录：{actionLabels[row.resolution.action]} · {row.resolution.reason}</p>}
-            {!immutable && (row.requiresResolution || !!row.resolution) && <RowDecision row={row} disabled={locked} onSave={resolution => resolve(row.rowId, resolution)} />}
+            {needsReview && !row.requiresResolution && <p className="import-notice">当前勾选与来源处理结论不一致。请重新保存处理方式：新增事项须勾选，关联或排除事项不应勾选。</p>}
+            {!immutable && (needsReview || !!row.resolution) && <RowDecision row={row} disabled={locked} onSave={resolution => resolve(row.rowId, resolution)} />}
           </details>
         })}
       </div>

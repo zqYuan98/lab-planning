@@ -133,7 +133,7 @@ test('another account transfer appears for the new owner through background refr
   let plan = domain.createPlan(manager, { title: '转交的部署目标', month: '2026-09', ownerId: oldOwner.id, collaboratorIds: [], category: '研发', expectedOutcome: '交付', acceptanceCriteria: '通过', dueDate: '2026-09-30' })
   plan = domain.submitPlan(manager, plan.id, { version: plan.version })
   plan = domain.reviewPlan(manager, plan.id, { version: plan.version, decision: 'approve' })
-  domain.publishMonth(manager, plan.month, { planIds: [plan.id] }); plan = store.get<MonthlyPlan>('plans', plan.id)!
+  domain.publishMonth(manager, plan.month, { planIds: [plan.id], planVersions: { [plan.id]: plan.version } }); plan = store.get<MonthlyPlan>('plans', plan.id)!
   let cached: MonthlyWorkspace | null = null, reads = 0
   const reader = workspaceQueryReader<MonthlyWorkspace>({ load: async () => { reads++; return service.monthly(newOwner, { month: plan.month }) }, accept: value => { cached = value }, clear: () => { cached = null }, error: () => {}, loading: () => {} })
   const stop = browser.source.subscribe(() => { void reader.revalidate().catch(() => {}) })

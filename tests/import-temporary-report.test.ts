@@ -41,7 +41,7 @@ test('relinking imported work preserves historical temporary attribution and the
   let plan = f.domain.createPlan(f.manager, { month: '2026-09', title: '九月客户保障', category: '部门工作', expectedOutcome: '完成保障', acceptanceCriteria: '交付记录', dueDate: '2026-09-30' })
   plan = f.domain.submitPlan(f.manager, plan.id, { version: plan.version })
   plan = f.domain.reviewPlan(f.manager, plan.id, { version: plan.version, decision: 'approve', comment: '' })
-  f.domain.publishMonth(f.manager, '2026-09', { planIds: [plan.id] })
+  f.domain.publishMonth(f.manager, '2026-09', { planIds: [plan.id], planVersions: { [plan.id]: plan.version } })
   for (const record of [f.temporary, f.ordinary]) {
     const task = f.store.get<Task>('tasks', record.taskId)!
     f.domain.relinkTask(f.manager, task.id, { version: task.version, monthlyPlanId: plan.id, reason: '补充后续月度归属' })

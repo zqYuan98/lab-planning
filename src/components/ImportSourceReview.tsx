@@ -56,18 +56,21 @@ export default function ImportSourceReview({ batch, disabled, reviewerName, onCo
   return <section className="import-completeness" aria-label="原始事项完整性核对">
     <div className="import-section-title">
       <h3>对照原始资料，核对是否收全</h3>
-      <button className="button secondary" disabled={loading} onClick={() => {
+      <button type="button" className="button secondary" disabled={loading} aria-expanded={opened} aria-controls={`import-source-preview-${batch.id}`} onClick={() => {
         setOpened(!opened)
       }}>{opened ? '收起原始资料' : '查看原始资料'}</button>
     </div>
     <p>{dingtalkSource ? '逐行对照钉钉原表，每个工作事项行对应一个目标，单元格内的换行和编号保持完整。请核对所有源行均已保留，并说明未导入事项的原因。' : '逐项对照原文；一行中有多件独立工作时也要分别计数。字段校验通过仅说明已识别记录可填写，不代表任务已收全。'}</p>
+    {!immutable && !batch.completionReview && batch.requiresCompletionReview && batch.rows.length > 0 && <ol className="import-completeness-steps">
+      <li>打开原始资料，与上方候选逐项核对。</li><li>填写原文实际事项数，说明不导入事项的原因。</li><li>勾选核对声明并保存，再到下方确认导入。</li>
+    </ol>}
     {batch.kind === 'table' && selectedSheets && <p className="import-review-scope">
       本批次解析范围：{selectedSheets.join('、') || '未选择工作表'}。
       {batch.sourceSheets.some(sheet => !selectedSheets.includes(sheet.name)) && <strong>
         另有 {batch.sourceSheets.filter(sheet => !selectedSheets.includes(sheet.name)).map(sheet => sheet.name).join('、')} 未纳入本批次，需另行处理。
       </strong>}
     </p>}
-    {opened && <div className="import-source-preview">
+    {opened && <div className="import-source-preview" id={`import-source-preview-${batch.id}`}>
       {loading && <p role="status">正在读取原始资料…</p>}
       {error && <p role="alert">{error}。可收起后重试，或下载原始文件核对。</p>}
       {preview?.warnings.map((warning, index) => <p className="import-notice" key={index}>{warning}</p>)}
@@ -88,14 +91,17 @@ export default function ImportSourceReview({ batch, disabled, reviewerName, onCo
       已对照核对 {batch.completionReview.sourceItemCount} 项 · {reviewerName || '核对人已留档'} · {dateTime(batch.completionReview.reviewedAt)}。{dingtalkSource ? '后续修改候选或来源关联需再次核对。' : '后续修改候选或重新识别需再次核对。'}
     </p> : immutable ? <p className="import-notice">历史批次未记录完整性核对。这里只展示当时保存结果；需要补漏时，请对照当前工作后另建批次，避免重复创建。</p> : batch.requiresCompletionReview && batch.rows.length > 0 ? <div className="import-review-confirmation">
       <label>原文实际工作事项数（含本次不导入的真实工作）
-        <input type="number" min={dingtalkSource ? 0 : 1} step="1" value={sourceItemCount} disabled={disabled} onChange={event => { setSourceItemCount(event.target.value); setConfirmed(false) }} />
+        <input type="number" inputMode="numeric" placeholder="请输入核对后的数量" min={dingtalkSource ? 0 : 1} step="1" value={sourceItemCount} disabled={disabled} onChange={event => { setSourceItemCount(event.target.value); setConfirmed(false) }} />
       </label>
       <p>当前有 {counts.total} 项候选，扣除已说明原因的重复候选 {counts.duplicates} 项、非工作事项 {counts.nonTasks} 项，应对应原文 {counts.expectedSourceCount} 件工作。其中本次不导入的真实工作仍计入原文事项数。</p>
       {sourceItemCount && !countMatches && <p className="import-notice">{dingtalkSource ? '数量不一致：请对照完整源表检查有效行及排除类型；每个源行只对应一个目标。' : '数量不一致：请补录漏项、拆分候选，或明确标记重复候选和非工作事项后再核对。'}</p>}
       {!!counts.missingReasons && <p className="import-notice">有 {counts.missingReasons} 项未选择且未填写排除原因，请先校对。</p>}
       <label className="import-review-checkbox"><input type="checkbox" checked={confirmed} disabled={disabled || !preview || !countMatches || !!counts.missingReasons} onChange={event => setConfirmed(event.target.checked)} />我已逐项对照原文，确认每个事项都有候选或明确排除理由</label>
       {!preview && <small>先打开原始资料，逐项核对后再确认。</small>}
-      <button className="button secondary" disabled={disabled || !confirmed || !countMatches || !!counts.missingReasons} onClick={() => void onConfirm(Number(sourceItemCount))}>保存完整性核对</button>
+      <div className="import-review-save">
+        <p>此处只保存核对记录，不会导入或发布计划。{preview && !sourceItemCount ? '请填写核对后的实际事项数。' : preview && countMatches && !confirmed ? '请勾选上方声明后保存。' : ''}</p>
+        <button type="button" className="button primary" disabled={disabled || !confirmed || !countMatches || !!counts.missingReasons} onClick={() => void onConfirm(Number(sourceItemCount))}>保存完整性核对</button>
+      </div>
     </div> : null}
   </section>
 }

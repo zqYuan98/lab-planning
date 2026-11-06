@@ -42,7 +42,7 @@ test('real HTTP workflow from manager goal to published month, weekly evidence a
     plan = await manager<MonthlyPlan>(`/plans/${plan.id}`, { version: plan.version, expectedOutcome: '交付 v1 评测记录与部署包' }, 'PATCH')
     plan = await manager<MonthlyPlan>(`/plans/${plan.id}/submit`, { version: plan.version })
     plan = await manager<MonthlyPlan>(`/plans/${plan.id}/review`, { version: plan.version, decision: 'approve', comment: '按此成果发布' })
-    await manager('/months/2026-09/publish', { planIds: [plan.id] })
+    await manager('/months/2026-09/publish', { planIds: [plan.id], planVersions: { [plan.id]: plan.version } })
     let data = await member<{ items: MonthlyPlan[] }>('/workspace/plans?month=2026-09')
     plan = data.items.find(p => p.id === plan.id)!
     assert.equal(plan.status, 'published')

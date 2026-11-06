@@ -80,8 +80,8 @@ test('administrator can delete the only temporary arrangement, relink its task a
     category: '研究', expectedOutcome: '交付评测报告', acceptanceCriteria: '验收通过', dueDate: '2026-09-30',
     isTemporary: true, temporaryReason: '补充前期临时安排的月度归属' })
   const submitted = f.domain.submitPlan(f.manager, plan.id, { version: plan.version })
-  f.domain.reviewPlan(f.manager, plan.id, { version: submitted.version, decision: 'approve' })
-  f.domain.publishMonth(f.manager, plan.month, { planIds: [plan.id] })
+  const approved = f.domain.reviewPlan(f.manager, plan.id, { version: submitted.version, decision: 'approve' })
+  f.domain.publishMonth(f.manager, plan.month, { planIds: [plan.id], planVersions: { [plan.id]: approved.version } })
   const deleted = f.domain.deleteWeeklyRecord(f.manager, f.record.id, { version: f.record.version, reason: '先删除错误安排再补月度关联' })
   const relinked = f.domain.relinkTask(f.manager, f.task.id, { version: f.task.version, monthlyPlanId: plan.id, reason: '补开的临时目标已发布' })
   assert.equal(relinked.id, f.task.id)

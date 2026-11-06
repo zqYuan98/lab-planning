@@ -34,7 +34,7 @@ function populated(t: TestContext) {
   let plan = domain.createPlan(manager, { ownerId: member.id, month: '2026-09', title: '九月计划', projectId: project.id, expectedOutcome: '完成第一版', acceptanceCriteria: '验收记录', dueDate: '2026-09-30' })
   plan = domain.submitPlan(manager, plan.id, { version: plan.version })
   plan = domain.reviewPlan(manager, plan.id, { version: plan.version, decision: 'approve', comment: '批准' })
-  domain.publishMonth(manager, '2026-09', { planIds: [plan.id] })
+  domain.publishMonth(manager, '2026-09', { planIds: [plan.id], planVersions: { [plan.id]: plan.version } })
   plan = store.get<MonthlyPlan>('plans', plan.id)!
   const task = domain.createTask(member, { title: '模型评测', monthlyPlanId: plan.id, dueDate: '2026-09-11' })
   let weekly = domain.createWeeklyRecord(member, { taskId: task.id, weekStart: '2026-09-07', commitment: '完成模型评测', submitted: true, status: 'done', actualOutcome: '报告生成时的原始成果' })

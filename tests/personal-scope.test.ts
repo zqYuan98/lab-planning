@@ -21,7 +21,7 @@ function fixture(t: TestContext) {
   const publish = (plan: MonthlyPlan) => {
     plan = domain.submitPlan(manager, plan.id, { version: plan.version })
     plan = domain.reviewPlan(manager, plan.id, { version: plan.version, decision: 'approve' })
-    domain.publishMonth(manager, plan.month, { planIds: [plan.id] })
+    domain.publishMonth(manager, plan.month, { planIds: [plan.id], planVersions: { [plan.id]: plan.version } })
     return store.get<MonthlyPlan>('plans', plan.id)!
   }
   const plan = publish(domain.createPlan(manager, input))
@@ -81,7 +81,7 @@ test('merged source prose is projected for member reads and result responses whi
   }
   const first = submit(f.member, 'A_SOURCE_SECRET'), second = submit(f.peer, 'B_SOURCE_SECRET')
   let merged = f.domain.mergePlans(f.manager, { planIds: [first.id, second.id], title: 'Unified team outcome', reason: 'B_SOURCE_SECRET' })
-  f.domain.publishMonth(f.manager, merged.month, { planIds: [merged.id] })
+  f.domain.publishMonth(f.manager, merged.month, { planIds: [merged.id], planVersions: { [merged.id]: merged.version } })
   merged = f.store.get<MonthlyPlan>('plans', merged.id)!
   const result = f.domain.planResult(f.member, merged.id, { version: merged.version, acceptanceStatus: 'submitted', actualOutcome: 'Overall team result' })
   assert.equal(result.actualOutcome, 'Overall team result')

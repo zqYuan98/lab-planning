@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { actionKinds, type ActionItem, type ActionKind, type MyActions } from '../shared/my-actions.ts'
-import type { MonthlyPlan, Task, User, WeeklyRecord } from '../shared/types.ts'
+import type { MonthlyPlan, Project, Task, User, WeeklyRecord } from '../shared/types.ts'
 import type { BlockerEpisode, DeadlineChangeRequest, FollowupRequest, TaskTracking } from '../shared/collaboration.ts'
 import type { DeliverySeries, TaskDelivery } from '../shared/deliveries.ts'
 import type { DecisionRequest } from '../shared/support.ts'
@@ -10,7 +10,7 @@ import { isActiveTask } from '../shared/task-state.ts'
 import { isActiveWeeklyRecord } from '../shared/weekly-record-state.ts'
 import { liveObjectActor, readScopeVersion } from './object-access.ts'
 import { HttpError, type Store } from './store.ts'
-import { WeeklySubmissionService } from './weekly-submissions.ts'
+import { pendingWholePlanReviews, readWeeklyReviewDelegation } from './weekly-review-delegation.ts'
 import { collaborationEnabledFor, readCollaborationSettings } from './collaboration-policy.ts'
 import { deliveryReviewerAvailable } from './task-deliveries.ts'
 import { coordinatorAvailable, decisionOwnerAvailable } from './task-support.ts'
@@ -41,19 +41,31 @@ export class MyActionsService {
       const assign = (sourceId: string, sourceVersion: number, task: Task, createdAt: string, reason: string, section: 'deliveries' | 'support' | 'followups', generation: string) => {
         if (manager) add({ kind: 'assignment', sourceId, sourceVersion, taskId: task.id, businessGeneration: generation, assigneeIds: managers, title: task.title, requiredAction: reason, blockedReason: reason, dueAt: null, createdAt, sharedQueue: true, actionTarget: { page: 'task', id: task.id, section } })
       }
-      if (manager) {
-        for (const plan of this.store.list<MonthlyPlan>('plans')) {
-          const type = plan.status === 'submitted' ? 'monthly_review' : plan.status === 'published' && plan.acceptanceStatus === 'submitted' ? 'monthly_acceptance' : null
-          if (type) add({ kind: type, sourceId: plan.id, sourceVersion: plan.version, businessGeneration: String(plan.version), assigneeIds: managers, title: plan.title,
-            requiredAction: type === 'monthly_review' ? '审核月度目标' : '验收月度成果', dueAt: deadline(plan.dueDate), createdAt: plan.createdAt, sharedQueue: true,
-            actionTarget: { page: 'monthly', id: plan.id, month: plan.month, action: type === 'monthly_review' ? 'review' : 'result' } })
-        }
-        const cycles = new Set(this.store.list<WeeklyDuty>('weeklyDuties').filter(duty => duty.kind === 'plan').map(duty => duty.cycleWeek))
-        const weekly = new WeeklySubmissionService(this.store, this.clock)
-        for (const week of cycles) for (const duty of weekly.preview(actor, week)?.duties || []) {
-          if (duty.status === 'exempt' || !duty.planReviewRequired || duty.planReviewStatus !== 'pending' || !duty.latestSubmission) continue
-          add({ kind: 'weekly_review', sourceId: duty.id, sourceVersion: duty.version, businessGeneration: duty.latestSubmission.id, assigneeIds: managers, title: `${this.store.get<User>('users', duty.ownerId)?.name || '成员'} · ${duty.contentWeek} 周计划`, requiredAction: '审核最新有效周计划', dueAt: duty.deadlineAt, createdAt: duty.latestSubmission.submittedAt, sharedQueue: true,
-            actionTarget: { page: 'weekly', id: duty.latestSubmission.id, cycleWeek: duty.cycleWeek, ownerId: duty.ownerId, kind: 'plan', action: 'review' } })
+      for (const plan of this.store.list<MonthlyPlan>('plans')) {
+        if (plan.visibility) continue
+        const editableDraft = ['draft', 'returned'].includes(plan.status) && (manager || plan.isTemporary && plan.ownerId === actor.id)
+        const type = editableDraft ? 'monthly_submit' : !manager ? null : plan.status === 'submitted' ? 'monthly_review'
+          : plan.status === 'approved' ? 'monthly_publish' : plan.status === 'published' && plan.acceptanceStatus === 'submitted' ? 'monthly_acceptance' : null
+        const archived = plan.projectId && this.store.get<Project>('projects', plan.projectId)?.status === 'archived'
+        if (type) add({ kind: type, sourceId: plan.id, sourceVersion: plan.version, businessGeneration: String(plan.version), assigneeIds: manager ? managers : [actor.id], title: plan.title,
+          requiredAction: type === 'monthly_submit' ? plan.status === 'returned' ? '按退回意见修改并重新提交审核' : '核对月度目标并提交审核'
+            : type === 'monthly_review' ? '审核月度目标' : type === 'monthly_publish' ? '确认并发布已审核目标' : '验收月度成果',
+          ...(archived && ['monthly_submit', 'monthly_publish'].includes(type) ? { blockedReason: '所属项目已归档，请先由管理员调整目标关联或恢复项目。' } : {}),
+          dueAt: deadline(plan.dueDate), createdAt: plan.createdAt, sharedQueue: manager,
+          actionTarget: { page: 'monthly', id: plan.id, month: plan.month, action: type === 'monthly_submit' ? 'submit' : type === 'monthly_review' ? 'review' : type === 'monthly_publish' ? 'publish' : 'result' } })
+      }
+      // No member can be a delegated reviewer when nobody has opted in.
+      if (manager || readWeeklyReviewDelegation(this.store).enabledOwnerIds.length > 0) {
+        const duties = this.store.list<WeeklyDuty>('weeklyDuties').filter(duty => duty.kind === 'plan')
+        const dutyById = new Map(duties.map(duty => [duty.id, duty]))
+        for (const week of new Set(duties.map(duty => duty.cycleWeek))) {
+          for (const item of pendingWholePlanReviews(this.store, actor, week)) {
+            const assigned = item.reviewer.kind === 'goal_owner' ? [...managers, item.reviewer.reviewerId] : managers
+            add({ kind: 'weekly_review', sourceId: item.dutyId, sourceVersion: item.version, businessGeneration: item.submissionId, assigneeIds: assigned,
+              title: `${item.ownerName} · ${item.contentWeek} 周计划`, requiredAction: manager ? '审核最新有效周计划' : '审核委托给你的整份周计划',
+              dueAt: dutyById.get(item.dutyId)?.deadlineAt ?? null, createdAt: item.submittedAt, sharedQueue: manager,
+              actionTarget: { page: 'weekly', id: item.dutyId, cycleWeek: week, action: 'review-queue' } })
+          }
         }
       }
       for (const series of this.store.list<DeliverySeries>('deliverySeries')) {

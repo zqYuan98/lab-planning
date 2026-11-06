@@ -50,11 +50,11 @@ function fixture() {
     const submitted = domain.submitPlan(manager, plan.id, {
       version: plan.version,
     })
-    domain.reviewPlan(manager, plan.id, {
+    const approved = domain.reviewPlan(manager, plan.id, {
       version: submitted.version,
       decision: 'approve',
     })
-    domain.publishMonth(manager, plan.month, { planIds: [plan.id] })
+    domain.publishMonth(manager, plan.month, { planIds: [plan.id], planVersions: { [plan.id]: approved.version } })
     return store.get<MonthlyPlan>('plans', plan.id)!
   }
   return {

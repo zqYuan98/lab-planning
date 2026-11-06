@@ -30,9 +30,10 @@ interface Props extends PageProps {
   onSelectWork: (target: WorkTarget) => void
   onReviewPlan: (target: WorkTarget) => void
   reviewRequest: ReviewRequest | null
+  reviewDutyId?: string
   onViewChange?: (view: WeeklySubmissionView | null) => void
 }
-export default function WeeklySubmissionPanel({ data: initialData, refresh, notify, week, onChangeCycle, onSelectWork, onReviewPlan, reviewRequest, onViewChange }: Props) {
+export default function WeeklySubmissionPanel({ data: initialData, refresh, notify, week, onChangeCycle, onSelectWork, onReviewPlan, reviewRequest, reviewDutyId, onViewChange }: Props) {
   const references = useWorkspaceQuery<PeriodReferences>(`/workspace/weekly/submission-references?weekStart=${week}`, periodScope(initialData))
   const data = mergePeriod(initialData, references.value ?? {})
   const manager = data.user.role === 'manager'
@@ -166,7 +167,7 @@ export default function WeeklySubmissionPanel({ data: initialData, refresh, noti
         </>}
       </>}
 
-      <WeeklyReviewQueue data={data} week={week} onUpdated={ruleUpdated} />
+      <WeeklyReviewQueue data={data} week={week} onUpdated={ruleUpdated} requestedDutyId={reviewDutyId} />
 
       {mode === 'submit' && selected && <Modal title={`${kindLabel(selected.kind)} · 整份提交`} onClose={closeMode} wide>
         <p className="modal-intro">{nameOf(data, selected.ownerId)} · {selected.contentWeek} 当周。请核对以下内容；保存单条记录不会替代此处的整份提交。</p>

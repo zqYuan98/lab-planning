@@ -6,24 +6,37 @@ import { useWorkspaceQuery } from '../workspace-query'
 import { periodScope } from '../period-workspace'
 import { Badge, Field, Form, Modal, type PageProps } from '../ui'
 import { createSubmissionRequestId } from '../weekly-submission-flow'
+import { weeklyReviewFocus } from '../weekly-review-focus'
 
 const changeLabels = { new: '新增', changed: '变化', 'already-approved': '已有批准' }
-export default function WeeklyReviewQueue({ data, week, onUpdated }: Pick<PageProps, 'data'> & { week: string; onUpdated: (message: string) => Promise<void> }) {
+export default function WeeklyReviewQueue({ data, week, onUpdated, requestedDutyId }: Pick<PageProps, 'data'> & { week: string; onUpdated: (message: string) => Promise<void>; requestedDutyId?: string }) {
   const [cursor, setCursor] = useState(''), [selectedId, setSelectedId] = useState(''), [configure, setConfigure] = useState(false)
   const [decision, setDecision] = useState<'approved' | 'returned'>('approved')
   const [actionError, setActionError] = useState('')
   const attempt = useRef<{ payload: string; requestId: string } | null>(null)
+  const requestedHandled = useRef(false), section = useRef<HTMLElement>(null)
+  const [requestNotice, setRequestNotice] = useState('')
   const scope = periodScope(data)
   const queue = useWorkspaceQuery<Queue>(`/weekly-review-queue?week=${week}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, scope)
-  useEffect(() => { setCursor(''); setSelectedId(''); setConfigure(false); setActionError(''); attempt.current = null }, [week, scope])
+  useEffect(() => { setCursor(''); setSelectedId(''); setConfigure(false); setActionError(''); attempt.current = null; requestedHandled.current = false; setRequestNotice('') }, [week, scope, requestedDutyId])
+  useEffect(() => {
+    if (!requestedDutyId || requestedHandled.current || !queue.value || queue.loading || queue.error || actionError) return
+    const next = weeklyReviewFocus(queue.value, cursor, requestedDutyId)
+    if (next.kind === 'next') { setRequestNotice('正在定位待审核计划…'); setCursor(next.cursor); return }
+    requestedHandled.current = true
+    if (next.kind === 'open') { setSelectedId(next.dutyId); setDecision('approved'); setRequestNotice(''); attempt.current = null }
+    else setRequestNotice('这份计划已处理、内容已变化或审核委托已调整。请查看当前审核队列。')
+    section.current?.scrollIntoView({ block: 'start' }); section.current?.focus({ preventScroll: true })
+  }, [requestedDutyId, queue.value, queue.loading, queue.error, actionError, cursor])
   const visibleQueue = actionError ? null : queue.value
   const selected = visibleQueue?.items.find(item => item.dutyId === selectedId)
-  return <section className="submission-card" aria-label="整份计划审核队列">
+  return <section ref={section} tabIndex={-1} className="submission-card" aria-label="整份计划审核队列">
     <div className="submission-card-top"><h3>{data.user.role === 'manager' ? '整份计划审核队列' : '委托给我的计划审核'}</h3><div className="submission-actions">
       <button className="text-button" disabled={queue.loading} onClick={() => void queue.reload().then(() => setActionError('')).catch(() => {})}>刷新审核队列</button>
       {data.user.role === 'manager' && <button className="button secondary" onClick={() => setConfigure(true)}>配置审核委托</button>}
     </div></div>
     <p>同一目标的整份计划可由目标负责人审核；管理者可随时处理。日常执行进展不触发重审。</p>
+    {requestNotice && <p role="status" className="submission-notice">{requestNotice}</p>}
     {queue.error && <p role="alert">{queue.error}</p>}
     {actionError && <p role="alert">{actionError}</p>}
     {queue.loading && !queue.value && <p>正在读取待审计划…</p>}
@@ -32,7 +45,7 @@ export default function WeeklyReviewQueue({ data, week, onUpdated }: Pick<PagePr
       <div className="submission-card-top"><strong>{item.ownerName} · {item.contentWeek} 当周计划</strong><Badge>{item.reviewer.kind === 'goal_owner' ? '目标负责人受托审核' : '管理者审核'}</Badge></div>
       <p>{item.items.length} 项正式安排{item.retainedDraftCount ? ` · ${item.retainedDraftCount} 项保留草稿（不纳入本次批准）` : ''}</p>
       <p>{Object.entries(changeLabels).map(([change, label]) => `${label} ${item.items.filter(row => row.change === change).length}`).join(' · ')}</p>
-      <button className="button secondary" onClick={() => { setSelectedId(item.dutyId); setDecision('approved'); setActionError(''); attempt.current = null }}>审核整份计划</button>
+      <button className="button secondary" onClick={() => { requestedHandled.current = true; setRequestNotice(''); setSelectedId(item.dutyId); setDecision('approved'); setActionError(''); attempt.current = null }}>审核整份计划</button>
     </article>)}
     <div className="submission-actions">{cursor && <button className="text-button" onClick={() => { setCursor(''); setSelectedId('') }}>返回第一页</button>}{visibleQueue?.nextCursor && <button className="text-button" onClick={() => { setCursor(visibleQueue.nextCursor!); setSelectedId('') }}>下一页</button>}</div>
     {selected && <Modal title={`审核 ${selected.ownerName} 的整份计划`} onClose={() => setSelectedId('')} wide>

@@ -47,7 +47,7 @@ test('member search and overview do not reveal peer work under a shared goal', (
       decision: 'approve',
       comment: '',
     })
-    domain.publishMonth(manager, plan.month, { planIds: [plan.id] })
+    domain.publishMonth(manager, plan.month, { planIds: [plan.id], planVersions: { [plan.id]: plan.version } })
     const task = domain.createTask(owner, {
       title: '协作接口联调',
       monthlyPlanId: plan.id,

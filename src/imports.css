@@ -599,11 +599,18 @@
   color: #256b4b;
 }
 .import-edit-button {
-  background: transparent;
-  border: 0;
-  padding: 2px 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  background: #fff;
+  border: 1px solid var(--import-line, #e7ecf4);
+  border-radius: 5px;
+  padding: 7px 10px;
   color: #5472c5;
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 1.4;
 }
 .import-commit {
   display: flex;
@@ -1222,6 +1229,10 @@
 .import-review-confirmation input[type="number"] { width: min(180px, 100%); }
 .import-review-confirmation > p { margin: 0; }
 .import-review-confirmation > button { justify-self: start; }
+.import-review-save { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.import-review-save p { margin: 0; color: var(--text-secondary); }
+.import-review-save > button { flex-shrink: 0; }
+.import-completeness-steps { padding-left: 20px; margin: 12px 0; font-size: 13px; line-height: 1.9; color: var(--text-secondary); }
 .import-review-checkbox, .import-editor-selection > label, .import-overall-completion > label,
 .import-collaborator-options label { display: flex; align-items: baseline; gap: 8px; font-size: 13px; line-height: 1.8; }
 .import-review-checkbox input, .import-editor-selection input[type="checkbox"],
@@ -1245,4 +1256,51 @@
   .import-completeness { padding: 16px; }
   .import-completeness .import-section-title { flex-direction: column; align-items: flex-start; gap: 10px; }
   .import-source-preview { max-height: 420px; }
+  .import-review-save { flex-direction: column; align-items: stretch; }
+}
+
+/* Import actions use the workspace visual language with a readable next step. */
+.imports-page .button { min-height: 40px; font-size: 14px; }
+.imports-page .import-table th:last-child { width: 132px; }
+.imports-page .import-table td:last-child > button + button { margin-top: 8px; }
+.imports-page .import-edit-button:hover:not(:disabled) { background: var(--import-soft); border-color: #aabbd9; }
+.imports-page .import-edit-button:focus-visible { outline: 2px solid var(--primary, #4866df); outline-offset: 2px; }
+.imports-page .import-source summary { display: flex; align-items: center; min-height: 36px; }
+.import-review-anchor { scroll-margin-top: 88px; }
+.import-review-anchor:focus { outline: 2px solid #b8c9e8; outline-offset: 3px; }
+.import-reading-notes { margin: 0 24px 16px; color: #895814; font-size: 13px; }
+.import-reading-notes > summary { min-height: 36px; padding: 8px 0; cursor: pointer; }
+.import-reading-notes > .import-notice { margin: 0; }
+.import-workflow, .import-next-step { margin: 0 24px 20px; padding: 18px; border: 1px solid #cedbee; border-radius: 8px; background: #f7faff; }
+.import-workflow ol { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; list-style: none; margin: 0; padding: 0; }
+.import-workflow li { min-width: 0; }
+.import-workflow li button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 64px; padding: 10px; text-align: left; border: 1px solid var(--import-line); border-radius: 6px; background: #fff; color: var(--text-body); font-size: 14px; }
+.import-workflow li button > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.import-workflow li small { display: block; margin-top: 3px; font-size: 12px; color: var(--text-secondary); }
+.import-step-number { display: grid; place-items: center; flex-shrink: 0; width: 27px; height: 27px; border-radius: 50%; background: #edf1f7; color: #556781; font-size: 13px; font-weight: 600; }
+.import-workflow .is-current button { border-color: #8faeda; background: #eff5ff; }
+.import-workflow .is-current .import-step-number { background: var(--primary, #466eac); color: #fff; }
+.import-workflow .is-complete .import-step-number { background: #e3f1ea; color: #256b4b; }
+.import-workflow-next, .import-next-step { display: flex; justify-content: space-between; align-items: center; gap: 18px; }
+.import-workflow-next { padding-top: 16px; margin-top: 14px; border-top: 1px solid var(--import-line); }
+.import-workflow-next strong, .import-next-step h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.import-workflow-next p, .import-next-step p { margin: 5px 0 0; font-size: 13px; color: var(--text-secondary); line-height: 1.8; }
+.import-workflow-next > button, .import-next-step-actions { flex-shrink: 0; }
+.import-next-step-actions { display: flex; flex-direction: column; gap: 8px; }
+.imports-page .import-commit strong { font-size: 15px; }
+.imports-page .import-commit p { font-size: 13px; }
+.imports-page .import-commit > button { min-height: 44px; font-size: 14px; }
+.import-commit-blockers { margin: 12px 0 0; padding: 0; list-style: none; }
+.import-commit-blockers li { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin-top: 8px; color: #895814; font-size: 13px; line-height: 1.7; }
+.import-commit-blockers li span { flex: 1; min-width: 170px; }
+@media (max-width: 700px) {
+  .imports-page .button, .imports-page .import-edit-button, .imports-page .import-source summary, .import-reading-notes > summary { min-height: 44px; }
+  .imports-page .button { white-space: normal; }
+  .import-workflow, .import-next-step { margin: 0 16px 16px; padding: 14px; }
+  .import-workflow ol { grid-template-columns: minmax(0, 1fr); gap: 7px; }
+  .import-workflow li button { min-height: 54px; }
+  .import-workflow li button > span:last-child { display: flex; flex: 1; align-items: center; justify-content: space-between; gap: 12px; }
+  .import-workflow li small { margin-top: 0; white-space: nowrap; }
+  .import-workflow-next, .import-next-step { flex-direction: column; align-items: stretch; gap: 12px; }
+  .import-commit-blockers li { align-items: flex-start; }
 }

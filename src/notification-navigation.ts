@@ -34,8 +34,12 @@ export function entryLocation(location: { pathname: string; search: string }): {
     if (kind === 'results' || kind === 'plan') intent.kind = kind
     if (params.get('action') === 'review') intent.action = 'review'
     if (page==='monthly' && params.get('action')==='result') intent.action='result'
+    if (page === 'monthly' && (params.get('action') === 'submit' || params.get('action') === 'publish')) intent.action = params.get('action') as 'submit' | 'publish'
     if (page === 'monthly' && params.get('action') === 'create-task') intent.action = 'create-task'
     if (page === 'weekly' && params.get('action') === 'create') intent.action = 'create'
+    if (page === 'weekly' && params.get('action') === 'review-queue') {
+      return { page, intent: { action: 'review-queue', reviewDutyId: identifier('reviewDutyId'), cycleWeek: intent.cycleWeek, weekStart: intent.weekStart } }
+    }
     return { page, intent }
   }
   return { page: location.pathname === '/work' ? 'messages' : 'overview' }
@@ -45,9 +49,15 @@ export function navigationUrl(page: PageId, intent?: NavigationIntent): string {
   if (page === 'messages') return intent?.id ? `/entry?notificationId=${encodeURIComponent(intent.id)}` : '/work'
   if (!['monthly', 'weekly', 'collaboration', 'reports', 'work-register', 'feedback', 'authorized-work', 'period-reviews'].includes(page)) return '/'
   const params = new URLSearchParams({ view: page })
+  if (page === 'weekly' && intent?.action === 'review-queue') {
+    params.set('action', 'review-queue')
+    for (const key of ['reviewDutyId', 'weekStart', 'cycleWeek'] as const) if (intent[key]) params.set(key, intent[key]!)
+    return `/work?${params}`
+  }
   for (const key of ['id', 'ownerId', 'month', 'weekStart', 'cycleWeek', 'kind', 'targetType', 'section', 'weeklyRecordId'] as const) if (intent?.[key]) params.set(key, intent[key]!)
   if (intent?.action === 'review') params.set('action', 'review')
   if(page==='monthly' && intent?.action==='result')params.set('action','result')
+  if (page === 'monthly' && (intent?.action === 'submit' || intent?.action === 'publish')) params.set('action', intent.action)
   if (page === 'monthly' && intent?.action === 'create-task') params.set('action', 'create-task')
   if (page === 'weekly' && intent?.action === 'create') params.set('action', 'create')
   return `/work?${params}`

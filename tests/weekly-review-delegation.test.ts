@@ -7,6 +7,7 @@ import { createApp } from '../server/app.ts'
 import { createSession, type StoredUser } from '../server/auth.ts'
 import { WeeklySubmissionService } from '../server/weekly-submissions.ts'
 import { WeeklyReviewDelegationService, readWeeklyReviewDelegation, resolveWholePlanReviewer } from '../server/weekly-review-delegation.ts'
+import { MyActionsService } from '../server/my-actions.ts'
 import { addWeekDays, fridayDeadline, shanghaiWeek } from '../server/weekly-submission-clock.ts'
 import { isEffectiveWeeklyRecord, weeklyPlanFingerprint } from '../shared/weekly-record-state.ts'
 import { exportBusinessData, previewRestore, restoreBusinessData } from '../server/data-transfer.ts'
@@ -63,6 +64,70 @@ test('queue is an explicit minimal DTO and does not widen personal submissions o
   const audits = f.store.list<{ objectIds: string[]; action: string }>('objectReadAudits')
   assert.ok(audits.some(row => row.action === 'weekly_review_queue' && row.objectIds.includes(queue.items[0].dutyId)))
   assert.doesNotMatch(JSON.stringify(audits), /本周交付承诺|私人/)
+})
+
+test('delegated pending actions use live reviewer scope and keep private receipts out of actions', t => {
+  const f = fixture(t); f.add(); f.submit(); f.enable()
+  const actions = new MyActionsService(f.store)
+  const before = JSON.stringify([f.store.list('plans'), f.store.list('weeklyRecords'), f.store.list('weeklySubmissions'), f.store.list('weeklyDuties')])
+  const view = actions.list(f.reviewer, { kind: 'weekly_review' })
+  assert.equal(view.items.length, 1)
+  assert.deepEqual(view.items[0].actionTarget, { page: 'weekly', id: f.duty().id, cycleWeek: f.week, action: 'review-queue' })
+  assert.equal(view.items[0].sharedQueue, false)
+  assert.ok(view.items[0].assigneeIds.includes(f.reviewer.id))
+  assert.doesNotMatch(JSON.stringify(view), /私人|private\.example|actualOutcome|evidenceUrl|records|planManifest/)
+  assert.equal(actions.list(f.manager).counts.weekly_review, 1)
+  for (const actor of [f.member, f.other, f.observer]) assert.equal(actions.list(actor).counts.weekly_review, 0)
+  assert.equal(JSON.stringify([f.store.list('plans'), f.store.list('weeklyRecords'), f.store.list('weeklySubmissions'), f.store.list('weeklyDuties')]), before)
+  f.store.update<MonthlyPlan>('plans', f.goal.id, f.goal.version, { ownerId: f.other.id })
+  assert.equal(actions.list(f.reviewer).counts.weekly_review, 0)
+  assert.equal(actions.list(f.other).counts.weekly_review, 1)
+  f.enable([])
+  assert.equal(actions.list(f.other).counts.weekly_review, 0)
+  assert.equal(actions.list(f.manager).counts.weekly_review, 1)
+  f.enable()
+  f.service.review(f.other, f.reviewInput())
+  assert.equal(actions.list(f.other).counts.weekly_review, 0)
+  assert.equal(actions.list(f.manager).counts.weekly_review, 0)
+})
+
+test('pending actions disappear when a retained draft changes and reappear only after a new valid whole submission', t => {
+  const f = fixture(t); f.add({ submitted: true }); const draft = f.add(); f.submit(f.member, 'retain'); f.enable()
+  const actions = new MyActionsService(f.store)
+  assert.equal(actions.list(f.reviewer).counts.weekly_review, 1)
+  f.store.update<WeeklyRecord>('weeklyRecords', draft.id, draft.version, { commitment: '新的保留草稿' })
+  assert.equal(actions.list(f.reviewer).counts.weekly_review, 0)
+  assert.equal(actions.list(f.manager).counts.weekly_review, 0, 'changed content is not yet reviewable')
+  f.submit(f.member, 'retain')
+  assert.equal(actions.list(f.reviewer).counts.weekly_review, 1)
+})
+
+test('member actions skip all weekly scans without delegation and resume immediately on opt-in', t => {
+  const f = fixture(t); f.add(); f.submit()
+  const actions = new MyActionsService(f.store)
+  const list = f.store.list.bind(f.store), selectJson = f.store.selectJson.bind(f.store)
+  const scanned: string[] = []
+  f.store.list = <T>(collection: string): T[] => {
+    if (collection.startsWith('weekly')) scanned.push(collection)
+    return list<T>(collection)
+  }
+  f.store.selectJson = <T>(sql: string, values: (string | number | null)[] = []): T[] => {
+    if (/collection='weekly/.test(sql)) scanned.push(sql)
+    return selectJson<T>(sql, values)
+  }
+  const read = (actor: User) => { scanned.length = 0; return actions.list(actor).counts.weekly_review }
+  assert.equal(read(f.reviewer), 0)
+  assert.deepEqual(scanned, [], 'missing settings must not enumerate historical duties or receipts')
+  assert.equal(read(f.manager), 1)
+  assert.ok(scanned.length > 0, 'manager review queue remains available without opt-in')
+  f.enable()
+  assert.equal(read(f.reviewer), 1)
+  assert.ok(scanned.length > 0, 'live opt-in restores the existing authorized projection')
+  assert.equal(read(f.other), 0, 'opt-in does not grant unrelated members review authority')
+  f.enable([])
+  assert.equal(read(f.reviewer), 0)
+  assert.deepEqual(scanned, [], 'live revocation must also restore the no-scan path')
+  assert.equal(read(f.manager), 1)
 })
 
 test('self, mixed goals, missing goal, stale live association and unusable reviewer all fall back to managers', t => {

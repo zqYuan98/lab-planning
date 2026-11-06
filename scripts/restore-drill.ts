@@ -43,7 +43,7 @@ try {
   const nextMonth = new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 7), nextDue = new Date(Date.UTC(year, month + 1, 0)).toISOString().slice(0, 10)
   let plan = domain.createPlan(manager, { month: period, title: '恢复演练目标', ownerId: member.id, category: '合成业务', expectedOutcome: '可核对结果', acceptanceCriteria: '校验通过', dueDate })
   plan = domain.submitPlan(manager, plan.id, { version: plan.version }); plan = domain.reviewPlan(manager, plan.id, { version: plan.version, decision: 'approve' })
-  domain.publishMonth(manager, period, { planIds: [plan.id] }); plan = source.get<MonthlyPlan>('plans', plan.id)!
+  domain.publishMonth(manager, period, { planIds: [plan.id], planVersions: { [plan.id]: plan.version } }); plan = source.get<MonthlyPlan>('plans', plan.id)!
   const task = domain.createTask(member, { title: '备份时点任务', monthlyPlanId: plan.id, dueDate })
   const week = new Date(`${period}-15T00:00:00Z`); week.setUTCDate(week.getUTCDate() - (week.getUTCDay() + 6) % 7)
   domain.createWeeklyRecord(member, { taskId: task.id, weekStart: week.toISOString().slice(0, 10), commitment: '核对恢复资料', submitted: true, status: 'doing' })

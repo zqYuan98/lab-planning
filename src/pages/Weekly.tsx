@@ -267,7 +267,7 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
         }
       />
       <div ref={submissionSection} tabIndex={-1}>
-        <WeeklySubmissionPanel data={data} refresh={refresh} notify={notify} week={cycleWeek} onChangeCycle={selectRecordWeek} onSelectWork={selectWork} onReviewPlan={target => reviewWork(target, 'review')} reviewRequest={reviewRequest} onViewChange={setSubmissionView} />
+        <WeeklySubmissionPanel data={data} refresh={refresh} notify={notify} week={cycleWeek} onChangeCycle={selectRecordWeek} onSelectWork={selectWork} onReviewPlan={target => reviewWork(target, 'review')} reviewRequest={reviewRequest} reviewDutyId={intent?.action === 'review-queue' && cycleWeek === initialCycleWeek ? intent.reviewDutyId : undefined} onViewChange={setSubmissionView} />
       </div>
       <div ref={recordSection} tabIndex={-1} className="weekly-record-context">
         <h2>周工作记录 · 自然周 {week} ～ {advanceWeek(week,6)}</h2>

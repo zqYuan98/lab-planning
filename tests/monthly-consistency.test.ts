@@ -18,7 +18,7 @@ function fixture(t: TestContext) {
   const publish = (plan: MonthlyPlan) => {
     plan = domain.submitPlan(manager, plan.id, { version: plan.version })
     plan = domain.reviewPlan(manager, plan.id, { version: plan.version, decision: 'approve' })
-    domain.publishMonth(manager, plan.month, { planIds: [plan.id] })
+    domain.publishMonth(manager, plan.month, { planIds: [plan.id], planVersions: { [plan.id]: plan.version } })
     return store.get<MonthlyPlan>('plans', plan.id)!
   }
   const request = (source: MonthlyPlan, extra: Record<string, unknown> = {}) => ({ requestId: randomUUID(), sourceVersion: source.version, month: '2026-10', dueDate: '2026-10-23', reason: '剩余验证工作承接至下月', operationEpoch: getOperationEpoch(store), ...extra })

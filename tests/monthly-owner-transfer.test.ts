@@ -12,7 +12,7 @@ function fixture(t: TestContext) {
   let plan = domain.createPlan(manager, { title: '移交月度部署成果', month: '2026-09', ownerId: oldOwner.id, collaboratorIds: [peer.id], category: '研发', expectedOutcome: '完成部署', acceptanceCriteria: '现场验证通过', dueDate: '2026-09-30' })
   plan = domain.submitPlan(manager, plan.id, { version: plan.version })
   plan = domain.reviewPlan(manager, plan.id, { version: plan.version, decision: 'approve' })
-  domain.publishMonth(manager, plan.month, { planIds: [plan.id] })
+  domain.publishMonth(manager, plan.month, { planIds: [plan.id], planVersions: { [plan.id]: plan.version } })
   plan = store.get<MonthlyPlan>('plans', plan.id)!
   const task = (owner = oldOwner) => domain.createTask(owner, { title: '待部署任务', monthlyPlanId: plan.id, dueDate: '2026-09-30' })
   const state = () => ['plans', 'tasks', 'events', 'publications', 'notifications', 'notificationDeliveries'].map(collection => store.list(collection))

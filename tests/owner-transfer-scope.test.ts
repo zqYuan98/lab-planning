@@ -18,7 +18,7 @@ function fixture(t: TestContext) {
     let row = domain.createPlan(manager, { title, ownerId, collaboratorIds, month: '2026-09', category: '算法研究', expectedOutcome: '历史成果要求', acceptanceCriteria: '验收通过', dueDate: '2026-09-30' })
     row = domain.submitPlan(manager, row.id, { version: row.version })
     row = domain.reviewPlan(manager, row.id, { version: row.version, decision: 'approve' })
-    domain.publishMonth(manager, row.month, { planIds: [row.id], reason: '发布月度目标' })
+    domain.publishMonth(manager, row.month, { planIds: [row.id], planVersions: { [row.id]: row.version }, reason: '发布月度目标' })
     return store.get<MonthlyPlan>('plans', row.id)!
   }
   return { store, domain, period, overview, manager, former, next, collaborator, outsider, plan }
@@ -139,12 +139,12 @@ test('a cleared monthly page cannot rebuild rows or counts from retained detail 
   const member = render(f.former)
   assert.match(member, /当前参与<span>0<\/span>/)
   assert.match(member, /历史记录<span>0<\/span>/)
-  assert.match(member, /审核通过<span>0<\/span>/)
+  assert.match(member, /审核通过，待发布<span>0<\/span>/)
   assert.doesNotMatch(member, /class="table-title"|>编辑<|>提交成果<|>关联个人任务</)
   assert.match(member, /保留打开详情的目标/)
   assert.match(member, /历史成果要求/, 'the independent detail content remains available')
   const manager = render(f.manager)
-  assert.doesNotMatch(manager, /class="table-title"|发布已审核计划（|发布版本 [1-9]/)
-  assert.match(manager, /<button class="button primary" disabled="">[\s\S]*?发布已审核计划<\/button>/)
+  assert.doesNotMatch(manager, /class="table-title"|批量发布已审核目标（|发布版本 [1-9]|>发布此目标<\/button>|>编辑目标内容<\/button>/)
+  assert.match(manager, /<button class="button primary" disabled=""[^>]*>[\s\S]*?批量发布已审核目标<\/button>/)
   assert.match(manager, /保留打开详情的目标/)
 })

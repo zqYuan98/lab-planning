@@ -1,4 +1,5 @@
 import { openTask } from '../navigation'
+import { monthlyWorkflow } from '../monthly-workflow'
 import WorkProgress from '../components/WorkProgress'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowRight, CalendarDays, FileText, Plus, RefreshCw, Search, ListTodo, SignalHigh, Clock3, LifeBuoy, SlidersHorizontal, X } from 'lucide-react'
@@ -179,21 +180,21 @@ export default function WorkRegister({ data, refresh, notify, navigate }: PagePr
         if (row.kind === 'plan') {
           const plan = row.plan
           const archived = !!plan.projectId && currentData.projects.some(project => project.id === plan.projectId && project.status === 'archived')
+          const workflow = monthlyWorkflow(plan, data.user, archived)
           return <article className={`wr-item wr-plan-item task-priority-${signal.priority ?? 'none'} task-kind-${signal.kind}${row.isOverdue ? ' is-overdue' : ''}`} key={`plan:${row.id}`}>
             <div className="wr-item-main">
-              <div className="wr-item-badges"><PriorityBadge priority={signal.priority} /><WorkTypeBadge {...signal.type} /><Badge tone={plan.status === 'published' ? 'green' : 'amber'}>{row.displayStatus}</Badge>{row.isOverdue && <span className="wr-overdue">已逾期</span>}</div>
+              <div className="wr-item-badges"><PriorityBadge priority={signal.priority} /><WorkTypeBadge {...signal.type} /><Badge tone={plan.status === 'published' ? 'green' : 'amber'}>{workflow.stateLabel}</Badge>{row.isOverdue && <span className="wr-overdue">已逾期</span>}</div>
               <button className="wr-item-title" onClick={() => navigate('monthly', { id: plan.id, month: plan.month })}>{plan.title}</button>
               <div className="wr-item-meta"><span>{plan.month}</span><span>{row.sourceLabel}{row.assignedBy ? ` · ${row.assignedBy}` : ''}</span><span>截止 {plan.dueDate || '待确认'}</span></div>
               {plan.expectedOutcome && <ContextHelp title="预期交付"><p>{plan.expectedOutcome}</p>{plan.importSource && <p>已有计划导入</p>}</ContextHelp>}
             </div>
             <div className="wr-item-progress">
-              <p><span>下一步</span>{row.carriedForward ? '核对原月成果与验收结论；后续执行沿用承接任务。' : '建立个人任务，安排本周执行。'}</p>
+              <p><span>下一步</span>{row.carriedForward ? '核对原月成果与验收结论；后续执行沿用承接任务。' : workflow.nextStep}</p>
               {plan.actualOutcome && <p><span>目标成果进展</span>{plan.actualOutcome}</p>}
-              {!row.carriedForward && plan.status !== 'published' && <p className="wr-decision">目标尚未发布。可先建立任务、保存周草稿，发布后才能正式排周。</p>}
               {plan.temporaryReason && <ContextHelp title="临时说明"><p>{plan.temporaryReason}</p></ContextHelp>}
               {!row.carriedForward && archived && <p className="wr-decision">所属项目已归档，请先协调恢复项目再建立任务。</p>}
             </div>
-            <div className="wr-item-actions"><span className="wr-schedule">{row.carriedForward ? '已跨月承接，原月待验收' : '待建立个人任务'}</span>{!row.carriedForward && <button className="button secondary" disabled={archived} onClick={() => navigate('monthly', { action: 'create-task', id: plan.id, month: plan.month, weekStart: result.weekStart })}><CalendarDays size={15} />建立任务并安排</button>}<button className="wr-edit-button" onClick={() => navigate('monthly', { id: plan.id, month: plan.month })}>查看月度目标<ArrowRight size={14} /></button></div>
+            <div className="wr-item-actions"><span className="wr-schedule">{row.carriedForward ? '已跨月承接，原月待验收' : plan.status === 'published' ? '待建立个人任务' : workflow.stateLabel}</span>{!row.carriedForward && workflow.primary && <button className="button primary" onClick={() => navigate('monthly', { action: workflow.primary!.action, id: plan.id, month: plan.month, weekStart: result.weekStart })}>{workflow.primary.action === 'create-task' && <CalendarDays size={15} />}{workflow.primary.label}</button>}{!row.carriedForward && !workflow.primary && workflow.canCreateOwnTask && <button className="button secondary" onClick={() => navigate('monthly', { action: 'create-task', id: plan.id, month: plan.month, weekStart: result.weekStart })}>准备个人任务（周草稿）</button>}<button className="wr-edit-button" onClick={() => navigate('monthly', { id: plan.id, month: plan.month })}>查看月度目标<ArrowRight size={14} /></button></div>
           </article>
         }
         const task = row.task

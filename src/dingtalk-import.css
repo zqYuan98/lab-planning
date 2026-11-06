@@ -43,6 +43,12 @@
 .dingtalk-row-decision { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; border-top: 1px solid var(--import-line); margin-top: 14px; padding-top: 14px; }
 .dingtalk-row-decision .field:has(textarea) { grid-column: 1 / -1; }
 .dingtalk-row-decision > button { justify-self: start; grid-column: 1 / -1; }
+.dingtalk-decision-help { align-self: center; margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.8; }
+.dingtalk-decision-footer { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.dingtalk-decision-footer p { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.8; }
+.dingtalk-decision-footer button { flex-shrink: 0; min-height: 40px; }
+.dingtalk-review-row > summary { min-height: 36px; font-size: 13px; }
+.dingtalk-row-decision :is(input, select, textarea) { min-height: 40px; font-size: 14px; }
 .dingtalk-review-removed { margin-top: 14px; }
 .dingtalk-review-removed summary { cursor: pointer; }
 .dingtalk-review > button { margin-top: 15px; }
@@ -56,4 +62,6 @@
   .dingtalk-review { padding: 13px; }
   .dingtalk-row-decision { grid-template-columns: minmax(0, 1fr); }
   .dingtalk-review-plan-links li, .dingtalk-review-removed li { flex-direction: column; gap: 4px; }
+  .dingtalk-decision-footer { flex-direction: column; align-items: stretch; }
+  .dingtalk-review-row > summary, .dingtalk-row-decision :is(input, select, textarea), .dingtalk-decision-footer button { min-height: 44px; }
 }

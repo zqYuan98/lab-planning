@@ -1,6 +1,6 @@
 import test, { type TestContext } from 'node:test'
 import assert from 'node:assert/strict'
-import type { Task, User } from '../shared/types.ts'
+import type { MonthlyPlan, Task, User } from '../shared/types.ts'
 import type { BlockerEpisode, FollowupRequest, TaskTracking } from '../shared/collaboration.ts'
 import type { Notification } from '../shared/notifications.ts'
 import { Store } from '../server/store.ts'
@@ -90,6 +90,28 @@ test('unassigned monthly approval is explicitly a shared manager queue and compe
   f.domain.reviewPlan(f.manager, draft.id, { version: submitted.version, decision: 'approve' })
   assert.throws(() => f.domain.reviewPlan(f.second, draft.id, { version: submitted.version, decision: 'approve' }), { status: 409 })
   assert.equal(f.actions.list(f.second).counts.monthly_review, 0)
+  const publication = f.actions.list(f.second).items.find(item => item.sourceId === draft.id)!
+  assert.equal(publication.kind, 'monthly_publish')
+  assert.equal(publication.actionTarget.action, 'publish')
+  assert.equal(publication.actionTarget.id, draft.id)
+  const approved = f.store.get<MonthlyPlan>('plans', draft.id)!
+  f.domain.publishMonth(f.second, approved.month, { planIds: [approved.id], planVersions: { [approved.id]: approved.version } })
+  assert.equal(f.actions.list(f.manager).counts.monthly_publish, 0)
+})
+
+test('monthly draft actions respect regular versus temporary ownership and live management authority', t => {
+  const f = fixture(t)
+  const regular = f.domain.createPlan(f.manager, { title: '导入后的常规草稿', ownerId: f.member.id, month: '2026-09', dueDate: '2026-09-30', category: '专项', expectedOutcome: '验证结果', acceptanceCriteria: '可复核' })
+  const temporary = f.domain.createPlan(f.member, { title: '个人临时草稿', month: '2026-09', dueDate: '2026-09-30', category: '专项', expectedOutcome: '验证结果', acceptanceCriteria: '可复核', isTemporary: true, temporaryReason: '新需求' })
+  assert.equal(f.actions.list(f.manager).counts.monthly_submit, 2)
+  assert.deepEqual(f.actions.list(f.member, { kind: 'monthly_submit' }).items.map(item => item.sourceId), [temporary.id])
+  assert.equal(f.actions.list(f.coordinator).counts.monthly_submit, 0)
+  assert.equal(f.actions.list(f.observer).totalCount, 0)
+  const before = JSON.stringify(f.store.list('plans'))
+  f.actions.list(f.manager)
+  assert.equal(JSON.stringify(f.store.list('plans')), before, 'reading actions must not submit or approve drafts')
+  f.store.update<User>('users', f.manager.id, f.manager.version, { role: 'member' })
+  assert.equal(f.actions.list(f.manager).items.some(item => item.sourceId === regular.id), false, 'a stale manager object must not retain management actions')
 })
 
 test('disabled collaboration yields recovery actions for old followup and deadline sources while base deliveries remain actionable', t => {

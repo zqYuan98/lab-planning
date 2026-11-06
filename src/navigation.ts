@@ -14,7 +14,7 @@ export function openTask(value: OpenTaskIntent) {
   if (intent) window.dispatchEvent(new CustomEvent('workspace-open-task', { detail: intent }))
 }
 export interface NavigationIntent {
-  action?: 'create' | 'create-task' | 'review' | 'publish' | 'write-weekly' | 'result'
+  action?: 'create' | 'create-task' | 'submit' | 'review' | 'review-queue' | 'publish' | 'write-weekly' | 'result'
   query?: string
   id?: string
   month?: string
@@ -25,6 +25,7 @@ export interface NavigationIntent {
   ownerId?: string
   section?: TaskSection
   weeklyRecordId?: string
+  reviewDutyId?: string
   targetType?: 'task' | 'followup' | 'digest' | 'deadlineRequest' | 'blocker' | 'decisionRequest'
 }
 export type Navigate = (page: PageId, intent?: NavigationIntent) => void

@@ -1,6 +1,7 @@
 import { LIMITS } from '../../shared/entity-rules'
 import AnnualGoalPicker from '../components/AnnualGoalPicker'
 import GoalOwnerWork from '../components/GoalOwnerWork'
+import { monthlyWorkflow, monthlyIntentModal, monthlyPublishInput, monthlyStatusLabels } from '../monthly-workflow'
 import { draftText } from '../draft-recovery'
 import { useEffect, useRef, useState } from 'react'
 import type { MonthlyScope, MonthlyWorkspace, PeriodReferences, PublicationSummary } from '../../shared/period-workspace'
@@ -46,14 +47,7 @@ import {
   type PageProps,
 } from '../ui'
 
-const statuses: Record<string, string> = {
-  draft: '草稿',
-  submitted: '待审核',
-  returned: '退回修改',
-  approved: '审核通过',
-  published: '已发布',
-  merged: '已合并',
-}
+const statuses: Record<string, string> = monthlyStatusLabels
 const results: Record<string, string> = {
   pending: '待交付',
   submitted: '待验收',
@@ -92,14 +86,15 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
       .filter((project) => project.status === 'archived')
       .map((project) => project.id),
   )
-  const canPublish = (plan: MonthlyPlan) =>
-    !plan.visibility && plan.status === 'approved' &&
-    (!plan.projectId || !archivedProjectIds.has(plan.projectId))
-  const canEdit = (plan: MonthlyPlan) => !plan.visibility && plan.status !== 'merged' &&
-    (manager || (plan.isTemporary && plan.ownerId === data.user.id && ['draft', 'returned'].includes(plan.status)))
-  const canCreateOwnTask = (plan: MonthlyPlan) => !plan.visibility && plan.status !== 'merged' &&
-    (!plan.projectId || !archivedProjectIds.has(plan.projectId)) &&
-    (plan.ownerId === data.user.id || plan.collaboratorIds.includes(data.user.id))
+  const workflow = (plan: MonthlyPlan) => {
+    const flow = monthlyWorkflow(plan, data.user, !!plan.projectId && archivedProjectIds.has(plan.projectId))
+    if (!period || period.value) return flow
+    return { ...flow, canEdit: false, canSubmit: false, canReview: false, canPublish: false, canCreateOwnTask: false, canResult: false, primary: null, nextStep: '正在重新读取当前权限和目标状态，完成后显示可用操作。' }
+  }
+  const canPublish = (plan: MonthlyPlan) => workflow(plan).canPublish
+  const canEdit = (plan: MonthlyPlan) => workflow(plan).canEdit
+  const canCreateOwnTask = (plan: MonthlyPlan) => workflow(plan).canCreateOwnTask
+  const intentModal = (plan: MonthlyPlan) => period && !period.value ? 'detail' : monthlyIntentModal(plan, data.user, intent?.action, !!plan.projectId && archivedProjectIds.has(plan.projectId))
   const initialMonth = intent?.month || currentMonth()
   const initialPlan = data.plans.find((plan) => plan.id === intent?.id)
   const [includeInactive, setIncludeInactive] = useState(!!initialPlan && !visibleMonthlyPlan(initialPlan, data.users))
@@ -115,7 +110,7 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
     [search, setSearch] = useState(intent?.query || '')
   const [modal, setModal] = useState(
       initialPlan
-        ? manager && intent?.action==='review' && initialPlan.status==='submitted' ? 'review' : manager && intent?.action==='result' && initialPlan.status==='published' ? 'result' : intent?.action === 'create-task' && canCreateOwnTask(initialPlan) ? 'task' : 'detail'
+        ? intentModal(initialPlan)
         : manager && intent?.action === 'create'
           ? 'create'
           : readyToPublish
@@ -141,9 +136,9 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
     if (!plan || handledIntent.current) return
     handledIntent.current = true; setMonth(plan.month); setSelected(plan)
     setIncludeInactive(!visibleMonthlyPlan(plan, data.users))
-    setModal(manager && intent?.action === 'review' && plan.status === 'submitted' ? 'review' : manager && intent?.action === 'result' && plan.status === 'published' ? 'result' : intent?.action === 'create-task' && canCreateOwnTask(plan) ? 'task' : 'detail')
+    setModal(intentModal(plan))
   }, [period?.value?.detail])
-  useEffect(() => { if (period?.value && !handledIntent.current && intent?.action === 'publish') { handledIntent.current = true; if (period.value.summary.publishable) setModal('publish') } }, [period?.value])
+  useEffect(() => { if (period?.value && !handledIntent.current && intent?.action === 'publish' && !intent.id) { handledIntent.current = true; if (period.value.summary.publishable) setModal('publish') } }, [period?.value])
   // A cleared/pending page has no list membership. Keep modal references separate
   // so an open detail or draft cannot repopulate rows or counters after revocation.
   const listPlans = period ? period.value?.items ?? [] : data.plans
@@ -188,7 +183,9 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
     try {
       const [result, events] = await Promise.all([period ? api<{ plan: MonthlyPlan; references: PeriodReferences }>(`/workspace/monthly/plans/${encodeURIComponent(plan.id)}`) : Promise.resolve({ plan, references: undefined }), type === 'history' ? api<AuditEvent[]>(`/plans/${encodeURIComponent(plan.id)}/history`) : Promise.resolve(null)])
       if (sequence !== detailSequence.current || context !== captureMutationContext()) return
-      const nextModal = result.plan.visibility && type !== 'history' ? 'detail' : type
+      const currentFlow = monthlyWorkflow(result.plan, data.user, !!result.plan.projectId && (result.references?.projects ?? data.projects).some(project => project.id === result.plan.projectId && project.status === 'archived'))
+      const permitted = type === 'submit' ? currentFlow.canSubmit : type === 'review' ? currentFlow.canReview : type === 'publish-one' ? currentFlow.canPublish : type === 'edit' ? currentFlow.canEdit : type === 'task' ? currentFlow.canCreateOwnTask : type === 'result' ? currentFlow.canResult : true
+      const nextModal = result.plan.visibility && type !== 'history' || !permitted ? 'detail' : type
       lastDetailRead.current = `${plan.id}:${nextModal}:${period?.value?.revision ?? ''}`
       setSelected(result.plan); setDetailReferences(result.references); setHistory(events); setModal(nextModal)
     } catch (failure) { if (sequence === detailSequence.current) notify(failure instanceof Error ? failure.message : '目标读取失败') }
@@ -201,6 +198,7 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
     lastDetailRead.current = key
     void open(modal, selected)
   }, [period?.value?.revision, modal, selected?.id])
+  const selectedWorkflow = selected ? workflow(selected) : null
   return (
     <>
       <PageHeader
@@ -280,14 +278,12 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
           </label>
         </div>
         {manager && (
-          <button
-            className="button primary"
-            disabled={!approvedCount || action.busy}
-            onClick={() => showModal('publish')}
-          >
-            <Send size={16} />
-            发布已审核计划{approvedCount ? `（${approvedCount}）` : ''}
-          </button>
+          <div className="monthly-publish-controls">
+            <button className="button primary" disabled={!approvedCount || action.busy} aria-describedby="monthly-publish-help" onClick={() => showModal('publish')}>
+              <Send size={16} />批量发布已审核目标{approvedCount ? `（${approvedCount}）` : ''}
+            </button>
+            <p id="monthly-publish-help">{approvedCount ? `将先预览 ${month} 全月 ${approvedCount} 条可发布目标；确认后才发布。` : '暂无可发布目标。草稿需先提交审核，审核通过后才能发布；归档项目需先恢复。'}</p>
+          </div>
         )}
       </div>
       {!manager && <div className="tabs" role="group" aria-label="月度目标范围">
@@ -416,41 +412,27 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
                           </Badge>
                         </td>
                         <td>
-                          <div className="row-actions">
+                          <div className="row-actions monthly-plan-actions">
                             {canEdit(plan) && (
                                 <button onClick={() => open('edit', plan)}>
                                   编辑
                                 </button>
                               )}
-                            {['draft', 'returned'].includes(plan.status) &&
-                              (!plan.projectId ||
-                                !archivedProjectIds.has(plan.projectId)) &&
-                              canEdit(plan) && (
+                            {workflow(plan).canSubmit && (
                                 <button
                                   disabled={action.busy}
-                                  onClick={() =>
-                                    void action.run(
-                                      () =>
-                                        api(
-                                          `/plans/${plan.id}/submit`,
-                                          json({ version: plan.version }),
-                                        ),
-                                      '月度目标已提交审核',
-                                    )
-                                  }
+                                  onClick={() => void open('submit', plan)}
                                 >
-                                  提交
+                                  提交审核
                                 </button>
                               )}
-                            {!plan.visibility && manager && plan.status === 'submitted' && (
+                            {workflow(plan).canReview && (
                               <button onClick={() => open('review', plan)}>
-                                审核
+                                审核目标
                               </button>
                             )}
-                            {!plan.visibility && plan.status === 'published' &&
-                              (manager ||
-                                (plan.ownerId === data.user.id &&
-                                  plan.acceptanceStatus !== 'accepted')) && (
+                            {canPublish(plan) && <button onClick={() => void open('publish-one', plan)}>发布此目标</button>}
+                            {workflow(plan).canResult && (
                                 <button onClick={() => open('result', plan)}>
                                   {manager ? '成果验收' : '提交成果'}
                                 </button>
@@ -545,6 +527,7 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
         </Form>
       </Modal>}
       {manager && modal === 'publish' && period && <PublishMonth data={data} month={month} publicationCount={publicationCount} onClose={close} onSaved={saved} />}
+      {modal === 'publish-one' && selected && canPublish(selected) && <PublishPlan data={data} plan={selected} publicationCount={publicationCount} onClose={close} onSaved={saved} />}
       {manager && modal === 'publish' && !period && (
         <Modal title="发布部门月度目标" onClose={close}>
           <p className="modal-intro">
@@ -567,10 +550,7 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
               const form = new FormData(event.currentTarget)
               await api(
                 `/months/${month}/publish`,
-                json({
-                  planIds: approved.map((plan) => plan.id),
-                  reason: form.get('reason'),
-                }),
+                json(monthlyPublishInput(approved, form.get('reason'))),
               )
               await saved('部门月度目标已发布')
             }}
@@ -592,7 +572,18 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
           </Form>
         </Modal>
       )}
-      {modal === 'review' && selected && (
+      {modal === 'submit' && selected && workflow(selected).canSubmit && (
+        <Modal title="提交月度目标审核" onClose={close}>
+          <p className="modal-intro"><strong>{selected.title}</strong> · {selected.month}</p>
+          <p>提交后状态变为“待审核”。{manager ? '你可继续审核该目标；审核通过后还需单独确认发布。' : '管理员审核通过并发布后，才能提交正式周计划。'}</p>
+          {selected.reviewComment && <p className="context-box">上次退回意见：{selected.reviewComment}</p>}
+          <Form onCancel={close} submitLabel="确认提交审核" onSubmit={async () => {
+            const updated = await api<MonthlyPlan>(`/plans/${selected.id}/submit`, json({ version: selected.version }))
+            await finishSaved(async () => { await refresh(); setSelected(updated); showModal('detail'); notify('目标已提交审核，尚未发布') })
+          }}><div className="detail-grid"><div><span>预期成果</span><p>{selected.expectedOutcome || '未填写'}</p></div><div><span>验收标准</span><p>{selected.acceptanceCriteria || '未填写'}</p></div><div><span>负责人</span><p>{nameOf(data, selected.ownerId)}</p></div><div><span>截止日期</span><p>{selected.dueDate || '未填写'}</p></div></div></Form>
+        </Modal>
+      )}
+      {modal === 'review' && selected && workflow(selected).canReview && (
         <Modal title="审核月度提报" onClose={close}>
           <p className="modal-intro">
             <strong>{selected.title}</strong>
@@ -601,7 +592,7 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
           </p>
           <Form
             onCancel={close}
-            submitLabel="提交审核意见"
+            submitLabel="保存审核决定"
             onSubmit={async (event) => {
               const values = Object.fromEntries(
                 new FormData(event.currentTarget),
@@ -611,11 +602,11 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
                 !String(values.comment).trim()
               )
                 throw new Error('退回时请填写修改意见。')
-              await api(
+              const updated = await api<MonthlyPlan>(
                 `/plans/${selected.id}/review`,
                 json({ version: selected.version, ...values }),
               )
-              await saved('审核意见已保存')
+              await finishSaved(async () => { await refresh(); setSelected(updated); showModal('detail'); notify(updated.status === 'approved' ? '审核已通过，下一步请确认发布' : '目标已退回修改') })
             }}
           >
             <Field label="审核结果">
@@ -634,17 +625,17 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
           </Form>
         </Modal>
       )}
-      {modal === 'result' && selected && (
+      {modal === 'result' && selected && workflow(selected).canResult && (
         <Modal title={manager ? '确认月度成果' : '提交本月成果'} onClose={close}>
           <MonthlyResultForm key={selected.id} plan={selected} manager={manager} userId={data.user.id} onCancel={close} onSaved={() => saved('月度成果已更新')} />
         </Modal>
       )}
-      {modal === 'carry' && selected && (
+      {modal === 'carry' && selected && manager && workflow(selected).canEdit && (
         <Modal title="跨期处理" onClose={close} wide>
           <CarryWorkflowWizard key={`${data.user.id}:${selected.id}:${data.operationEpoch}`} sourcePlan={selected} actorId={data.user.id} operationEpoch={data.operationEpoch || ''} refresh={refresh} onClose={close} onOpenTarget={target => {
             setMonth(target.month)
             setSelected(target)
-            showModal(target.status === 'submitted' ? 'review' : target.status === 'approved' ? 'publish' : ['draft', 'returned'].includes(target.status) ? 'edit' : 'detail')
+            showModal(target.status === 'submitted' ? 'review' : target.status === 'approved' ? 'publish-one' : ['draft', 'returned'].includes(target.status) ? 'edit' : 'detail')
           }} />
         </Modal>
       )}
@@ -730,7 +721,18 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
         <Modal title={selected.title} onClose={close} wide>
           {selected.visibility && <div className="context-box"><Badge>{selected.visibility === 'reference' ? '历史引用 · 只读' : '历史记录 · 只读'}</Badge><p>{selected.visibility === 'reference' ? '此目标仅保留历史任务关联，责任信息和目标详情不可查看。' : '以下为你曾参与期间的目标快照，负责人和状态均为当时信息。'}此记录不计入当前参与目标。</p></div>}
           {selected.visibility !== 'reference' && <div className="row-meta"><PriorityBadge priority={selected.priority} /><WorkTypeBadge isTemporary={selected.isTemporary} isMonthly /></div>}
-          {!selected.visibility && manager && selected.status !== 'merged' && <div className="carry-actions"><button className="button secondary" onClick={() => showModal('carry')}>跨期处理 / 继续已有流程</button></div>}
+          {selectedWorkflow && <section className="monthly-workflow-panel" aria-label="月度目标下一步">
+            <h3>当前状态：{selectedWorkflow.stateLabel}</h3>
+            <p>{selectedWorkflow.nextStep}</p>
+            {selected.reviewComment && !selected.visibility && <p>审核意见：{selected.reviewComment}</p>}
+            <div className="monthly-workflow-actions">
+              {selectedWorkflow.primary && <button className="button primary" onClick={() => void open(selectedWorkflow.primary!.action === 'publish' ? 'publish-one' : selectedWorkflow.primary!.action === 'create-task' ? 'task' : selectedWorkflow.primary!.action, selected)}>{selectedWorkflow.primary.label}</button>}
+              {selectedWorkflow.canEdit && <button className="button secondary" onClick={() => void open('edit', selected)}>编辑目标内容</button>}
+              {selectedWorkflow.canResult && selectedWorkflow.primary?.action !== 'result' && <button className="button secondary" onClick={() => void open('result', selected)}>{manager ? '成果验收' : '提交成果'}</button>}
+              {selectedWorkflow.canCreateOwnTask && selected.status !== 'published' && <button className="button secondary" onClick={() => void open('task', selected)}>准备个人任务（周草稿）</button>}
+            </div>
+          </section>}
+          {manager && selectedWorkflow?.canEdit && <div className="carry-actions"><button className="button secondary" onClick={() => showModal('carry')}>跨期处理 / 继续已有流程</button></div>}
           {manager && <NotificationStatus type="plan" id={selected.id} data={data} />}
           {selected.isTemporary && (
             <div className="context-box">
@@ -811,8 +813,18 @@ function PublishMonth({ data, month, publicationCount, onClose, onSaved }: { dat
     {candidates.error ? <div role="alert" className="error">{candidates.error}<button onClick={candidates.retry}>重新读取完整清单</button></div> : !candidates.value ? <p role="status">正在核对整月可发布目标…</p> : <>
       <p className="modal-intro">将 {month} 已审核通过的 {approved.length} 项成果发布为部门承诺。以下为完整可发布清单。</p>
       <div className="compact-list">{approved.map(plan => <div key={plan.id}><CheckCircle2 size={16} /><span>{plan.title}</span><small>{nameOf(candidates.value!, plan.ownerId)}</small></div>)}</div>
-      <Form onCancel={onClose} submitLabel="确认发布" onSubmit={async event => { if (!approved.length) throw new Error('没有可发布目标'); await api(`/months/${month}/publish`, json({ planIds: approved.map(plan => plan.id), reason: new FormData(event.currentTarget).get('reason') })); await onSaved('部门月度目标已发布') }}><Field label="发布说明"><textarea name="reason" rows={3} required={publicationCount > 0} /></Field></Form>
+      <Form onCancel={onClose} submitLabel={`确认发布以上 ${approved.length} 条目标`} onSubmit={async event => { await api(`/months/${month}/publish`, json(monthlyPublishInput(approved, new FormData(event.currentTarget).get('reason')))); await onSaved('部门月度目标已发布') }}><Field label="发布说明"><textarea name="reason" rows={3} required={publicationCount > 0} /></Field></Form>
     </>}
+  </Modal>
+}
+function PublishPlan({ data, plan, publicationCount, onClose, onSaved }: { data: PageProps['data']; plan: MonthlyPlan; publicationCount: number; onClose: () => void; onSaved: (message: string) => Promise<void> }) {
+  return <Modal title="发布此月度目标" onClose={onClose}>
+    <p className="modal-intro">本次仅发布下面这 1 条目标，其他目标状态保持不变。发布后可正式排周，并按现有通知配置通知参与成员。</p>
+    <div className="monthly-workflow-panel"><h3>{plan.title}</h3><p>{plan.month} · {nameOf(data, plan.ownerId)} · 截止 {plan.dueDate || '未填写'}</p><p>预期成果：{plan.expectedOutcome || '未填写'}</p><p>验收标准：{plan.acceptanceCriteria || '未填写'}</p></div>
+    <Form onCancel={onClose} submitLabel="确认发布这 1 条目标" onSubmit={async event => {
+      await api(`/months/${plan.month}/publish`, json(monthlyPublishInput([plan], new FormData(event.currentTarget).get('reason'))))
+      await onSaved('此月度目标已发布')
+    }}><Field label={publicationCount ? '补充发布说明' : '发布说明（选填）'} hint={publicationCount ? '请说明本次补充发布的范围。' : '本次只影响上方目标。'}><textarea name="reason" rows={3} required={publicationCount > 0} /></Field></Form>
   </Modal>
 }
 function MonthPublications({ data, month, onClose }: { data: PageProps['data']; month: string; onClose: () => void }) {

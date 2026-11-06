@@ -1,0 +1,17 @@
+.monthly-workflow-panel { margin: 16px 0; padding: 18px 20px; border: 1px solid #cbd9ec; border-left: 4px solid #255d9d; border-radius: 10px; background: #f5f8fd; }
+.monthly-workflow-panel h3 { margin: 0 0 8px; color: #183c68; font-size: 16px; }
+.monthly-workflow-panel p { margin: 0 0 14px; line-height: 1.65; color: #425a78; }
+.monthly-workflow-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.monthly-workflow-actions .button, .monthly-publish-controls .button { min-height: 42px; padding: 10px 16px; font-size: 14px; }
+.monthly-publish-controls { max-width: 390px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.monthly-publish-controls p { margin: 0; font-size: 13px; line-height: 1.55; color: #53647c; }
+.monthly-plan-actions { gap: 8px; min-width: 170px; }
+.monthly-plan-actions > button { min-height: 36px; padding: 7px 10px; }
+@media (max-width: 700px) {
+  .monthly-publish-controls { max-width: none; align-items: stretch; width: 100%; }
+  .monthly-workflow-panel { padding: 16px; }
+  .monthly-workflow-actions .button { flex: 1 1 150px; }
+  .monthly-workflow-actions .button,
+  .monthly-publish-controls .button,
+  .monthly-plan-actions > button { min-height: 44px; min-width: 44px; }
+}

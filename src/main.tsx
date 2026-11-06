@@ -20,3 +20,5 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   </React.StrictMode>,
 )
 import './weekly-submissions.css'
+import './monthly-workflow.css'
+import './my-actions.css'

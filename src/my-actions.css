@@ -1,0 +1,9 @@
+.my-actions .action-kind-filters button { min-height: 40px; font-size: 14px; }
+.my-actions .action-item > div { min-width: 0; overflow-wrap: anywhere; }
+.my-actions .action-item > .button { min-height: 40px; white-space: normal; text-align: center; }
+@media (max-width: 680px) {
+  .my-actions .action-item { flex-wrap: wrap; }
+  .my-actions .action-item > div { flex-basis: 100%; }
+  .my-actions .action-item > .button { min-height: 44px; width: 100%; }
+  .my-actions .action-kind-filters button { min-height: 44px; }
+}

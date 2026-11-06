@@ -4,8 +4,10 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { ImportBatch, ImportRow } from '../shared/import-types.ts'
 import type { Task } from '../shared/types.ts'
-import { canRequestImportReview, importAnalysisRequest, importReconciliationText, importReviewCounts, importReviewRequired, importRowOutcomeLabel, importWorkFields, newImportCandidate, restoredImportOptions, selectImportTask } from '../src/import-review.ts'
+import { canRequestImportReview, currentImportSourceRelations, importAnalysisRequest, importCommitBlockers, dingtalkConfirmedExclusions, dingtalkSourceRelations, dingtalkSourceReviewReady, importDisplayCounts, importedDraftMonths, importReconciliationText, importReviewCounts, importReviewRequired, importRowOutcomeLabel, importWorkFields, newImportCandidate, restoredImportOptions, selectImportTask } from '../src/import-review.ts'
 import ImportSourceReview from '../src/components/ImportSourceReview.tsx'
+import ImportWorkflowProgress from '../src/components/ImportWorkflowProgress.tsx'
+import type { DingTalkImportReviewRow } from '../shared/dingtalk-monthly-api.ts'
 
 function batch(patch: Partial<ImportBatch> = {}): ImportBatch {
   return { id: 'source-batch', version: 3, createdAt: '2026-09-20T00:00:00Z', updatedAt: '2026-09-20T00:00:00Z', ownerId: 'manager', sourceId: 'source', fileName: '原始任务.xlsx', kind: 'table', status: 'parsed', mode: 'existing', rows: [], warnings: [], sourceSheets: [{ name: '第一张', rowCount: 3 }, { name: '第二张', rowCount: 5 }], requiresCompletionReview: true, ...patch }
@@ -126,4 +128,124 @@ test('file confirmation is required separately from row validity; structured bat
   assert.equal(importReviewRequired(batch({ completionReview: { sourceItemCount: 1, reviewedBy: 'manager', reviewedAt: '2026-09-20T00:00:00Z', reviewedVersion: 3, contentFingerprint: 'confirmed' } })), false)
   assert.equal(importRowOutcomeLabel(row('existing', { result: { collection: 'plans', id: 'existing-plan' }, resultDisposition: 'existing' })), '已有记录')
   assert.equal(importRowOutcomeLabel(row('fresh', { result: { collection: 'plans', id: 'fresh-plan' }, resultDisposition: 'created' })), '已写入')
+})
+
+test('import submit blockers identify actionable rows and completeness without conflating saving and importing', () => {
+  const value = batch({ mode: 'draft', rows: [row('a', { issues: ['负责人待确认'] }), row('b', { selected: false })] })
+  const blockers = importCommitBlockers(value, true)
+  assert.deepEqual(blockers.map(item => item.section), ['rows', 'rows', 'completeness'])
+  assert.match(blockers[0].message, /1 项未选择且缺少排除原因/)
+  assert.match(blockers[1].message, /1 条已选记录有待补项/)
+  assert.match(blockers[2].action, /核对原始资料/)
+  const valid = batch({ mode: 'draft', requiresCompletionReview: false, rows: [row('valid')] })
+  assert.deepEqual(importCommitBlockers(valid, true), [])
+  const html = renderToStaticMarkup(createElement(ImportWorkflowProgress, { batch: valid, manager: true, sourceReady: true, blockers: [], disabled: false, onGo: () => {} }))
+  assert.match(html, /导入后仍需审核发布/)
+  assert.match(html, /不会自动成为正式月度目标/)
+  const sourceHtml = renderToStaticMarkup(createElement(ImportSourceReview, { batch: value, disabled: false, onConfirm: async () => {} }))
+  assert.match(sourceHtml, /此处只保存核对记录，不会导入或发布计划/)
+})
+
+test('members can still request manager review with hidden or incomplete existing rows, but regular draft goals explain the permission boundary', () => {
+  assert.deepEqual(importCommitBlockers(batch({ rows: [] }), false), [])
+  assert.deepEqual(importCommitBlockers(batch({ rows: [row('a', { issues: ['负责人待确认'] }), row('b', { selected: false })] }), false), [])
+  const delegatedHtml = renderToStaticMarkup(createElement(ImportWorkflowProgress, { batch: batch({ rows: [] }), manager: false, sourceReady: true, blockers: [], disabled: false, onGo: () => {} }))
+  assert.match(delegatedHtml, /由管理员核对/)
+  const pending = importCommitBlockers(batch({ reviewRequestedAt: '2026-11-06T00:00:00Z' }), false)
+  assert.deepEqual(pending.map(item => item.section), ['commit'])
+  assert.match(pending[0].message, /已交管理员核对/)
+  const regular = batch({ mode: 'draft', requiresCompletionReview: false, rows: [row('a', { kind: 'monthly' })] })
+  assert.deepEqual(importCommitBlockers(regular, false).map(item => item.section), ['mode'])
+  assert.match(importCommitBlockers(regular, false)[0].message, /常规团队月度目标由管理员创建/)
+  assert.deepEqual(importCommitBlockers({ ...regular, rows: [row('a', { kind: 'monthly', isTemporary: true })] }, false), [])
+})
+
+test('history ignores optional row issues but still requires source completeness and explicit omission reasons', () => {
+  const value = batch({ mode: 'history', rows: [row('a', { issues: ['日期缺失'] })] })
+  assert.deepEqual(importCommitBlockers(value, true).map(item => item.section), ['completeness'])
+  assert.deepEqual(importCommitBlockers({ ...value, requiresCompletionReview: false }, true), [])
+  assert.deepEqual(importCommitBlockers({ ...value, requiresCompletionReview: false, rows: [row('a', { selected: false })] }, true).map(item => item.section), ['rows', 'rows'])
+})
+
+test('DingTalk unresolved and previously imported rows do not count as confirmed exclusions', () => {
+  const base: DingTalkImportReviewRow = { rowId: 'row', sourceRow: 2, title: '目标', status: 'ambiguous', reason: '同月同名', plans: [], requiresResolution: true }
+  const rows: DingTalkImportReviewRow[] = [base, { ...base, rowId: 'imported', status: 'imported', requiresResolution: false }, { ...base, rowId: 'linked', resolution: { action: 'link', planId: 'old', reason: '同一事项' }, requiresResolution: false }, { ...base, rowId: 'excluded', resolution: { action: 'exclude', reason: '本月不纳入' }, requiresResolution: false }, { ...base, rowId: 'stale', resolution: { action: 'exclude', reason: '需要重新核对' } }]
+  assert.equal(dingtalkConfirmedExclusions({ rows }), 1)
+  assert.equal(dingtalkConfirmedExclusions({ rows: rows.slice(0, 3) }), 0)
+  const provenance = { sourceIdentity: 's', snapshotId: 'snapshot', documentId: 'doc', sheetId: 'sheet', documentTitle: '月报材料', sheetName: '11月目标', documentUrl: 'https://alidocs.dingtalk.com/i/nodes/doc', targetMonth: '2026-11', contentHash: 'hash', fetchedAt: '2026-11-06T00:00:00Z' }
+  const value = batch({ dingtalk: provenance, mode: 'draft', requiresCompletionReview: false, rows: [] })
+  assert.deepEqual(importCommitBlockers(value, true, false).map(item => item.section), ['source'])
+  assert.deepEqual(importCommitBlockers(value, true, true), [], 'all-linked or excluded source batches can confirm without new drafts')
+})
+
+test('DingTalk review remains blocked when selection disagrees with a saved decision or a previous import', () => {
+  const base: DingTalkImportReviewRow = { rowId: 'a', sourceRow: 2, title: '目标', status: 'ambiguous', reason: '同月同名', plans: [{ id: 'old', title: '目标', month: '2026-11', ownerName: '负责人' }], requiresResolution: false }
+  for (const [action, expectedSelected] of [['new', true], ['link', false], ['exclude', false]] as const) {
+    const review = { rows: [{ ...base, resolution: { action, reason: '人工确认', ...(action === 'link' ? { planId: 'old' } : {}) } }] }
+    assert.equal(dingtalkSourceReviewReady(review, [row('a', { selected: expectedSelected })]), true, `${action}: accepted selection`)
+    assert.equal(dingtalkSourceReviewReady(review, [row('a', { selected: !expectedSelected })]), false, `${action}: disagreeing selection cannot enable import`)
+  }
+  const imported = { rows: [{ ...base, status: 'imported' as const }] }
+  assert.equal(dingtalkSourceReviewReady(imported, [row('a', { selected: true })]), false)
+  assert.equal(dingtalkSourceReviewReady(imported, [row('a', { selected: false })]), true)
+  assert.equal(dingtalkSourceReviewReady(imported, [row('a', { selected: true, result: { collection: 'plans', id: 'old' } })]), true, 'committed results are not pending choices')
+  assert.equal(dingtalkSourceReviewReady(imported, []), false, 'missing candidate fails closed')
+  const newReview = { rows: [{ ...base, status: 'new' as const, plans: [] }] }
+  assert.equal(dingtalkConfirmedExclusions(newReview, [row('a', { selected: false })]), 0)
+  assert.equal(dingtalkConfirmedExclusions(newReview, [row('a', { selected: false, exclusionReason: '本月暂不纳入' })]), 1)
+  assert.equal(dingtalkConfirmedExclusions({ rows: [{ ...base, requiresResolution: true }] }, [row('a', { selected: false, exclusionReason: '等待核对来源差异' })]), 0, 'system placeholder is not a human exclusion')
+})
+
+test('committed monthly drafts surface the publication handoff only for actual imported plan results', () => {
+  const value = batch({ mode: 'draft', status: 'committed', rows: [row('created', { month: '2026-11', result: { collection: 'plans', id: 'plan-a' } }), row('other-month', { month: '2026-12', result: { collection: 'plans', id: 'plan-b' } }), row('excluded', { month: '2027-01', selected: false }), row('weekly', { kind: 'weekly', month: '2026-10', result: { collection: 'weeklyRecords', id: 'weekly-a' } })] })
+  assert.deepEqual(importedDraftMonths(value), ['2026-11', '2026-12'])
+  assert.deepEqual(importedDraftMonths({ ...value, status: 'parsed' }), [])
+  assert.deepEqual(importedDraftMonths({ ...value, mode: 'existing' }), [])
+  const html = renderToStaticMarkup(createElement(ImportWorkflowProgress, { batch: value, manager: true, sourceReady: true, blockers: [], disabled: false, onGo: () => {}, navigate: () => {} }))
+  assert.match(html, /草稿已生成，下一步审核发布/)
+  assert.match(html, /前往 2026-11 月度目标/)
+  assert.match(html, /前往 2026-12 月度目标/)
+  assert.doesNotMatch(html, /前往 2027-01/)
+})
+
+test('unresolved DingTalk source rows are pending relationships, not omitted or linked work', () => {
+  const candidates = [row('new'), row('pending-a', { selected: false, exclusionReason: '等待核对来源差异' }), row('pending-b', { selected: false, exclusionReason: '等待核对来源差异' })]
+  const base: DingTalkImportReviewRow = { rowId: 'new', sourceRow: 2, title: '目标', status: 'new', reason: '', plans: [], requiresResolution: false }
+  const review = { rows: [base, { ...base, rowId: 'pending-a', status: 'ambiguous' as const, requiresResolution: true }, { ...base, rowId: 'pending-b', status: 'changed' as const, requiresResolution: true }] }
+  const relations = dingtalkSourceRelations(review, candidates)
+  assert.deepEqual(relations, { 'pending-a': 'pending', 'pending-b': 'pending' } as const)
+  const counts = importDisplayCounts(candidates, relations)
+  assert.equal(counts.sourcePending, 2); assert.equal(counts.excluded, 0); assert.equal(counts.pending, 1)
+  assert.equal(importRowOutcomeLabel(candidates[1], relations['pending-a']), '等待确认来源关系')
+  assert.match(importReconciliationText(candidates, relations), /待确认来源关系 2 项.*未选择未导入 0 项/)
+  assert.equal(importReviewCounts(candidates).excluded, 2, 'presentation does not change completeness or server submission inputs')
+  assert.equal(importRowOutcomeLabel(candidates[1]), '未导入（未选择）', 'generic file import remains unchanged')
+})
+
+test('DingTalk presentation separates confirmed links and exclusions, and invalidated decisions return to pending', () => {
+  const base: DingTalkImportReviewRow = { rowId: 'linked', sourceRow: 2, title: '目标', status: 'ambiguous', reason: '', plans: [{ id: 'old', title: '目标', month: '2026-11', ownerName: '负责人' }], requiresResolution: false }
+  const candidates = [row('linked', { selected: false }), row('excluded', { selected: false }), row('imported', { selected: false })]
+  const review = { rows: [{ ...base, resolution: { action: 'link' as const, planId: 'old', reason: '同一目标' } }, { ...base, rowId: 'excluded', resolution: { action: 'exclude' as const, reason: '本月不纳入' } }, { ...base, rowId: 'imported', status: 'imported' as const }] }
+  const relations = dingtalkSourceRelations(review, candidates)
+  assert.deepEqual(relations, { linked: 'linked', excluded: 'excluded', imported: 'linked' } as const)
+  const counts = importDisplayCounts(candidates, relations)
+  assert.equal(counts.linked, 2); assert.equal(counts.excluded, 1); assert.equal(counts.sourcePending, 0)
+  assert.equal(importRowOutcomeLabel(candidates[0], relations.linked), '关联已有目标，不新建')
+  assert.equal(importRowOutcomeLabel(candidates[1], relations.excluded), '本次已确认排除')
+  assert.deepEqual(dingtalkSourceRelations(review, candidates.map(candidate => ({ ...candidate, selected: true }))), { linked: 'pending', excluded: 'pending', imported: 'pending' })
+  assert.deepEqual(dingtalkSourceRelations({ rows: [{ ...review.rows[0], requiresResolution: true }] }, candidates), { linked: 'pending' })
+})
+
+test('source relationship display fails closed while loading and never reuses another batch or version', () => {
+  const provenance = { sourceIdentity: 's', snapshotId: 'snapshot', documentId: 'doc', sheetId: 'sheet', documentTitle: '月报材料', sheetName: '11月目标', documentUrl: 'https://alidocs.dingtalk.com/i/nodes/doc', targetMonth: '2026-11', contentHash: 'hash', fetchedAt: '2026-11-06T00:00:00Z' }
+  const value = batch({ dingtalk: provenance, rows: [row('a', { selected: false }), row('recorded', { result: { collection: 'plans', id: 'old' } })] })
+  const pending = { a: 'pending' }
+  assert.deepEqual(currentImportSourceRelations(value, null), pending)
+  const state = { id: value.id, version: value.version, ready: true, relations: { a: 'linked' as const } }
+  assert.deepEqual(currentImportSourceRelations(value, state), { a: 'linked' })
+  assert.deepEqual(currentImportSourceRelations(value, { ...state, id: 'other-batch' }), pending)
+  assert.deepEqual(currentImportSourceRelations(value, { ...state, version: value.version - 1 }), pending)
+  assert.deepEqual(currentImportSourceRelations(value, { ...state, ready: false, relations: undefined }), pending)
+  assert.deepEqual(currentImportSourceRelations({ ...value, status: 'committed' }, state), {})
+  assert.deepEqual(currentImportSourceRelations({ ...value, dingtalk: undefined }, state), {})
 })

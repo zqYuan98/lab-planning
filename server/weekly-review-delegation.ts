@@ -47,6 +47,34 @@ export function assertWholePlanReviewer(store: Store, actor: User, duty: WeeklyD
   return reviewer
 }
 
+/** The queue and personal actions share one live authorization projection; never expose personal receipts. */
+export function* pendingWholePlanReviews(store: Store, actor: User, week: string, cursor = ''): Generator<WeeklyReviewQueueItem> {
+  actor = assertBusinessActor(store, actor)
+  const rule = store.get<WeeklyRule>('weeklyRules', 'weekly-submission-rule')
+  if (!rule || !isWeeklyPlanReviewCycle(rule, week)) return
+  const submissions = store.selectJson<WeeklySubmission>("SELECT data FROM entities WHERE collection='weeklySubmissions' AND json_extract(data,'$.cycleWeek')=? AND json_extract(data,'$.kind')='plan' ORDER BY rowid", [week])
+  const adjustments = store.selectJson<WeeklyAdjustment>("SELECT data FROM entities WHERE collection='weeklyAdjustments' AND json_extract(data,'$.cycleWeek')=? ORDER BY rowid", [week])
+  const reviews = store.selectJson<WeeklyPlanReview>("SELECT data FROM entities WHERE collection='weeklyPlanReviews' AND json_extract(data,'$.cycleWeek')=?", [week])
+  const duties = store.selectJson<WeeklyDuty>("SELECT data FROM entities WHERE collection='weeklyDuties' AND json_extract(data,'$.cycleWeek')=? AND json_extract(data,'$.kind')='plan' AND id>? ORDER BY id", [week, cursor])
+  for (const duty of duties) {
+    const history = weeklyDutyHistory(duty, submissions, adjustments), receipt = history.valid.at(-1)
+    if (!receipt || history.exemptionReason || reviews.some(review => review.submissionId === receipt.id)) continue
+    const rows = wholePlanRows(store, duty)
+    if (!weeklyPlanReviewRequired(rule, duty, store.get<User>('users', duty.ownerId), rows, receipt) || !wholePlanMatches(receipt, rows)) continue
+    const reviewer = resolveWholePlanReviewer(store, duty, receipt, rows)
+    if (!isManager(actor) && (reviewer.kind !== 'goal_owner' || reviewer.reviewerId !== actor.id)) continue
+    yield { dutyId: duty.id, version: duty.version, ownerId: duty.ownerId, ownerName: store.get<User>('users', duty.ownerId)?.name ?? '成员', contentWeek: duty.contentWeek,
+      submissionId: receipt.id, submittedAt: receipt.submittedAt, reviewer, retainedDraftCount: receipt.retainedDraftIds.length,
+      items: receipt.records.map(snapshot => {
+        const row = rows.find(item => item.id === snapshot.id)!
+        const approved = row.planApproval?.approvedFingerprint === weeklyPlanFingerprint(row) && !!row.planApproval.approvedSubmissionId || !row.planApproval?.required
+        const prior = history.valid.some(previous => previous.id !== receipt.id && previous.records.some(item => item.id === row.id))
+        return { recordId: row.id, taskTitle: receipt.planTaskSnapshots?.find(task => task.id === row.taskId)?.title ?? '任务', goalTitle: receipt.planGoalSnapshots?.find(goal => goal.id === row.monthlyPlanId)?.title ?? '未关联目标', commitment: snapshot.commitment,
+          change: approved ? 'already-approved' : prior ? 'changed' : 'new' }
+      }) }
+  }
+}
+
 export class WeeklyReviewDelegationService extends DomainBase {
   settings(actor: User): WeeklyReviewDelegationView {
     actor = assertBusinessActor(this.store, actor); manager(actor)
@@ -75,29 +103,9 @@ export class WeeklyReviewDelegationService extends DomainBase {
     const week = cycleWeek(requestedWeek)
     if (requestedCursor !== undefined && (typeof requestedCursor !== 'string' || requestedCursor.length > 200)) throw new HttpError(400, '审核队列分页标识无效')
     const cursor = typeof requestedCursor === 'string' ? requestedCursor : ''
-    const rule = this.store.get<WeeklyRule>('weeklyRules', 'weekly-submission-rule')
-    const submissions = this.store.selectJson<WeeklySubmission>("SELECT data FROM entities WHERE collection='weeklySubmissions' AND json_extract(data,'$.cycleWeek')=? AND json_extract(data,'$.kind')='plan' ORDER BY rowid", [week])
-    const adjustments = this.store.selectJson<WeeklyAdjustment>("SELECT data FROM entities WHERE collection='weeklyAdjustments' AND json_extract(data,'$.cycleWeek')=? ORDER BY rowid", [week])
-    const reviews = this.store.selectJson<WeeklyPlanReview>("SELECT data FROM entities WHERE collection='weeklyPlanReviews' AND json_extract(data,'$.cycleWeek')=?", [week])
-    const duties = rule && isWeeklyPlanReviewCycle(rule, week) ? this.store.selectJson<WeeklyDuty>("SELECT data FROM entities WHERE collection='weeklyDuties' AND json_extract(data,'$.cycleWeek')=? AND json_extract(data,'$.kind')='plan' AND id>? ORDER BY id", [week, cursor]) : []
     const items: WeeklyReviewQueueItem[] = []
-    for (const duty of duties) {
-      const history = weeklyDutyHistory(duty, submissions, adjustments), receipt = history.valid.at(-1)
-      if (!receipt || history.exemptionReason || reviews.some(review => review.submissionId === receipt.id)) continue
-      const rows = wholePlanRows(this.store, duty)
-      if (!weeklyPlanReviewRequired(rule, duty, this.store.get<User>('users', duty.ownerId), rows, receipt)) continue
-      if (!wholePlanMatches(receipt, rows)) continue
-      const reviewer = resolveWholePlanReviewer(this.store, duty, receipt, rows)
-      if (!isManager(actor) && (reviewer.kind !== 'goal_owner' || reviewer.reviewerId !== actor.id)) continue
-      items.push({ dutyId: duty.id, version: duty.version, ownerId: duty.ownerId, ownerName: this.store.get<User>('users', duty.ownerId)?.name ?? '成员', contentWeek: duty.contentWeek,
-        submissionId: receipt.id, submittedAt: receipt.submittedAt, reviewer, retainedDraftCount: receipt.retainedDraftIds.length,
-        items: receipt.records.map(snapshot => {
-          const row = rows.find(item => item.id === snapshot.id)!
-          const approved = row.planApproval?.approvedFingerprint === weeklyPlanFingerprint(row) && !!row.planApproval.approvedSubmissionId || !row.planApproval?.required
-          const prior = history.valid.some(previous => previous.id !== receipt.id && previous.records.some(item => item.id === row.id))
-          return { recordId: row.id, taskTitle: receipt.planTaskSnapshots?.find(task => task.id === row.taskId)?.title ?? '任务', goalTitle: receipt.planGoalSnapshots?.find(goal => goal.id === row.monthlyPlanId)?.title ?? '未关联目标', commitment: snapshot.commitment,
-            change: approved ? 'already-approved' : prior ? 'changed' : 'new' }
-        }) })
+    for (const item of pendingWholePlanReviews(this.store, actor, week, cursor)) {
+      items.push(item)
       if (items.length === 51) break
     }
     const page = items.slice(0, 50)

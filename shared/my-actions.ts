@@ -1,4 +1,4 @@
-export const actionKinds = ['monthly_review', 'monthly_acceptance', 'weekly_review', 'delivery_review', 'deadline_review', 'followup_response', 'support', 'decision', 'assignment', 'revisit'] as const
+export const actionKinds = ['monthly_submit', 'monthly_review', 'monthly_publish', 'monthly_acceptance', 'weekly_review', 'delivery_review', 'deadline_review', 'followup_response', 'support', 'decision', 'assignment', 'revisit'] as const
 export type ActionKind = typeof actionKinds[number]
 export interface ActionItem {
   key: string

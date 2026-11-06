@@ -20,11 +20,11 @@ function fixture() {
     return monthly.create(manager, { month: '2026-09', title: '月度验证目标', ownerId: owner.id, collaboratorIds, category: '研发', expectedOutcome: '可核验的测试报告', acceptanceCriteria: '通过质量审核', dueDate: '2026-09-30' })
   }
   function publish(plans: MonthlyPlan[]) {
-    for (const row of plans) {
+    const approved = plans.map(row => {
       const submitted = monthly.submit(manager, row.id, { version: row.version })
-      monthly.review(manager, row.id, { version: submitted.version, decision: 'approve' })
-    }
-    monthly.publish(manager, '2026-09', { planIds: plans.map(row => row.id) })
+      return monthly.review(manager, row.id, { version: submitted.version, decision: 'approve' })
+    })
+    monthly.publish(manager, '2026-09', { planIds: approved.map(row => row.id), planVersions: Object.fromEntries(approved.map(row => [row.id, row.version])) })
     return plans.map(row => store.get<MonthlyPlan>('plans', row.id)!)
   }
   return { store, work, monthly, manager, member, other, added, notifications, taskInput, recordInput, plan, publish }

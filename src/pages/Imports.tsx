@@ -6,7 +6,8 @@ import ImportDeleteDialog, { type ImportDeleteTarget } from '../components/Impor
 import ImportSourceReview from '../components/ImportSourceReview'
 import DingTalkMonthlyImport from '../components/DingTalkMonthlyImport'
 import DingTalkImportReview from '../components/DingTalkImportReview'
-import { canRequestImportReview, importAnalysisRequest, importReconciliationText, importReviewCounts, importReviewRequired, importRowDisposition, importRowOutcomeLabel, importWorkFields, newImportCandidate, restoredImportOptions, selectImportTask, type ImportWorkFields } from '../import-review'
+import ImportWorkflowProgress from '../components/ImportWorkflowProgress'
+import { canRequestImportReview, currentImportSourceRelations, importAnalysisRequest, importCommitBlockers, importDisplayCounts, importReconciliationText, importReviewCounts, importRowDisposition, importRowOutcomeLabel, importWorkFields, newImportCandidate, restoredImportOptions, selectImportTask, type ImportReviewSection, type ImportSourceReviewState, type ImportWorkFields } from '../import-review'
 import {
   Archive,
   ArrowRight,
@@ -200,7 +201,7 @@ export default function Imports({
   const [batches, setBatches] = useState<ImportBatchSummary[]>([])
   const [pendingOnly, setPendingOnly] = useState(false)
   const [batch, setBatch] = useState<ImportBatch | null>(null)
-  const [dingtalkReviewState, setDingtalkReviewState] = useState<{ id: string; version: number; ready: boolean } | null>(null)
+  const [dingtalkReviewState, setDingtalkReviewState] = useState<ImportSourceReviewState | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
@@ -263,6 +264,11 @@ export default function Imports({
   const lock = useRef(false)
   const activeBatchId = useRef<string | null>(null)
   const workspaceRef = useRef<HTMLElement>(null)
+  const sourceSection = useRef<HTMLDivElement>(null)
+  const rowsSection = useRef<HTMLDivElement>(null)
+  const completenessSection = useRef<HTMLDivElement>(null)
+  const modeSection = useRef<HTMLDivElement>(null)
+  const commitSection = useRef<HTMLDivElement>(null)
   const interactionCount = useRef(0)
   const scope = `${shell.user.id}:${shell.user.role}:${shell.operationEpoch}:${shell.accessScopeVersion}`
   const [candidatePages, setCandidatePages] = useState<Partial<Record<ImportCandidateKind, ImportReferences>>>({})
@@ -294,6 +300,8 @@ export default function Imports({
   const immutable = batch?.status === 'committed'
   const dingtalkSource = !!batch?.dingtalk
   const dingtalkReviewReady = !dingtalkSource || (dingtalkReviewState?.id === batch?.id && dingtalkReviewState?.version === batch?.version && dingtalkReviewState.ready)
+  const sourceRelations = currentImportSourceRelations(batch, dingtalkReviewState)
+  const displayCounts = importDisplayCounts(batch?.rows || [], sourceRelations)
   const readOnlyEditor = immutable && !editingHistory
   const editingNew = !!editing?.id.startsWith('new:') && !editingHistory
   const editingTaskLocked = !editingHistory && !readOnlyEditor && !!editing?.taskId
@@ -304,6 +312,7 @@ export default function Imports({
   const editingTemporary = editingTask?.isTemporary ?? !!editing?.isTemporary
   const parsing = batch?.analysis?.status === 'running'
   const batchBusy = !!busy || parsing
+  const commitBlockers = batch ? importCommitBlockers(batch, manager, dingtalkReviewReady) : []
   const visibleBatches = pendingOnly
     ? batches.filter(
         (item) => item.reviewRequestedAt && item.status !== 'committed',
@@ -632,6 +641,18 @@ export default function Imports({
     setDeleteTarget(null)
   }
 
+  function goToReviewSection(section: ImportReviewSection) {
+    const targets = { source: sourceSection, rows: rowsSection, completeness: completenessSection, mode: modeSection, commit: commitSection }
+    const target = targets[section].current || workspaceRef.current
+    target?.scrollIntoView({ block: 'start' })
+    target?.focus({ preventScroll: true })
+  }
+  const sourceReview = batch && <div ref={completenessSection} tabIndex={-1} className="import-review-anchor">
+    <ImportSourceReview key={`source:${batch.id}`} batch={batch} disabled={batchBusy}
+      reviewerName={data.users.find(user => user.id === batch.completionReview?.reviewedBy)?.name}
+      onConfirm={saveCompletionReview} />
+  </div>
+
   return (
     <div
       className="imports-page"
@@ -878,7 +899,7 @@ export default function Imports({
                       : item.reviewRequestedAt && item.status !== 'committed'
                         ? '待管理员确认'
                         : batchLabels[item.status]}{' '}
-                    · 候选 {item.rowCount} 项{item.excludedCount ? ` · ${item.excludedCount} 项未导入` : ''}
+                    · 候选 {item.rowCount} 项{item.status === 'committed' && item.excludedCount ? ` · ${item.excludedCount} 项未导入` : ''}
                   </span>
                   <small>{dateTime(item.createdAt)}</small>
                   {manager && (
@@ -938,12 +959,13 @@ export default function Imports({
                   )}
                 </div>
               </div>
+              {(batch.status !== 'uploaded' || batch.rows.length > 0) && <ImportWorkflowProgress batch={batch} manager={manager} sourceReady={dingtalkReviewReady}
+                blockers={commitBlockers} disabled={batchBusy} onGo={goToReviewSection} navigate={navigate} />}
               {!!batch.warnings.length && (
-                <div className="import-notice">
-                  {batch.warnings.map((warning, index) => (
-                    <p key={index}>{warning}</p>
-                  ))}
-                </div>
+                <details className="import-reading-notes">
+                  <summary>来源读取说明 · {batch.warnings.length} 项</summary>
+                  <div className="import-notice">{batch.warnings.map((warning, index) => <p key={index}>{warning}</p>)}</div>
+                </details>
               )}
               {batch.reviewRequestedAt && !immutable && (
                 <div className="import-confirmation-note">
@@ -1133,19 +1155,17 @@ export default function Imports({
                   </div>
                 </details>
               )}
-              {dingtalkSource && <DingTalkImportReview key={`dingtalk:${batch.id}`} batch={batch} disabled={batchBusy} editing={!!editing || !!exclusion}
+              {dingtalkSource && <div ref={sourceSection} tabIndex={-1} className="import-review-anchor"><DingTalkImportReview key={`dingtalk:${batch.id}`} batch={batch} disabled={batchBusy} editing={!!editing || !!exclusion}
                 run={run} onResolved={acceptBatch} notify={notify} navigate={navigate}
-                onReadinessChange={(id, version, ready) => setDingtalkReviewState(previous => previous?.id === id && previous.version === version && previous.ready === ready ? previous : { id, version, ready })} />}
-              <ImportSourceReview key={`source:${batch.id}`} batch={batch} disabled={batchBusy}
-                reviewerName={data.users.find(user => user.id === batch.completionReview?.reviewedBy)?.name}
-                onConfirm={saveCompletionReview} />
+                onReadinessChange={(id, version, ready, relations) => setDingtalkReviewState({ id, version, ready, relations })} /></div>}
+              {batch.status === 'uploaded' && !batch.rows.length && sourceReview}
               {!immutable && !dingtalkSource && !batch.rows.length && <button className="button secondary" disabled={batchBusy}
                 onClick={() => setEditing(newImportCandidate(batch, crypto.randomUUID()))}
               >按原始资料手动补录事项</button>}
               {(batch.status !== 'uploaded' || batch.rows.length > 0) && (
                 <>
                   {!immutable && !dingtalkSource && (
-                    <div className="import-mode">
+                    <div className="import-mode import-review-anchor" ref={modeSection} tabIndex={-1}>
                       <div>
                         <h3>选择保存方式</h3>
                         <p>
@@ -1375,7 +1395,7 @@ export default function Imports({
                       </div>
                     </div>
                   )}
-                  <div className="import-rows-heading">
+                  <div className="import-rows-heading import-review-anchor" ref={rowsSection} tabIndex={-1}>
                     <h3>
                       {immutable ? '保存结果' : '核对解析结果'}{' '}
                       <span>{batch.rows.length} 条</span>
@@ -1383,7 +1403,7 @@ export default function Imports({
                     <span>
                       {immutable
                         ? savedBatchCounts(batch)
-                        : `${importReconciliationText(batch.rows)} · ${selectedIssues.length} 项有待补项`}
+                        : `${importReconciliationText(batch.rows, sourceRelations)} · ${selectedIssues.length} 项有待补项`}
                     </span>
                     {!immutable && !dingtalkSource && <button className="button secondary" disabled={batchBusy}
                       onClick={() => setEditing(newImportCandidate(batch, crypto.randomUUID()))}
@@ -1453,7 +1473,9 @@ export default function Imports({
                                 <strong className="import-row-title">
                                   {row.title || '待补充工作事项'}
                                 </strong>
-                                {!row.selected && <p className="import-exclusion-reason">{row.exclusionKind === 'duplicate' ? '重复候选' : row.exclusionKind === 'not_task' ? '非工作事项' : '本次不导入的工作'}：{row.exclusionReason || (immutable ? '历史未记录排除原因' : '请填写排除原因')}</p>}
+                                {sourceRelations[row.id] === 'pending' ? <p className="import-exclusion-reason">等待确认来源关系：请先在来源差异中选择新增、关联已有或本次排除。</p>
+                                  : sourceRelations[row.id] === 'linked' ? <p className="import-exclusion-reason">已关联已有目标，本次不会重复新建。</p>
+                                    : !row.selected && <p className="import-exclusion-reason">{row.exclusionKind === 'duplicate' ? '重复候选' : row.exclusionKind === 'not_task' ? '非工作事项' : '本次不导入的工作'}：{row.exclusionReason || (immutable ? '历史未记录排除原因' : '请填写排除原因')}</p>}
                                 {row.isTemporary && <small className="import-temporary-reason">交办说明：{row.temporaryReason || '待补充'}</small>}
                                 {batch.mode === 'existing' && (
                                   <div className="import-row-destination">
@@ -1544,7 +1566,7 @@ export default function Imports({
                                   )}
                               </td>
                               <td>
-                                {importRowDisposition(row) === 'excluded' ? <span className="import-excluded">{importRowOutcomeLabel(row)}</span> : row.result ? <span className="import-valid"><Check size={13} />{importRowOutcomeLabel(row)}</span> : row.issues.length ? (
+                                {sourceRelations[row.id] ? <span className="import-excluded">{importRowOutcomeLabel(row, sourceRelations[row.id])}</span> : importRowDisposition(row) === 'excluded' ? <span className="import-excluded">{importRowOutcomeLabel(row)}</span> : row.result ? <span className="import-valid"><Check size={13} />{importRowOutcomeLabel(row)}</span> : row.issues.length ? (
                                   <ul className="import-issues">
                                     {row.issues.map((issue, index) => (
                                       <li key={index}>{issue}</li>
@@ -1563,7 +1585,7 @@ export default function Imports({
                                   disabled={batchBusy}
                                   onClick={() => setEditing({ ...row })}
                                 >
-                                  {immutable ? '查看' : '校对'}
+                                  {immutable ? '查看详情' : '校对内容'}
                                 </button>
                                 {immutable &&
                                   navigate &&
@@ -1593,8 +1615,9 @@ export default function Imports({
                       description={canRequestImportReview(manager, batch) ? '其他成员的候选由管理员核对。可以将本批次交管理员接续处理，无需重新解析。' : '可调整工作表、内容类型或补充说明后重新解析，原始文件已保留。'}
                     />
                   )}
+                  {sourceReview}
                   {!immutable && (!!batch.rows.length || canRequestImportReview(manager, batch)) && (
-                    <div className="import-commit">
+                    <div className="import-commit import-review-anchor" ref={commitSection} tabIndex={-1}>
                       <div>
                         <strong>
                           {batch.mode === 'existing'
@@ -1608,27 +1631,19 @@ export default function Imports({
                             ? `${manager ? '本次确认会直接写入对应月份与周，并保留实际成果及核对后的状态。' : '校对后交管理员确认一次，确认后直接进入对应月份与周，无需成员再次提报。'} 原表未注明的验收标准、预期成果与截止日期可留空；原文“完成”不自动等于已验收。同来源的既有草稿会沿用原编号转为生效计划。`
                             : batch.mode === 'history'
                               ? '勾选记录将与来源一起归档。缺失字段可保留为空，历史状态不自动算作当前成果。'
-                              : manager ? '用于新目标或周任务草稿，需补齐必要信息；常规月度目标由管理员发布，临时交办需填写说明。' : '成员可导入自己的周任务草稿及临时月度草稿，临时交办需填写说明。常规团队月度目标由管理员创建；已有计划可交管理员确认。'}{' '}
+                              : manager ? '导入后仍需审核发布：新月度目标会保留为草稿，请前往“月度目标”核对并发布。周任务草稿需继续提报，临时交办需填写说明。' : '导入后仍需审核发布。成员可导入自己的周任务草稿及临时月度草稿，再按对应流程提报；常规团队月度目标由管理员创建。'}{' '}
                           每次校对保存后，可随时离开再继续。
                         </p>
-                        {importReviewRequired(batch) && <p className="import-commit-warning">{!manager && batch.mode === 'existing' ? '可先交管理员核对资料；管理员补齐完整性核对后才能正式导入。' : '请先在“对照原始资料”中保存完整性核对。'}</p>}
-                        {dingtalkSource && !dingtalkReviewReady && <p className="import-commit-warning">请先完成上方钉钉来源与差异核对。</p>}
-                        {!!reviewCounts.missingReasons && <p className="import-commit-warning">{reviewCounts.missingReasons} 项未选择且缺少排除原因，正式导入前需要补齐。</p>}
-                        {!!reviewCounts.excluded && <p className="import-commit-warning">本次有 {reviewCounts.excluded} 项未选择，将保留候选和原因，不写入计划。</p>}
+                        {commitBlockers.length > 0 && <ul className="import-commit-blockers" aria-label="确认导入前的待办">{commitBlockers.map(blocker => <li key={`${blocker.section}:${blocker.action}`}>
+                          <span>{blocker.message}</span>{blocker.section !== 'commit' && <button type="button" className="import-edit-button" disabled={batchBusy} onClick={() => goToReviewSection(blocker.section)}>{blocker.action}<ArrowRight size={14} /></button>}
+                        </li>)}</ul>}
+                        {!!displayCounts.sourcePending && <p className="import-commit-warning">还有 {displayCounts.sourcePending} 项来源关系待确认，处理后才能确定本次导入范围。</p>}
+                        {!!displayCounts.linked && <p className="import-commit-warning">{displayCounts.linked} 项已关联已有目标，本次不会重复新建。</p>}
+                        {!!displayCounts.excluded && <p className="import-commit-warning">本次有 {displayCounts.excluded} 项未选择，将保留候选和原因，不写入计划。</p>}
                       </div>
                       <button
                         className="button primary"
-                        disabled={
-                          batchBusy ||
-                          !dingtalkReviewReady ||
-                          ((manager || batch.mode !== 'existing') && ((!selected.length && !dingtalkSource) || reviewCounts.missingReasons > 0 || importReviewRequired(batch))) ||
-                          (!manager && batch.mode === 'draft' && selected.some(row => row.kind === 'monthly' && !row.isTemporary)) ||
-                          ((manager || batch.mode !== 'existing') && batch.mode !== 'history' &&
-                            selectedIssues.length > 0) ||
-                          (batch.mode === 'existing' &&
-                            !manager &&
-                            !!batch.reviewRequestedAt)
-                        }
+                        disabled={batchBusy || commitBlockers.length > 0}
                         onClick={() =>
                           void run('正在保存确认结果', async () => {
                             const next = await api<ImportBatch>(

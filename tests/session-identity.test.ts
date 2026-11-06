@@ -57,7 +57,7 @@ test('a shared-cookie account switch rejects old-tab reads and writes, resets co
   let plan = domain.createPlan(manager, { month: '2026-09', ownerId: former.id, collaboratorIds: [], title: '移交目标', category: '研发', expectedOutcome: '交付', acceptanceCriteria: '通过', dueDate: '2026-09-30' })
   plan = domain.submitPlan(manager, plan.id, { version: plan.version })
   plan = domain.reviewPlan(manager, plan.id, { version: plan.version, decision: 'approve' })
-  domain.publishMonth(manager, plan.month, { planIds: [plan.id] }); plan = store.get<MonthlyPlan>('plans', plan.id)!
+  domain.publishMonth(manager, plan.month, { planIds: [plan.id], planVersions: { [plan.id]: plan.version } }); plan = store.get<MonthlyPlan>('plans', plan.id)!
   const stableContext = captureMutationContext()
   assert.equal((await api<MonthlyWorkspace>('/workspace/monthly?month=2026-09')).total, 0)
   domain.updatePlan(manager, plan.id, { version: plan.version, ownerId: next.id, reason: '负责人移交' })

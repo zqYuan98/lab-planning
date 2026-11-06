@@ -171,7 +171,7 @@ test('relinking a captured task retains its source, intake dates and register me
   let plan = f.domain.createPlan(f.manager, { month: '2026-09', title: '月度验证', category: '研发', ownerId: f.member.id, expectedOutcome: '验证报告', acceptanceCriteria: '通过评审', dueDate: '2026-09-30' })
   plan = f.domain.submitPlan(f.manager, plan.id, { version: plan.version })
   plan = f.domain.reviewPlan(f.manager, plan.id, { version: plan.version, decision: 'approve', comment: '' })
-  f.domain.publishMonth(f.manager, plan.month, { planIds: [plan.id] })
+  f.domain.publishMonth(f.manager, plan.month, { planIds: [plan.id], planVersions: { [plan.id]: plan.version } })
   const linked = f.domain.relinkTask(f.manager, task.id, { version: task.version, monthlyPlanId: plan.id, reason: '纳入月目标' })
   assert.deepEqual(linked, { ...task, monthlyPlanId: plan.id, isTemporary: false, version: linked.version, updatedAt: linked.updatedAt })
 })

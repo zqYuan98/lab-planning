@@ -25,7 +25,7 @@ function fixture(t: TestContext) {
     let plan = store.get<MonthlyPlan>('plans', view.target.id)!
     plan = domain.submitPlan(manager, plan.id, { version: plan.version })
     plan = domain.reviewPlan(manager, plan.id, { version: plan.version, decision: 'approve' })
-    domain.publishMonth(manager, plan.month, { planIds: [plan.id] })
+    domain.publishMonth(manager, plan.month, { planIds: [plan.id], planVersions: { [plan.id]: plan.version } })
     return service.detail(manager, view.workflow.id)
   }
   const ready = () => publish(service.create(manager, startInput()))
@@ -73,7 +73,7 @@ test('waiting status is derived from real publication; approved or returned cann
   target = f.domain.reviewPlan(f.manager, target.id, { version: target.version, decision: 'approve' })
   assert.equal(f.service.detail(f.manager, created.workflow.id).workflow.status, 'awaiting_publication')
   assert.throws(() => f.service.previewApply(f.manager, created.workflow.id, f.selection([task])), { status: 409 })
-  f.domain.publishMonth(f.manager, target.month, { planIds: [target.id] })
+  f.domain.publishMonth(f.manager, target.month, { planIds: [target.id], planVersions: { [target.id]: target.version } })
   assert.equal(f.service.detail(f.manager, created.workflow.id).workflow.status, 'ready')
   assert.equal(f.service.list(f.second, { sourcePlanId: f.source.id })[0].workflow.actorId, f.manager.id)
 })
@@ -274,7 +274,7 @@ test('legacy monthly carry plus same-task relink proves migration to a direct ch
     const publish = (plan: MonthlyPlan) => {
       let current = f.domain.submitPlan(f.manager, plan.id, { version: plan.version })
       current = f.domain.reviewPlan(f.manager, current.id, { version: current.version, decision: 'approve' })
-      f.domain.publishMonth(f.manager, current.month, { planIds: [current.id] })
+      f.domain.publishMonth(f.manager, current.month, { planIds: [current.id], planVersions: { [current.id]: current.version } })
       return f.store.get<MonthlyPlan>('plans', current.id)!
     }
     let target = publish(f.domain.carryPlan(f.manager, f.source.id, f.command({ sourceVersion: f.source.version, month: '2026-10', dueDate: '2026-10-31', reason: '旧版跨月承接' })))
@@ -308,7 +308,7 @@ test('relink to an unrelated goal and mismatched audit task identities do not pr
   let unrelated = f.domain.createPlan(f.manager, { month: '2026-10', title: '无承接关系的独立目标', ownerId: f.member.id, category: '研究', expectedOutcome: '报告', acceptanceCriteria: '评审', dueDate: '2026-10-31' })
   unrelated = f.domain.submitPlan(f.manager, unrelated.id, { version: unrelated.version })
   unrelated = f.domain.reviewPlan(f.manager, unrelated.id, { version: unrelated.version, decision: 'approve' })
-  f.domain.publishMonth(f.manager, unrelated.month, { planIds: [unrelated.id] })
+  f.domain.publishMonth(f.manager, unrelated.month, { planIds: [unrelated.id], planVersions: { [unrelated.id]: unrelated.version } })
   f.domain.relinkTask(f.manager, task.id, { version: task.version, monthlyPlanId: unrelated.id, reason: '纠正原任务关联' })
   const child = f.domain.carryPlan(f.manager, f.source.id, f.command({ sourceVersion: f.source.version, month: '2026-10', dueDate: '2026-10-31', reason: '另建承接草稿' }))
   f.store.insert<AuditEvent>('events', { entityType: 'task', entityId: task.id, actorId: f.manager.id, action: 'relink', reason: '错误历史快照', before: task, after: { ...task, id: 'another-task', version: task.version + 1, monthlyPlanId: child.id } })

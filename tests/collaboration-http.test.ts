@@ -157,7 +157,7 @@ test('HTTP editing submitted monthly-result text does not generate another submi
   let plan = await f.admin<MonthlyPlan>('/plans', { ownerId: f.member.id, month: '2099-01', title: '成果验证', category: '测试验证', priority: 'medium', dueDate: '2099-01-20', expectedOutcome: '交付报告', acceptanceCriteria: '报告可复核' }, 'POST', 201)
   plan = await f.admin<MonthlyPlan>(`/plans/${plan.id}/submit`, { version: plan.version })
   plan = await f.admin<MonthlyPlan>(`/plans/${plan.id}/review`, { version: plan.version, decision: 'approve', comment: '按标准交付' })
-  await f.admin('/months/2099-01/publish', { planIds: [plan.id] })
+  await f.admin('/months/2099-01/publish', { planIds: [plan.id], planVersions: { [plan.id]: plan.version } })
   plan = f.store.get<MonthlyPlan>('plans', plan.id)!
   plan = await f.owner<MonthlyPlan>(`/plans/${plan.id}/result`, { version: plan.version, acceptanceStatus: 'submitted', actualOutcome: '报告已经完成' })
   const events = () => f.store.list<BusinessNotificationEvent>('businessNotificationEvents').filter(row => row.kind === 'plan_result_submitted')

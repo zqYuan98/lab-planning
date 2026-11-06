@@ -22,7 +22,7 @@ function fixture(t: TestContext) {
   const publish = (plan: MonthlyPlan) => {
     plan = domain.submitPlan(manager, plan.id, { version: plan.version })
     plan = domain.reviewPlan(manager, plan.id, { version: plan.version, decision: 'approve' })
-    domain.publishMonth(manager, plan.month, { planIds: [plan.id] })
+    domain.publishMonth(manager, plan.month, { planIds: [plan.id], planVersions: { [plan.id]: plan.version } })
     return store.get<MonthlyPlan>('plans', plan.id)!
   }
   t.after(() => store.close())
@@ -62,7 +62,7 @@ test('temporary goals support member revision and manager review without bypassi
   plan = f.domain.submitPlan(f.member, plan.id, { version: plan.version })
   assert.throws(() => f.domain.updatePlan(f.member, plan.id, { version: plan.version, title: '已提交修改' }), { status: 403 })
   assert.throws(() => f.domain.reviewPlan(f.member, plan.id, { version: plan.version, decision: 'approve' }), { status: 403 })
-  assert.throws(() => f.domain.publishMonth(f.member, plan.month, { planIds: [plan.id] }), { status: 403 })
+  assert.throws(() => f.domain.publishMonth(f.member, plan.month, { planIds: [plan.id], planVersions: { [plan.id]: plan.version } }), { status: 403 })
   plan = f.domain.reviewPlan(f.manager, plan.id, { version: plan.version, decision: 'return', comment: '请补充本月阶段验收指标' })
   assert.equal(f.domain.bootstrap(f.member).plans[0].reviewComment, plan.reviewComment)
   assert.equal(f.domain.bootstrap(f.peer).plans[0].reviewComment, '')
@@ -128,7 +128,7 @@ test('monthly UI exposes member temporary drafts and hides peer and standard edi
   const memberMarkup = render(f.member)
   assert.match(memberMarkup, /新增临时目标/)
   assert.match(memberMarkup, />编辑<\/button>/)
-  assert.match(memberMarkup, />提交<\/button>/)
+  assert.match(memberMarkup, />提交审核<\/button>/)
   assert.doesNotMatch(memberMarkup, />新增月度目标<\/button>/)
   assert.doesNotMatch(render(f.peer), new RegExp(plan.title))
   const submitted = f.domain.submitPlan(f.member, plan.id, { version: plan.version })

@@ -160,14 +160,21 @@ export class MonthlyService extends DomainBase {
     })
   }
   publish(actor: User, periodInput: string, input: Input): Publication {
-    actor = assertBusinessActor(this.store, actor)
-    manager(actor)
-    const period = month(periodInput)
-    if (!Array.isArray(input.planIds) || !input.planIds.length || input.planIds.length > 1000 || input.planIds.some(id => typeof id !== 'string')) throw new HttpError(400, '请选择待发布月计划')
-    const ids = [...new Set(input.planIds as string[])]
-    const reason = text(input.reason, '发布原因', false) || '部门月计划发布'
     return this.store.transaction(() => {
-      const plans = ids.map(id => this.need<MonthlyPlan>('plans', id))
+      actor = assertBusinessActor(this.store, actor)
+      manager(actor)
+      const period = month(periodInput)
+      if (!Array.isArray(input.planIds) || !input.planIds.length || input.planIds.length > 1000 || input.planIds.some(id => typeof id !== 'string')) throw new HttpError(400, '请选择待发布月计划')
+      const ids = [...new Set(input.planIds as string[])]
+      const versions = input.planVersions
+      if (!versions || typeof versions !== 'object' || Array.isArray(versions)
+        || Object.keys(versions).length !== ids.length
+        || ids.some(id => !Object.hasOwn(versions, id) || !Number.isInteger((versions as Input)[id]) || Number((versions as Input)[id]) < 1)) {
+        throw new HttpError(409, '缺少完整的待发布目标版本，请刷新页面并重新打开发布预览后确认', 'VERSION_CONFLICT')
+      }
+      const reason = text(input.reason, '发布原因', false) || '部门月计划发布'
+      // Validate the exact preview before any status, audit, notification or snapshot write.
+      const plans = ids.map(id => this.current<MonthlyPlan>('plans', id, { version: (versions as Input)[id] }))
       for (const plan of plans) {
         if (plan.month !== period || plan.status !== 'approved') throw new HttpError(409, '只能发布所属月份内已审核通过的计划，请刷新后重试')
         if (plan.projectId) this.activeProject(plan.projectId)
