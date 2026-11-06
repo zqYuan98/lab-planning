@@ -4,7 +4,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { ImportBatch, ImportRow } from '../shared/import-types.ts'
 import type { Task } from '../shared/types.ts'
-import { canRequestImportReview, currentImportSourceRelations, importAnalysisRequest, importCommitBlockers, dingtalkConfirmedExclusions, dingtalkSourceRelations, dingtalkSourceReviewReady, importDisplayCounts, importedDraftMonths, importReconciliationText, importReviewCounts, importReviewRequired, importRowOutcomeLabel, importWorkFields, newImportCandidate, restoredImportOptions, selectImportTask } from '../src/import-review.ts'
+import { canRequestImportReview, currentImportSourceRelations, importAnalysisRequest, importCommitBlockers, dingtalkConfirmedExclusions, dingtalkReviewPresentation, dingtalkSourceRelations, dingtalkSourceReviewReady, importDisplayCounts, importedDraftMonths, importReconciliationText, importReviewCounts, importReviewRequired, importRowOutcomeLabel, importWorkFields, newImportCandidate, restoredImportOptions, selectImportTask } from '../src/import-review.ts'
 import ImportSourceReview from '../src/components/ImportSourceReview.tsx'
 import ImportWorkflowProgress from '../src/components/ImportWorkflowProgress.tsx'
 import type { DingTalkImportReviewRow } from '../shared/dingtalk-monthly-api.ts'
@@ -248,4 +248,35 @@ test('source relationship display fails closed while loading and never reuses an
   assert.deepEqual(currentImportSourceRelations(value, { ...state, ready: false, relations: undefined }), pending)
   assert.deepEqual(currentImportSourceRelations({ ...value, status: 'committed' }, state), {})
   assert.deepEqual(currentImportSourceRelations({ ...value, dingtalk: undefined }, state), {})
+})
+
+test('saved source decisions replace ambiguous labels and reconcile links separately from prior imports', () => {
+  const base: DingTalkImportReviewRow = { rowId: 'new', sourceRow: 2, title: '目标', status: 'new', reason: '', plans: [{ id: 'old', title: '目标', month: '2026-11', ownerName: '负责人' }], requiresResolution: false }
+  const candidates = [row('new'), row('linked', { selected: false }), row('excluded', { selected: false }), row('confirmed-new'), row('imported', { selected: false })]
+  const review = { rows: [base,
+    { ...base, rowId: 'linked', status: 'ambiguous' as const, resolution: { action: 'link' as const, planId: 'old', reason: '同一目标' } },
+    { ...base, rowId: 'excluded', status: 'ambiguous' as const, resolution: { action: 'exclude' as const, reason: '本月不纳入' } },
+    { ...base, rowId: 'confirmed-new', status: 'ambiguous' as const, resolution: { action: 'new' as const, reason: '独立事项' } },
+    { ...base, rowId: 'imported', status: 'imported' as const },
+  ] }
+  const display = dingtalkReviewPresentation(review, candidates)
+  assert.equal(display.rows.linked.label, '已关联已有目标')
+  assert.equal(display.rows.excluded.label, '已确认排除')
+  assert.equal(display.rows['confirmed-new'].label, '已确认新增')
+  assert.equal(display.rows.imported.label, '已导入')
+  assert.deepEqual(display.counts, { new: 2, imported: 1, linked: 1, pending: 0, excluded: 1 })
+  assert.equal(review.rows[1].status, 'ambiguous', 'saved decisions do not rewrite the original diff classification')
+  assert.equal(dingtalkSourceReviewReady(review, candidates), true)
+})
+
+test('source summary withholds conclusions during reload and returns invalidated decisions to pending', () => {
+  const candidate = row('a', { selected: false })
+  const resolved: DingTalkImportReviewRow = { rowId: 'a', sourceRow: 2, title: '目标', status: 'ambiguous', reason: '', plans: [], requiresResolution: false, resolution: { action: 'link', planId: 'old', reason: '已核对' } }
+  assert.deepEqual(dingtalkReviewPresentation(null, [candidate]), { rows: {}, counts: null })
+  for (const [reviewRow, currentCandidate] of [[{ ...resolved, requiresResolution: true }, candidate], [resolved, { ...candidate, selected: true }]] as const) {
+    const display = dingtalkReviewPresentation({ rows: [reviewRow] }, [currentCandidate])
+    assert.equal(display.rows.a.label, '等待确认来源关系')
+    assert.deepEqual(display.counts, { new: 0, imported: 0, linked: 0, pending: 1, excluded: 0 })
+    assert.equal(dingtalkSourceReviewReady({ rows: [reviewRow] }, [currentCandidate]), false)
+  }
 })

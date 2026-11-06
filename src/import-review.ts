@@ -54,6 +54,29 @@ export function dingtalkSourceRelations(review: Pick<DingTalkBatchReview, 'rows'
   return relations
 }
 
+/** Source diff classifications stay unchanged after resolution; display the effective decision instead. */
+export function dingtalkReviewPresentation(review: Pick<DingTalkBatchReview, 'rows'> | null, candidates: ImportRow[]) {
+  const labels = { pending: '等待确认来源关系', linked: '已关联已有目标', excluded: '已确认排除', confirmedNew: '已确认新增', new: '新增', imported: '已导入' }
+  const rows: Record<string, { label: string; tone: 'orange' | 'green' | 'neutral' }> = {}
+  if (!review) return { rows, counts: null }
+  const counts = { new: 0, imported: 0, linked: 0, pending: 0, excluded: 0 }
+  const relations = dingtalkSourceRelations(review, candidates)
+  const byId = new Map(candidates.map(row => [row.id, row]))
+  for (const row of review.rows) {
+    const candidate = byId.get(row.rowId)
+    const status = relations[row.rowId] === 'pending' ? 'pending'
+      : row.resolution?.action === 'link' ? 'linked'
+        : candidate?.result ? 'imported'
+          : relations[row.rowId] === 'excluded' ? 'excluded'
+            : row.resolution?.action === 'new' ? 'confirmedNew'
+              : row.status === 'imported' ? 'imported'
+                : row.status === 'new' ? 'new' : 'pending'
+    counts[status === 'confirmedNew' ? 'new' : status]++
+    rows[row.rowId] = { label: labels[status], tone: status === 'pending' ? 'orange' : status === 'linked' || status === 'imported' ? 'green' : 'neutral' }
+  }
+  return { rows, counts }
+}
+
 /** An unfinished read must not reuse another batch/version's decisions. */
 export function currentImportSourceRelations(batch: ImportBatch | null | undefined, review: ImportSourceReviewState | null): ImportSourceRelations {
   if (!batch?.dingtalk || batch.status === 'committed') return {}
