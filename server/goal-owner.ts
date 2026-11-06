@@ -18,7 +18,7 @@ export class GoalOwnerService {
     try {
       return this.store.transaction(() => {
         const context = pageContext(this.store, actor), plan = this.store.get<MonthlyPlan>('plans', id)
-        if (!plan || plan.visibility || plan.status === 'merged' || !isManager(context.actor) && plan.ownerId !== context.actor.id) throw new HttpError(404, '当前目标不存在或负责人权限已失效', 'ACCESS_REVOKED')
+        if (!plan || plan.deletion || plan.visibility || plan.status === 'merged' || !isManager(context.actor) && plan.ownerId !== context.actor.id) throw new HttpError(404, '当前目标不存在或负责人权限已失效', 'ACCESS_REVOKED')
         const value = load(context, plan)
         const rows = (value as { items?: { id: string }[] }).items ?? []
         this.store.recordObjectRead({ actorId: context.actor.id, action, objectType: taskId ? 'task' : 'monthlyPlan', objectId: taskId ?? id, authorizedGoalId: id, objectIds: rows.map(row => row.id), outcome: 'allowed' })

@@ -28,7 +28,7 @@ export class CarryWorkflowService extends DomainBase {
   private actor(actor: User) { const current = assertBusinessActor(this.store, actor); manager(current); return current }
   private source(id: unknown, targetMonth: string) {
     const source = this.need<MonthlyPlan>('plans', text(id, '来源目标'))
-    if (source.status === 'merged' || source.visibility) throw new HttpError(400, '请从有效月度目标发起跨期处理')
+    if (source.deletion || source.status === 'merged' || source.visibility) throw new HttpError(400, '请从有效月度目标发起跨期处理')
     if (source.acceptanceStatus === 'accepted') throw new HttpError(400, '已验收成果不能作为未完成事项承接')
     if (targetMonth <= source.month) throw new HttpError(400, '承接月份必须晚于来源月份')
     return source
@@ -41,7 +41,7 @@ export class CarryWorkflowService extends DomainBase {
       const taskIds = new Set(tasks.map(task => task.id))
       const records = this.store.list<WeeklyRecord>('weeklyRecords').filter(row => taskIds.has(row.taskId))
       const history = submittedWeeklyEvidence(this.store)
-      return { source, targetMonth, candidates: this.store.list<MonthlyPlan>('plans').filter(plan => plan.sourcePlanId === source.id && plan.month === targetMonth && plan.status !== 'merged' && !plan.visibility),
+      return { source, targetMonth, candidates: this.store.list<MonthlyPlan>('plans').filter(plan => !plan.deletion && plan.sourcePlanId === source.id && plan.month === targetMonth && plan.status !== 'merged' && !plan.visibility),
         tasks, records, taskManifest: entries(tasks), recordManifest: entries(records), previouslySubmittedIds: records.filter(row => row.submitted || history.ids.has(row.id)).map(row => row.id).sort() }
     })
   }
@@ -69,9 +69,9 @@ export class CarryWorkflowService extends DomainBase {
       let target: MonthlyPlan
       if (payload.targetPlanId) {
         target = this.need<MonthlyPlan>('plans', payload.targetPlanId)
-        if (target.sourcePlanId !== source.id || target.month !== payload.targetMonth || target.status === 'merged' || target.visibility) throw new HttpError(409, '承接目标的来源、月份或状态不符合当前流程')
+        if (target.deletion || target.sourcePlanId !== source.id || target.month !== payload.targetMonth || target.status === 'merged' || target.visibility) throw new HttpError(409, '承接目标的来源、月份或状态不符合当前流程')
       } else {
-        if (!payload.split && this.store.list<MonthlyPlan>('plans').some(plan => plan.sourcePlanId === source.id && plan.month === payload.targetMonth && plan.status !== 'merged')) {
+        if (!payload.split && this.store.list<MonthlyPlan>('plans').some(plan => !plan.deletion && plan.sourcePlanId === source.id && plan.month === payload.targetMonth && plan.status !== 'merged')) {
           throw new HttpError(409, '该月已有承接目标，请选择已有目标或明确拆分承接')
         }
         target = new MonthlyService(this.store).carry(actor, source.id, { requestId: `workflow_${request.key}`, sourceVersion: source.version,
@@ -102,13 +102,13 @@ export class CarryWorkflowService extends DomainBase {
       const allTasks = this.store.list<Task>('tasks'), tasks = allTasks.filter(task => task.monthlyPlanId === source.id || workflow.selectedTaskIds.includes(task.id))
       const taskIds = new Set(tasks.map(task => task.id)), records = this.store.list<WeeklyRecord>('weeklyRecords').filter(row => taskIds.has(row.taskId))
       const terminal = ['completed', 'cancelled'].includes(workflow.status)
-      const targetValid = target.status === 'published' && !target.visibility && target.sourcePlanId === source.id && target.month === workflow.targetMonth
-      const sourceValid = source.status !== 'merged' && !source.visibility && source.acceptanceStatus !== 'accepted' && workflow.targetMonth > source.month
+      const targetValid = !target.deletion && target.status === 'published' && !target.visibility && target.sourcePlanId === source.id && target.month === workflow.targetMonth
+      const sourceValid = !source.deletion && source.status !== 'merged' && !source.visibility && source.acceptanceStatus !== 'accepted' && workflow.targetMonth > source.month
       const status = terminal ? workflow.status : !sourceValid ? 'preparing' : targetValid ? 'ready' : 'awaiting_publication'
       const sourceChanges = [...new Set([...Object.keys(workflow.sourceSnapshot), ...Object.keys(source)])].filter(key => !['updatedAt', 'version'].includes(key)
         && fingerprint((workflow.sourceSnapshot as unknown as Input)[key]) !== fingerprint((source as unknown as Input)[key]))
       return { workflow: { ...workflow, status }, source, target, tasks, records, sourceChanged: source.version !== workflow.sourceVersionAtStart, sourceChanges, canApply: !terminal && sourceValid && targetValid,
-        ...(!sourceValid && !terminal ? { blockedReason: '来源目标已验收、已合并或不再有效，请先核对来源；当前流程不能关联任务。' } : {}) }
+        ...(!sourceValid && !terminal ? { blockedReason: '来源目标已删除、已验收、已合并或不再有效，请先核对来源；当前流程不能关联任务。' } : {}) }
     })
   }
   private selection(input: Input): CarrySelection {

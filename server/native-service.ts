@@ -12,7 +12,7 @@ import { createDingTalkNativeClient, type DingTalkNativeClient } from './dingtal
 import { getNativeSettings, nativeCapabilityState, nativeManager, verifiedNativeIdentity } from './native-settings.ts'
 import { projectWeeklyDuty } from './weekly-duty-view.ts'
 import type { WeeklyDuty, WeeklyRule } from '../shared/weekly-submissions.ts'
-import type { NotificationDigest } from '../shared/collaboration-notifications.ts'
+import type { DigestItem, NotificationDigest } from '../shared/collaboration-notifications.ts'
 import { visibleDigestItems } from './collaboration-content.ts'
 import { isManager, isObserver } from './authorization.ts'
 
@@ -24,14 +24,33 @@ function canonical(value: unknown): unknown {
 export const nativeHash = (value: unknown) => createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex')
 export function nativeClip(value: string, bytes: number) { let result = ''; for (const char of notificationText(value)) { if (Buffer.byteLength(result + char) > bytes - 3) return `${result}…`; result += char } return result }
 export function nativeUrl(notificationId: string) { const origin = appOrigin(); if (!origin || origin.protocol !== 'https:') throw new HttpError(409, '原生渠道需要HTTPS入口'); const url = new URL('/entry', origin); url.searchParams.set('notificationId', notificationId); return url.href }
-export function nativeDesired(store: Store, recipientId: string, action: NativeActionRef): NativeDesiredState | undefined {
+/** Match only the original single obligation; do not reopen the deleted notification's content. */
+function notificationReferencesPlan(store: Store, note: Notification, planId: string): boolean {
+  if (note.targets.length !== 1) return false
+  const target = note.targets[0]
+  if (target.type === 'plan') return target.id === planId
+  if (target.type !== 'digest') return false
+  const digest = store.get<NotificationDigest>('notificationDigests', target.id)
+  if (!digest || digest.recipientId !== note.recipientId || digest.itemIds.length !== 1) return false
+  const item = store.get<DigestItem>('digestItems', digest.itemIds[0])
+  return !!item && item.recipientId === note.recipientId && item.target.type === 'plan' && item.target.id === planId
+}
+export function nativeDesired(store: Store, recipientId: string, action: NativeActionRef, existingLink?: ExternalObjectLink): NativeDesiredState | undefined {
   const actor = store.get<User>('users', recipientId)
   if (!actor || !canUseAccount(actor) || isObserver(actor)) return
   let title = '', summary = '', done = false, dueTime: number | undefined, state: unknown
   const note = store.get<Notification>('notifications', action.notificationId)
   if (!note || note.recipientId !== actor.id) return
+  const monthly = action.kind === 'review' || action.kind === 'acceptance' ? store.get<MonthlyPlan>('plans', action.id) : undefined
+  // Only refresh of an already-persisted link may close a deleted obligation. New delivery
+  // and recreation pass no link. The caller has already checked binding/activation eligibility.
+  const persisted = existingLink && store.get<ExternalObjectLink>('nativeLinks', existingLink.id)
+  const deletedClosure = !!monthly?.deletion && isManager(actor) && !!persisted && persisted.recipientId === actor.id
+    && !['isolated', 'failed', 'external_missing'].includes(persisted.state) && nativeHash(persisted.action) === nativeHash(action)
+    && notificationReferencesPlan(store, note, monthly.id)
+  if (monthly?.deletion && !deletedClosure) return
   const view = getNotification(store, actor, note.id)
-  if (view.unavailable) return
+  if (view.unavailable && !deletedClosure) return
   if (action.kind === 'acknowledge') {
     title = `确认收到：${view.content?.items[0]?.title ?? view.title}`
     summary = view.body; done = !view.canAcknowledge; state = view.confirmationToken ?? view.acknowledgedAt ?? view.supersededAt
@@ -45,10 +64,11 @@ export function nativeDesired(store: Store, recipientId: string, action: NativeA
     const progress = store.list<ProgressEvent>('progressEvents').filter(row => row.taskId === task.id && row.ownerId === actor.id && row.meaningfulOwnerProgress && row.occurredAt >= note.createdAt).at(-1)
     title = `更新进展：${task.title}`; summary = view.body; done = !!progress; state = [task.version, progress?.id]
   } else if (action.kind === 'review' || action.kind === 'acceptance') {
-    const plan = store.get<MonthlyPlan>('plans', action.id)
+    const plan = monthly
     if (!plan || !isManager(actor)) return
-    title = `${action.kind === 'review' ? '审核目标' : '验收成果'}：${plan.title}`; summary = plan.expectedOutcome
-    done = action.kind === 'review' ? plan.status !== 'submitted' : plan.acceptanceStatus !== 'submitted'; state = plan.version
+    title = `${deletedClosure ? '月度目标已删除' : action.kind === 'review' ? '审核目标' : '验收成果'}：${plan.title}`
+    summary = deletedClosure ? `此月度目标已删除，原${action.kind === 'review' ? '审核' : '验收'}待办已结束。历史记录保留在平台。` : plan.expectedOutcome
+    done = deletedClosure || (action.kind === 'review' ? plan.status !== 'submitted' : plan.acceptanceStatus !== 'submitted'); state = plan.version
   } else if (action.kind === 'weekly') {
     const duty = store.get<WeeklyDuty>('weeklyDuties', action.id)
     if (!duty || duty.ownerId !== actor.id) return
@@ -89,6 +109,7 @@ function inferredAction(store: Store, note: Notification): NativeActionRef | und
   if (target.type === 'task' && note.kind === 'collaboration_risk_member') return { kind: 'progress', id: note.id, taskId: target.id, notificationId: note.id }
   if (target.type === 'plan' && isManager(actor)) {
     const plan = store.get<MonthlyPlan>('plans', target.id)
+    if (plan?.deletion) return
     if (plan?.status === 'submitted') return { kind: 'review', id: target.id, notificationId: note.id }
     if (plan?.acceptanceStatus === 'submitted') return { kind: 'acceptance', id: target.id, notificationId: note.id }
   }
@@ -152,25 +173,28 @@ export function linkEligible(store: Store, link: ExternalObjectLink, client: Din
   const settings = getNativeSettings(store), identity = verifiedNativeIdentity(store, link.recipientId, client)
   return nativeCapabilityState(store, client)[link.channel].enabled && settings.pilotUserIds.includes(link.recipientId) && settings.activationId === link.activationId && settings.deploymentId === link.deploymentId && link.deploymentId === process.env.DINGTALK_DEPLOYMENT_ID && !!identity && identity.identityId === link.bindingId && identity.bindingVersion === link.bindingVersion && identity.unionId === link.unionId && link.corpId === client.corpId && link.appId === client.appId
 }
-export function refreshNativeLinks(store: Store, client: DingTalkNativeClient, now = new Date()) {
-  for (const link of store.list<ExternalObjectLink>('nativeLinks')) {
-    if (['isolated', 'external_missing', 'failed'].includes(link.state)) continue
-    if (!linkEligible(store, link, client)) {
-      store.update<ExternalObjectLink>('nativeLinks', link.id, link.version, { state: 'isolated', lastError: '权限、配置或绑定代际已变化，等待核查' }); continue
-    }
-    const desired = nativeDesired(store, link.recipientId, link.action)
-    if (!desired) { store.update<ExternalObjectLink>('nativeLinks', link.id, link.version, { state: 'isolated', lastError: '事项已不可访问，停止外部操作' }); continue }
-    if (desired.done && !link.providerId && link.state !== 'unknown') {
-      if (link.state !== 'closed') store.update<ExternalObjectLink>('nativeLinks', link.id, link.version, { desired, state: 'closed', lastError: '义务已在平台处理，未创建外部对象' })
-      for (const operation of store.list<ChannelOperation>('nativeOperations')) if (operation.linkId === link.id && operation.status === 'pending') store.update<ChannelOperation>('nativeOperations', operation.id, operation.version, { status: 'cancelled', lastError: '义务已在平台处理' })
-      continue
-    }
-    if (desired.revision !== link.desired.revision) {
-      const next = store.update<ExternalObjectLink>('nativeLinks', link.id, link.version, { desired, state: link.state === 'unknown' ? 'unknown' : 'pending_update' })
-      // An uncertain creation/delivery must be reconciled, never replaced by a new send.
-      if (link.state !== 'unknown') enqueueNativeOperation(store, next, link.providerId ? link.channel === 'todo' ? 'todo_update' : 'card_update' : link.channel === 'todo' ? 'todo_create' : 'card_create', now)
-    }
+/** Refresh one obligation immediately before sending, including after another awaited provider call. */
+export function refreshNativeLink(store: Store, client: DingTalkNativeClient, id: string, now = new Date()) {
+  const link = store.get<ExternalObjectLink>('nativeLinks', id)
+  if (!link || ['isolated', 'external_missing', 'failed'].includes(link.state)) return
+  if (!linkEligible(store, link, client)) {
+    store.update<ExternalObjectLink>('nativeLinks', link.id, link.version, { state: 'isolated', lastError: '权限、配置或绑定代际已变化，等待核查' }); return
   }
+  const desired = nativeDesired(store, link.recipientId, link.action, link)
+  if (!desired) { store.update<ExternalObjectLink>('nativeLinks', link.id, link.version, { state: 'isolated', lastError: '事项已不可访问，停止外部操作' }); return }
+  if (desired.done && !link.providerId && link.state !== 'unknown') {
+    if (link.state !== 'closed') store.update<ExternalObjectLink>('nativeLinks', link.id, link.version, { desired, state: 'closed', lastError: '义务已在平台处理，未创建外部对象' })
+    for (const operation of store.list<ChannelOperation>('nativeOperations')) if (operation.linkId === link.id && operation.status === 'pending') store.update<ChannelOperation>('nativeOperations', operation.id, operation.version, { status: 'cancelled', lastError: '义务已在平台处理' })
+    return
+  }
+  if (desired.revision !== link.desired.revision) {
+    const next = store.update<ExternalObjectLink>('nativeLinks', link.id, link.version, { desired, state: link.state === 'unknown' ? 'unknown' : 'pending_update' })
+    // An uncertain creation/delivery must be reconciled, never replaced by a new send.
+    if (link.state !== 'unknown') enqueueNativeOperation(store, next, link.providerId ? link.channel === 'todo' ? 'todo_update' : 'card_update' : link.channel === 'todo' ? 'todo_create' : 'card_create', now)
+  }
+}
+export function refreshNativeLinks(store: Store, client: DingTalkNativeClient, now = new Date()) {
+  for (const link of store.list<ExternalObjectLink>('nativeLinks')) refreshNativeLink(store, client, link.id, now)
 }
 export function recreateNativeLink(store: Store, actor: User, id: string, client: DingTalkNativeClient, now = new Date()) {
   nativeManager(store, actor)

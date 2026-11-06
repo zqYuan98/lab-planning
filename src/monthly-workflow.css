@@ -7,6 +7,13 @@
 .monthly-publish-controls p { margin: 0; font-size: 13px; line-height: 1.55; color: #53647c; }
 .monthly-plan-actions { gap: 8px; min-width: 170px; }
 .monthly-plan-actions > button { min-height: 36px; padding: 7px 10px; }
+.monthly-review-deletion { margin-top: 20px; padding-top: 16px; border-top: 1px solid #d9e2ed; }
+.monthly-review-deletion p, .monthly-deletion-blockers p { color: #53647c; line-height: 1.65; }
+.monthly-deletion-blockers { margin: 16px 0; padding: 16px; border: 1px solid #e6cbbb; border-radius: 8px; background: #fff8f1; }
+.monthly-deletion-blockers li { margin-top: 8px; line-height: 1.6; }
+.monthly-deletion-dialog .button, .monthly-review-deletion .button { min-height: 42px; padding: 10px 16px; }
+.monthly-deletion-notice p { overflow-wrap: anywhere; }
+.monthly-deletion-dialog .context-box { overflow-wrap: anywhere; }
 @media (max-width: 700px) {
   .monthly-publish-controls { max-width: none; align-items: stretch; width: 100%; }
   .monthly-workflow-panel { padding: 16px; }
@@ -14,4 +21,6 @@
   .monthly-workflow-actions .button,
   .monthly-publish-controls .button,
   .monthly-plan-actions > button { min-height: 44px; min-width: 44px; }
+  .monthly-deletion-dialog .button, .monthly-review-deletion .button { min-height: 44px; }
+  .modal:has(.monthly-deletion-dialog) .icon-button { min-height: 44px; min-width: 44px; }
 }

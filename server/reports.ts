@@ -46,7 +46,7 @@ export function buildReportSnapshot(store: Store, type: Report['type'], period: 
   const end = type === 'weekly' ? addDays(period, 6) : `${shiftMonth(period, 1)}-01`
   const firstMonth = period.slice(0, 7)
   const lastMonth = type === 'weekly' ? end.slice(0, 7) : firstMonth
-  const allPlans = store.list<MonthlyPlan>('plans')
+  const allPlans = store.list<MonthlyPlan>('plans').filter(plan => !plan.deletion)
   const weeklyRecords = store.list<WeeklyRecord>('weeklyRecords').filter(isActiveWeeklyRecord).filter(record => type === 'weekly'
     ? record.weekStart === period : record.weekStart < end && addDays(record.weekStart, 6) >= `${period}-01`)
   const linkedIds = new Set(weeklyRecords.map(r => r.monthlyPlanId).filter(Boolean))

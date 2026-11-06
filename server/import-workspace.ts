@@ -26,7 +26,7 @@ export class ImportWorkspaceService {
       if (kind === 'users') predicates.push(activeUser('e'))
       if (kind === 'projects') predicates.push(`${field('status')}='active'`)
       if (kind === 'plans') {
-        predicates.push(`${field('status')}<>'merged'`, `COALESCE(${field('visibility')},'') NOT IN ('reference','historical')`)
+        predicates.push(`${field('deletion')} IS NULL`, `${field('status')}<>'merged'`, `COALESCE(${field('visibility')},'') NOT IN ('reference','historical')`)
         if (!isManager(actor)) { predicates.push(`(${field('ownerId')}=? OR EXISTS(SELECT 1 FROM json_each(e.data,'$.collaboratorIds') c WHERE c.value=?))`, `(${field('projectId')} IS NULL OR ${field('projectId')}='' OR EXISTS(SELECT 1 FROM entities p WHERE p.collection='projects' AND p.id=${field('projectId')} AND ${field('status', 'p')}='active'))`); values.push(actor.id, actor.id) }
         if (month) { predicates.push(`${field('month')}=?`); values.push(month) }
       }

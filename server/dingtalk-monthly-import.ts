@@ -5,6 +5,7 @@ import type { DingTalkDocumentDiscovery, DingTalkDocumentCandidate, DingTalkBatc
 import type { DingTalkSheetSnapshot, DingTalkMonthlyMapping, DingTalkImportedItem } from '../shared/dingtalk-documents.ts'
 import type { DingTalkDocumentsClient } from './dingtalk-documents-client.ts'
 import { managerActor } from './authorization.ts'
+import { isActiveMonthlyPlan } from '../shared/monthly-plan-state.ts'
 import { HttpError, Store } from './store.ts'
 import { ImportService } from './import-service.ts'
 import { mapMonthlySheet, monthlySourceRule, compareMonthlyRows } from './dingtalk-monthly-mapping.ts'
@@ -91,7 +92,7 @@ export class DingTalkMonthlyImportService {
   }
   private plans(month: string) {
     const users = this.store.list<User>('users')
-    return this.store.list<MonthlyPlan>('plans').filter(plan => plan.month === month).map(plan => ({ ...plan, ownerName: users.find(user => user.id === plan.ownerId)?.name ?? '' }))
+    return this.store.list<MonthlyPlan>('plans').filter(plan => plan.month === month && isActiveMonthlyPlan(plan)).map(plan => ({ ...plan, ownerName: users.find(user => user.id === plan.ownerId)?.name ?? '' }))
   }
   private resolutionFingerprint(row: ImportRow, status: string, plans: { id: string; version: number }[]) {
     return digest({ title: row.title, ownerId: row.ownerId, month: row.month, status, plans: plans.map(plan => [plan.id, plan.version]) })
@@ -106,16 +107,20 @@ export class DingTalkMonthlyImportService {
       // Edits may introduce a duplicate which did not exist in the original sheet.
       const editedMatches = plans.filter(plan => normalizedTitle(plan.title) === normalizedTitle(row.title) && plan.id !== row.result?.id)
       const matching = plans.filter(plan => item.planIds.includes(plan.id) || item.status === 'new' && editedMatches.some(match => match.id === plan.id))
-      const status = item.status === 'new' && matching.length ? 'ambiguous' as const : item.status
       const stored = this.store.get<Resolution>('dingtalkImportResolutions', digest([id, row.id]))
+      const deletedSource = [...item.planIds, ...(stored?.planId ? [stored.planId] : [])].some(planId => {
+        const plan = this.store.get<MonthlyPlan>('plans', planId)
+        return !!plan && !isActiveMonthlyPlan(plan)
+      })
+      const status = item.status === 'new' && matching.length ? 'ambiguous' as const : item.status
       const fingerprint = this.resolutionFingerprint(row, status, matching)
       const resolution = stored?.fingerprint === fingerprint ? { action: stored.action, planId: stored.planId, reason: stored.reason } : undefined
       const old = prior.find(value => item.priorSourceKeys.includes(value.sourceKey))
       const previousSourceText = old?.sourceText ?? matching.map(plan => `${plan.title}\n预期成果：${plan.expectedOutcome}\n验收标准：${plan.acceptanceCriteria}\n截止日期：${plan.dueDate}`).join('\n\n')
       return { rowId: row.id, sourceRow: row.sourceRow, title: row.title, status,
-        reason: status !== item.status ? '校对后的标题与同月已有目标重复，请核对' : item.reason,
+        reason: deletedSource ? '原目标已删除，请排除此来源并核对保留的目标' : status !== item.status ? '校对后的标题与同月已有目标重复，请核对' : item.reason,
         previousSourceText, plans: matching.map(plan => ({ id: plan.id, title: plan.title, ownerName: plan.ownerName, month: plan.month })), resolution,
-        requiresResolution: !row.result && (status === 'changed' || status === 'ambiguous' || status === 'imported' && matching.length !== 1) && !resolution }
+        requiresResolution: !row.result && (status === 'changed' || status === 'ambiguous' || status === 'imported' && matching.length !== 1 || !!stored && stored.fingerprint !== fingerprint) && !resolution }
     })
     const counts = { new: 0, imported: 0, changed: 0, ambiguous: 0 }
     rows.forEach(row => counts[row.status]++)

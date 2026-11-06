@@ -9,7 +9,7 @@ export function weeklyPageQuery(value: { weekStart: string; ownerId: string; sta
   return params.toString()
 }
 export function monthlyPageQuery(value: { month: string; scope: string; status: string; q: string; includeInactive: boolean; id?: string }) {
-  const params = new URLSearchParams({ month: value.month, scope: value.scope, status: value.scope === 'historical' ? 'all' : value.status, q: value.q, includeInactive: String(value.includeInactive) })
+  const params = new URLSearchParams({ month: value.month, scope: value.scope, status: value.scope !== 'current' ? 'all' : value.status, q: value.q, includeInactive: String(value.includeInactive) })
   if (value.id) params.set('id', value.id)
   return params.toString()
 }

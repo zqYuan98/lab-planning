@@ -3,6 +3,7 @@ import type { Entity, MonthlyPlan, Project, Publication, Report, Task, User, Wee
 import { canUseAccount } from '../shared/auth-policy.ts'
 import { isActiveWeeklyRecord, isWeeklyPlanReviewCycle } from '../shared/weekly-record-state.ts'
 import { isActiveTask } from '../shared/task-state.ts'
+import { isActiveMonthlyPlan } from '../shared/monthly-plan-state.ts'
 import { addWeekDays } from './weekly-submission-clock.ts'
 import { manager } from './domain-common.ts'
 import { isMember, managerActor } from './authorization.ts'
@@ -49,6 +50,10 @@ function semanticIssues(name: TransferCollection, input: unknown, issue: (messag
     if (new Set(plan.collaboratorIds).size !== plan.collaboratorIds.length || plan.collaboratorIds.includes(plan.ownerId)) issue(`${label}：负责人或协作者映射后重复`)
     if (plan.status === 'published' && plan.publishedVersion === null) issue(`${label}：已发布计划缺少发布版本`)
     if (plan.status === 'merged' && !plan.mergedIntoId) issue(`${label}：已合并计划缺少目标计划`)
+    if (plan.deletion) {
+      if (!['draft', 'returned', 'submitted', 'approved'].includes(plan.status) || plan.publishedVersion !== null || plan.mergedIntoId || plan.mergedFromIds?.length) issue(`${label}：已删除月目标必须为未发布且未合并的目标`)
+      if (Date.parse(plan.deletion.deletedAt) < Date.parse(plan.createdAt) || Date.parse(plan.deletion.deletedAt) > Date.parse(plan.updatedAt)) issue(`${label}：删除时间不在目标创建和更新时间之间`)
+    }
     if (['accepted', 'submitted'].includes(plan.acceptanceStatus) && !plan.actualOutcome.trim()) issue(`${label}：已提交或验收成果缺少实际成果`)
   }
   if (name === 'tasks') {
@@ -238,9 +243,15 @@ function inspectRestore(store: Store, packet: BusinessDataPacket, requestedMappi
   }
   // Check the merged live state, including references already present in the
   // target. Historical report/audit/receipt snapshots keep their original facts.
+  for (const task of available.tasks.values() as Iterable<Task>) {
+    const plan = task.monthlyPlanId ? plans.get(task.monthlyPlanId) : undefined
+    if (plan && !isActiveMonthlyPlan(plan) && isActiveTask(task)) issue(`tasks/${task.id}：已删除月目标不能保留有效任务`)
+  }
   for (const row of available.weeklyRecords.values() as Iterable<WeeklyRecord>) {
     const task = tasks.get(row.taskId)
     if (task && !isActiveTask(task) && isActiveWeeklyRecord(row)) issue(`weeklyRecords/${row.id}：已作废任务不能保留有效周安排`)
+    const plan = row.monthlyPlanId ? plans.get(row.monthlyPlanId) : undefined
+    if (plan && !isActiveMonthlyPlan(plan) && isActiveWeeklyRecord(row)) issue(`weeklyRecords/${row.id}：已删除月目标不能保留有效周安排`)
   }
   const unique = <T extends Entity>(name: TransferCollection, key: (row: T) => string, include: (row: T) => boolean = () => true) => {
     const seen = new Map<string, string>()

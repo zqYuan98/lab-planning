@@ -25,12 +25,12 @@ export function readScopeVersion(store: Store, actor: User): string {
   // Start with owned goals. Unary + on the TEXT id removes affinity so SQLite can seek
   // the JSON-expression task index; identifiers themselves remain unchanged strings.
   const derived = isMember(current) ? store.selectRows(`SELECT
-    (SELECT json_group_array(id) FROM (SELECT id FROM entities WHERE collection='plans' AND json_extract(data,'$.ownerId')=? AND json_extract(data,'$.status')!='merged' AND json_extract(data,'$.visibility') IS NULL ORDER BY id)) AS plans,
+    (SELECT json_group_array(id) FROM (SELECT id FROM entities WHERE collection='plans' AND json_extract(data,'$.deletion') IS NULL AND json_extract(data,'$.ownerId')=? AND json_extract(data,'$.status')!='merged' AND json_extract(data,'$.visibility') IS NULL ORDER BY id)) AS plans,
     (SELECT json_group_array(json_array(id,goal,owner,memberAvailable)) FROM (
       SELECT t.id AS id,p.id AS goal,json_extract(t.data,'$.ownerId') AS owner,
         COALESCE(json_extract(u.data,'$.active')=1 AND json_extract(u.data,'$.role')='member' AND (json_extract(u.data,'$.registrationStatus') IS NULL OR json_extract(u.data,'$.registrationStatus')='approved'),0) AS memberAvailable
       FROM entities p CROSS JOIN entities t LEFT JOIN entities u ON u.collection='users' AND u.id=json_extract(t.data,'$.ownerId')
-      WHERE p.collection='plans' AND json_extract(p.data,'$.ownerId')=? AND json_extract(p.data,'$.status')!='merged' AND json_extract(p.data,'$.visibility') IS NULL
+      WHERE p.collection='plans' AND json_extract(p.data,'$.deletion') IS NULL AND json_extract(p.data,'$.ownerId')=? AND json_extract(p.data,'$.status')!='merged' AND json_extract(p.data,'$.visibility') IS NULL
         AND t.collection='tasks' AND json_extract(t.data,'$.monthlyPlanId')=+p.id AND json_extract(t.data,'$.cancellation') IS NULL ORDER BY t.id)) AS tasks,
     (SELECT version FROM entities WHERE collection='settings' AND id='weekly-review-delegation') AS delegation`, [current.id, current.id])[0] : null
   return createHash('sha256').update(JSON.stringify([current.id, current.version, current.role, grants, ...(derived ? [derived] : [])])).digest('hex')

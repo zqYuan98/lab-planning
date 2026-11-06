@@ -195,6 +195,22 @@ test('members request confirmation while only a manager can activate their exist
   assert.equal(plan.importSource!.sourceId, batch.sourceId)
 })
 
+for (const mode of ['draft', 'existing'] as const) test(`a deleted source target blocks ${mode} retries and rolls back earlier rows`, async t => {
+  const f = fixture(t)
+  const parsed = await parsedFile(t, f, [completeMonthly(f.member.id, { sourceRow: 2, title: '本次新增事项' }), completeMonthly(f.member.id, { sourceRow: 3, title: '随后删除事项' })])
+  const initial = f.service.edit(f.actor, parsed.batch.id, { version: parsed.batch.version, mode: 'draft', rows: parsed.batch.rows.map((row, index) => index === 0 ? { ...row, selected: false, exclusionReason: '暂不导入', exclusionKind: 'task' } : row), completionReview: { confirmed: true, sourceItemCount: 2 } })
+  const committed = f.service.commit(f.actor, initial.id, { version: initial.version })
+  const plan = f.store.get<MonthlyPlan>('plans', committed.rows[1].result!.id)!
+  f.domain.deletePlan(f.actor, plan.id, { version: plan.version, reason: '已确认重复' })
+  const copy = fork(f.store, f.actor, committed)
+  const analyzed = await f.service.analyze(f.actor, copy.id, { version: copy.version })
+  const next = setMode(f, analyzed, mode)
+  const collections = ['plans', 'historicalRecords', 'events', 'publications', 'importLinks', 'importBatches']
+  const before = collections.map(name => f.store.list(name))
+  assert.throws(() => f.service.commit(f.actor, next.id, { version: next.version }), /原目标已删除，请排除此来源并核对保留的目标/)
+  collections.forEach((name, index) => assert.deepEqual(f.store.list(name), before[index], `${name} must roll back atomically`))
+})
+
 test('another member cannot view, confirm, edit or commit somebody else\'s existing import source', t => {
   const f = fixture(t)
   const other = f.domain.createUser(f.actor, { name: '其他成员', email: 'other-existing@example.test', password: 'Synthetic-pass-2026!', position: '研发', role: 'member' })

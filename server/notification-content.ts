@@ -31,7 +31,7 @@ export function notificationSubject(store: Store, target: NotificationTarget, ac
   }
   if (target.type === 'plan') {
     const raw = store.get<MonthlyPlan>('plans', target.id)
-    if (!raw) return
+    if (!raw || raw.deletion) return
     const plan = projectPlan(actor, raw, store)
     return { target, title: notificationText(plan.title), ownerId: plan.ownerId, ownerName: name(store, plan.ownerId), context: `${plan.month} 月目标`,
       requirement: notificationText(plan.expectedOutcome), dueDate: plan.dueDate, acceptance: notificationText(plan.acceptanceCriteria),

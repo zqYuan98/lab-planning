@@ -45,6 +45,7 @@ export function projectPlan(actor: User, plan: MonthlyPlan, store?: PlanSourceRe
 /** Legacy task links may outlive all membership snapshots. Return a reference, never today's goal text. */
 export function planReference(plan: MonthlyPlan): MonthlyPlan {
   return {
+    ...(plan.deletion ? { deletion: { ...plan.deletion, reason: '目标已删除，删除原因不在当前查看范围' } } : {}),
     id: plan.id, month: plan.month, version: 1, createdAt: plan.createdAt, updatedAt: plan.createdAt, visibility: 'reference',
     title: '历史月度目标引用', projectId: null, category: '', ownerId: plan.ownerId, collaboratorIds: [],
     expectedOutcome: '', acceptanceCriteria: '', dueDate: '', priority: 'medium', status: 'draft',
@@ -62,7 +63,7 @@ export function visiblePlan(store: Store, actor: User, current: MonthlyPlan): Mo
     .map(value => planSnapshot(value, current.id))
     .filter((plan): plan is MonthlyPlan => !!plan && participates(plan, actor.id))
     .sort((a, b) => b.version - a.version)
-  return snapshots[0] ? { ...projectPlan(actor, snapshots[0], store), visibility: 'historical' } : undefined
+  return snapshots[0] ? { ...projectPlan(actor, snapshots[0], store), ...(current.deletion ? { deletion: { ...current.deletion, reason: '目标已删除，删除原因不在当前查看范围' } } : {}), visibility: 'historical' } : undefined
 }
 
 /** Response-local index; strict version comparison preserves the first equal-version snapshot.
@@ -94,7 +95,7 @@ export function planVisibilityProjector(store: Store, actor: User, sources: { pl
       if (isObserver(actor)) return undefined
       if (isManager(actor) || participates(current, actor.id)) return projectPlan(actor, current, reader)
       const snapshot = historical.get(current.id)
-      return snapshot ? { ...projectPlan(actor, snapshot, reader), visibility: 'historical' } : undefined
+      return snapshot ? { ...projectPlan(actor, snapshot, reader), ...(current.deletion ? { deletion: { ...current.deletion, reason: '目标已删除，删除原因不在当前查看范围' } } : {}), visibility: 'historical' } : undefined
     },
     publications: () => visiblePublications(actor, sources.publications, reader),
   }

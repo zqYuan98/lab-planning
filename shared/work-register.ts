@@ -196,7 +196,7 @@ export function buildWorkRegister(
   const linkedPlanIds = new Set([...ownTasks.values()].map(task => task.monthlyPlanId).filter(Boolean))
   const ownPlans = new Map<string, MonthlyPlan>()
   for (const plan of data.plans ?? []) {
-    if (plan.ownerId !== data.user.id || plan.visibility) continue
+    if (plan.ownerId !== data.user.id || plan.visibility || plan.deletion) continue
     const previous = ownPlans.get(plan.id)
     if (!previous || plan.version > previous.version || (plan.version === previous.version && plan.updatedAt > previous.updatedAt)) ownPlans.set(plan.id, plan)
   }

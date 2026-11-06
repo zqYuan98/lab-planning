@@ -11,6 +11,7 @@ import { collaborationWorkMutation, currentCollaborationMutation, validateCollab
 import { isSilentImport } from './import-notification-context.ts'
 import { isActiveWeeklyRecord, weeklyPlanFingerprint } from '../shared/weekly-record-state.ts'
 import { isActiveTask } from '../shared/task-state.ts'
+import { isActiveMonthlyPlan } from '../shared/monthly-plan-state.ts'
 import { weeklyPlanApprovalMetadata } from './weekly-plan-review.ts'
 import { cancelTaskCollaboration, endTaskRequests } from './collaboration-tracking.ts'
 import type { BlockerEpisode } from '../shared/collaboration.ts'
@@ -118,6 +119,7 @@ export class WorkService extends DomainBase {
   }
   private usablePlan(id: string, ownerId: string, published = false) {
     const plan = this.need<MonthlyPlan>('plans', id)
+    if (!isActiveMonthlyPlan(plan)) throw new HttpError(409, '月度目标已删除，不能再关联个人任务', 'PLAN_DELETED')
     if (plan.visibility === 'reference') throw new HttpError(400, '历史目标引用不能用于新增任务')
     if (plan.status === 'merged') throw new HttpError(400, '请关联合并后的月计划')
     if (!participates(plan, ownerId)) throw new HttpError(403, '任务负责人必须是月计划负责人或协作者')
@@ -156,6 +158,7 @@ export class WorkService extends DomainBase {
       const before = this.need<Task>('tasks', id)
       own(actor, before.ownerId)
       if (!isActiveTask(before)) throw new HttpError(409, '任务已作废，不能继续修改')
+      if (before.monthlyPlanId && !isActiveMonthlyPlan(this.need<MonthlyPlan>('plans', before.monthlyPlanId))) throw new HttpError(409, '关联月度目标已删除，请先由管理者核对任务关联', 'PLAN_DELETED')
       this.current<Task>('tasks', id, input)
       input = progressInput(this.store, input, 'task')
       for (const field of ['monthlyPlanId', 'ownerId', 'isTemporary', 'temporaryReason'] as const) {
@@ -251,6 +254,7 @@ export class WorkService extends DomainBase {
     // A null link can only be created from a reasoned temporary task; keep that historical exception after relinking.
     if (record.monthlyPlanId) {
       const plan = this.need<MonthlyPlan>('plans', record.monthlyPlanId)
+      if (!isActiveMonthlyPlan(plan)) throw new HttpError(409, '月度目标已删除，不能继续安排或提交周计划', 'PLAN_DELETED')
       if (record.submitted && plan.status !== 'published') throw new HttpError(400, '月计划尚未发布，可先保存周计划草稿')
       if (!this.overlapsMonth(record.weekStart, plan.month)) throw new HttpError(400, '所属周超出月计划月份，请先跨月承接月计划并由管理者调整任务关联')
     }
@@ -268,6 +272,7 @@ export class WorkService extends DomainBase {
       if (!task.monthlyPlanId && (!task.isTemporary || !task.temporaryReason)) throw new HttpError(400, '未关联月计划的任务需要临时工作原因')
       if (task.monthlyPlanId) {
         const plan = this.need<MonthlyPlan>('plans', task.monthlyPlanId)
+        if (!isActiveMonthlyPlan(plan)) throw new HttpError(409, '月度目标已删除，不能新增周安排', 'PLAN_DELETED')
         if (plan.projectId) this.activeProject(plan.projectId)
       }
       input = progressInput(this.store, input, 'weeklyRecord')
@@ -359,6 +364,7 @@ export class WorkService extends DomainBase {
       const before = this.need<WeeklyRecord>('weeklyRecords', id)
       own(actor, before.ownerId)
       if (!isActiveWeeklyRecord(before)) throw new HttpError(409, '周安排已删除，不能继续承接')
+      if (before.monthlyPlanId && !isActiveMonthlyPlan(this.need<MonthlyPlan>('plans', before.monthlyPlanId))) throw new HttpError(409, '关联月度目标已删除，不能继续承接周安排', 'PLAN_DELETED')
       const weekStart = monday(input.weekStart)
       if (weekStart <= before.weekStart) throw new HttpError(400, '承接周必须晚于原周')
       const record = this.createWeeklyRecord(actor, { taskId: before.taskId, weekStart, commitment: input.commitment ?? (before.nextAction || before.commitment), creationKind: input.creationKind, creationReason: input.creationReason })

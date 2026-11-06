@@ -7,6 +7,7 @@ import { bool, choice, date, manager, monday, month, participates, text } from '
 import { HttpError, Store } from './store.ts'
 import { isActiveWeeklyRecord } from '../shared/weekly-record-state.ts'
 import { isActiveTask } from '../shared/task-state.ts'
+import { isActiveMonthlyPlan } from '../shared/monthly-plan-state.ts'
 import { isManager } from './authorization.ts'
 import { LIMITS, WEEKLY_STATUSES, WORK_SOURCES } from '../shared/entity-rules.ts'
 
@@ -120,7 +121,8 @@ export function validateExistingRow(store: Store, actor: User, row: ImportRow, r
     if (planId) {
       const candidatePlan = store.get<MonthlyPlan>('plans', planId)
       const plan = candidatePlan && (isManager(actor) || participates(candidatePlan, actor.id)) ? candidatePlan : undefined
-      if (!plan || plan.status !== 'published') issues.push('关联月计划必须已生效')
+      if (plan && !isActiveMonthlyPlan(plan)) issues.push('原目标已删除，请排除此来源并核对保留的目标')
+      else if (!plan || plan.status !== 'published') issues.push('关联月计划必须已生效')
       else {
         if (plan.visibility === 'reference') issues.push('历史目标引用不能用于新增任务')
         if (!participates(plan, row.ownerId)) issues.push('负责人未参与所选月计划')
@@ -173,6 +175,7 @@ export class ExistingPlanWriter {
       if (row.kind !== 'monthly') throw new HttpError(400, '此行不是月计划')
       this.validate(row)
       const before = existingPlanId ? this.store.get<MonthlyPlan>('plans', existingPlanId) : undefined
+      if (before && !isActiveMonthlyPlan(before)) throw new HttpError(409, '原目标已删除，请排除此来源并核对保留的目标')
       if (existingPlanId && (!before || !this.untouchedDraft(before, row) || !['draft', 'returned', 'submitted', 'approved'].includes(before.status))) throw new HttpError(409, '原月计划已经变化或生效，请核对原记录后处理')
       if (before && (before.ownerId !== row.ownerId || before.month !== row.month)) throw new HttpError(409, '原月计划的负责人或月份与导入资料不一致')
       const period = month(row.month)

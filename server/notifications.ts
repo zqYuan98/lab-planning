@@ -60,7 +60,7 @@ export function targetAccessible(store: Store, actor: User, target: Notification
   }
   if (target.type === 'plan') {
     const row = store.get<MonthlyPlan>('plans', target.id)
-    return !!row && row.status !== 'merged' && (isManager(actor) || row.ownerId === actor.id || row.collaboratorIds.includes(actor.id))
+    return !!row && !row.deletion && row.status !== 'merged' && (isManager(actor) || row.ownerId === actor.id || row.collaboratorIds.includes(actor.id))
   }
   const row = store.get<Task | WeeklyRecord>(target.type === 'task' ? 'tasks' : 'weeklyRecords', target.id)
   return !!row && (target.type !== 'weeklyRecord' || isActiveWeeklyRecord(row as WeeklyRecord)) && (isManager(actor) || row.ownerId === actor.id)

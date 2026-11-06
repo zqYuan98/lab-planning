@@ -24,7 +24,7 @@ export function readImportContext(store: Store, actor: User) {
   return store.transaction(() => {
     actor = assertBusinessActor(store, actor)
     const manager = isManager(actor), directory = readImportDirectory(store, actor)
-    const plans = store.selectJson<MonthlyPlan>(`SELECT p.data FROM entities p WHERE p.collection='plans'
+    const plans = store.selectJson<MonthlyPlan>(`SELECT p.data FROM entities p WHERE p.collection='plans' AND json_extract(p.data,'$.deletion') IS NULL
       ${manager ? '' : `AND (json_extract(p.data,'$.ownerId')=? OR EXISTS (SELECT 1 FROM json_each(p.data,'$.collaboratorIds') c WHERE c.value=?))
       AND COALESCE(json_extract(p.data,'$.visibility'),'')<>'reference' AND json_extract(p.data,'$.status')<>'merged' AND (json_extract(p.data,'$.projectId') IS NULL OR json_extract(p.data,'$.projectId')='' OR EXISTS (
         SELECT 1 FROM entities pr WHERE pr.collection='projects' AND pr.id=json_extract(p.data,'$.projectId') AND json_extract(pr.data,'$.status')='active'))`}

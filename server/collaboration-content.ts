@@ -39,7 +39,7 @@ export function collaborationTargetAccessible(store: Store, actor: User, target:
   }
   if (target.type === 'report') return isManager(actor) && !!store.get<Report>('reports', target.id)
   if (target.type === 'summary') return isManager(actor)
-  if (target.type === 'plan') { const plan = store.get<MonthlyPlan>('plans', target.id); return !!plan && plan.status !== 'merged' && (isManager(actor) || plan.ownerId === actor.id || plan.collaboratorIds.includes(actor.id)) }
+  if (target.type === 'plan') { const plan = store.get<MonthlyPlan>('plans', target.id); return !!plan && !plan.deletion && plan.status !== 'merged' && (isManager(actor) || plan.ownerId === actor.id || plan.collaboratorIds.includes(actor.id)) }
   const collection = target.type === 'task' ? 'tasks' : target.type === 'weeklyRecord' ? 'weeklyRecords' : 'weeklyDuties'
   const row = store.get<Task | WeeklyRecord | WeeklyDuty>(collection, target.id)
   const task = target.type === 'task' ? row as Task | undefined : target.type === 'weeklyRecord' && row ? store.get<Task>('tasks', (row as WeeklyRecord).taskId) : undefined
@@ -166,6 +166,7 @@ function itemStillActionable(store: Store, item: DigestItem, now: Date) {
   if (item.target.type === 'followup' || item.target.type === 'deadlineRequest') return obligationCurrent(store, item.target.type, item.target.id, now)
   if (item.target.type === 'plan') {
     const plan = store.get<MonthlyPlan>('plans', item.target.id)
+    if (plan?.deletion) return false
     return item.sourceKind === 'plan_review_requested' ? plan?.status === 'submitted' : item.sourceKind === 'plan_result_submitted' ? plan?.acceptanceStatus === 'submitted' : !!plan
   }
   if (item.sourceKind === 'risk') return evaluateWorkRisks(store, now).some(risk => risk.taskId === item.taskId && risk.generation === item.generation && item.sourceId.includes(risk.key))

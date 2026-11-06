@@ -49,7 +49,7 @@ export function currentNotificationMessage(store: Store, actor: User, row: Notif
     for (const target of view.targets) {
       if (target.type === 'plan') {
         const plan = store.get<MonthlyPlan>('plans', target.id)
-        if (!plan) return undefined
+        if (!plan || plan.deletion) return undefined
         if (['monthly_published', 'plan_changed', 'manual_reminder'].includes(view.kind) && plan.status !== 'published') return undefined
         if (view.kind === 'proposal_review' && plan.status !== 'submitted') return undefined
         if (view.kind === 'proposal_result') {

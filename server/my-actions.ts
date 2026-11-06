@@ -42,7 +42,7 @@ export class MyActionsService {
         if (manager) add({ kind: 'assignment', sourceId, sourceVersion, taskId: task.id, businessGeneration: generation, assigneeIds: managers, title: task.title, requiredAction: reason, blockedReason: reason, dueAt: null, createdAt, sharedQueue: true, actionTarget: { page: 'task', id: task.id, section } })
       }
       for (const plan of this.store.list<MonthlyPlan>('plans')) {
-        if (plan.visibility) continue
+        if (plan.visibility || plan.deletion) continue
         const editableDraft = ['draft', 'returned'].includes(plan.status) && (manager || plan.isTemporary && plan.ownerId === actor.id)
         const type = editableDraft ? 'monthly_submit' : !manager ? null : plan.status === 'submitted' ? 'monthly_review'
           : plan.status === 'approved' ? 'monthly_publish' : plan.status === 'published' && plan.acceptanceStatus === 'submitted' ? 'monthly_acceptance' : null

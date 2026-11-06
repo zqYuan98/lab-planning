@@ -4,7 +4,7 @@ import type { NotificationDelivery } from '../shared/notifications.ts'
 import { Store, HttpError } from './store.ts'
 import { DingTalkError } from './dingtalk.ts'
 import { createDingTalkNativeClient, type DingTalkNativeClient, type NativeCardInput, type TodoCreate, type TodoUpdate, type NativeReply } from './dingtalk-native.ts'
-import { enqueueNativeOperation, fallbackNativeNotification, linkEligible, nativeClip, nativeHash, refreshNativeLinks } from './native-service.ts'
+import { enqueueNativeOperation, fallbackNativeNotification, linkEligible, nativeClip, nativeHash, refreshNativeLink, refreshNativeLinks } from './native-service.ts'
 import { getNativeSettings, nativeCapabilityState, verifiedNativeIdentity } from './native-settings.ts'
 import { createNativeIntent, nativeIntentForCard } from './native-commands.ts'
 import { processNativeInbox } from './native-callbacks.ts'
@@ -86,6 +86,11 @@ export async function runNativeWorker(store: Store, client: DingTalkNativeClient
       for (const candidate of candidates) {
         if (shouldStop()) return
         let operation = store.get<ChannelOperation>('nativeOperations', candidate.id)
+        if (!operation || operation.status !== 'pending') continue
+        // Polling and earlier sends yield to business writes. Re-read this obligation now;
+        // a deleted goal must cancel a queued create or replace an update with its terminal state.
+        if (operation.linkId) refreshNativeLink(store, client, operation.linkId, clock())
+        operation = store.get<ChannelOperation>('nativeOperations', candidate.id)
         if (!operation || operation.status !== 'pending') continue
         const link = operation.linkId ? store.get<ExternalObjectLink>('nativeLinks', operation.linkId) : undefined
         if (!operationEligible(store, client, operation, link) || link && operation.desiredRevision !== link.desired.revision && operation.kind !== 'card_deliver') {

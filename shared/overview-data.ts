@@ -97,7 +97,7 @@ function monthlyPoints(data: Bootstrap, month: string): TrendPoint[] {
   return [-3, -2, -1, 0].map((offset) => {
     const period = shiftCalendarMonth(month, offset);
     const published = data.plans.filter(
-      (plan) => !plan.visibility && plan.month === period && plan.status === "published",
+      (plan) => !plan.deletion && !plan.visibility && plan.month === period && plan.status === "published",
     );
     const snapshots = data.publications
       .filter((item) => item.month === period)
@@ -134,7 +134,7 @@ export function buildOverview(data: Bootstrap, today = shanghaiToday()) {
   const month = today.slice(0, 7),
     weekStart = weekMonday(today);
   const plans = data.plans.filter(
-    (plan) => !plan.visibility && plan.month === month && plan.status !== "merged",
+    (plan) => !plan.deletion && !plan.visibility && plan.month === month && plan.status !== "merged",
   );
   const published = plans.filter((plan) => plan.status === "published");
   const records = data.weeklyRecords.filter(
@@ -168,7 +168,7 @@ export function buildOverview(data: Bootstrap, today = shanghaiToday()) {
         (plan) =>
           plan.month === month &&
           (plan.ownerId === user.id || plan.collaboratorIds.includes(user.id)) &&
-          !plan.visibility && plan.status !== "merged",
+          !plan.deletion && !plan.visibility && plan.status !== "merged",
       ),
   );
   const planExecution = (plan: MonthlyPlan) => {

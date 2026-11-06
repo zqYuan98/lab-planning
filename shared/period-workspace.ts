@@ -10,7 +10,7 @@ export interface WeeklyWorkspace extends WorkspacePage<WeeklyRecord> {
   detail?: { task?: Task; record?: WeeklyRecord }
 }
 export type PublicationSummary = Omit<Publication, 'plans'> & { planCount: number }
-export type MonthlyScope = 'current' | 'historical'
+export type MonthlyScope = 'current' | 'historical' | 'deleted'
 export interface MonthlyWorkspace extends WorkspacePage<MonthlyPlan> {
   references: PeriodReferences
   summary: { statuses: Record<string, number>; historical: number; publishable: number; publications: number }

@@ -32,7 +32,7 @@ export function resolveWholePlanReviewer(store: Store, duty: WeeklyDuty, receipt
   const goalId = rows[0].monthlyPlanId
   if (!goalId || rows.some(row => row.monthlyPlanId !== goalId)) return fallback
   const goal = store.get<MonthlyPlan>('plans', goalId)
-  if (!goal || goal.status === 'merged' || goal.mergedIntoId || goal.visibility) return fallback
+  if (!goal || goal.deletion || goal.status === 'merged' || goal.mergedIntoId || goal.visibility) return fallback
   const owner = store.get<User>('users', goal.ownerId)
   if (!owner || !isMember(owner) || !canUseAccount(owner) || owner.id === duty.ownerId) return fallback
   for (const row of rows) {

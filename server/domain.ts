@@ -29,6 +29,8 @@ export class Domain extends DomainBase {
   updateAnnualGoal = (...args: Parameters<AdminService['updateAnnualGoal']>) => this.admin.updateAnnualGoal(...args)
   createPlan = (...args: Parameters<MonthlyService['create']>) => this.monthly.create(...args)
   updatePlan = (...args: Parameters<MonthlyService['update']>) => this.monthly.update(...args)
+  planDeletionPreview = (...args: Parameters<MonthlyService['deletionPreview']>) => this.monthly.deletionPreview(...args)
+  deletePlan = (...args: Parameters<MonthlyService['delete']>) => this.monthly.delete(...args)
   submitPlan = (...args: Parameters<MonthlyService['submit']>) => this.monthly.submit(...args)
   reviewPlan = (...args: Parameters<MonthlyService['review']>) => this.monthly.review(...args)
   publishMonth = (...args: Parameters<MonthlyService['publish']>) => this.monthly.publish(...args)

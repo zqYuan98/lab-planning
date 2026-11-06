@@ -203,6 +203,8 @@ export function createApp(options: AppOptions = {}) {
   app.post('/api/plans', create(domain.createPlan))
   app.post('/api/plans/merge', create(domain.mergePlans))
   app.patch('/api/plans/:id', mutate(domain.updatePlan))
+  app.get('/api/plans/:id/deletion-preview', (req, res) => res.json(domain.planDeletionPreview(req.user, String(req.params.id))))
+  app.delete('/api/plans/:id', mutate(domain.deletePlan))
   app.post('/api/plans/:id/submit', mutate(domain.submitPlan))
   app.post('/api/plans/:id/review', mutate(domain.reviewPlan))
   app.post('/api/months/:month/publish', (req, res) => res.json(domain.publishMonth(req.user, String(req.params.month), req.body)))

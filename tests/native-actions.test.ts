@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Entity, Task, User } from '../shared/types.ts'
+import type { Entity, MonthlyPlan, Task, User } from '../shared/types.ts'
 import type { ActionIntent, CallbackInbox, ChannelOperation, ExternalObjectLink, NativeDeliveryAttempt, NativeSettings } from '../shared/native-actions.ts'
 import type { Notification, NotificationDelivery } from '../shared/notifications.ts'
 import type { FollowupRequest } from '../shared/collaboration.ts'
@@ -12,14 +12,16 @@ import { Store } from '../server/store.ts'
 import { DingTalkError, type DingTalkClient, type DingTalkIdentity } from '../server/dingtalk.ts'
 import type { DingTalkNativeClient } from '../server/dingtalk-native.ts'
 import { getNativeSettings, nativeCapabilityState, updateNativeSettings, verifyNativeIdentity } from '../server/native-settings.ts'
-import { routeNativeNotification, nativeHash, refreshNativeLinks, recreateNativeLink } from '../server/native-service.ts'
+import { routeNativeNotification, nativeDesired, nativeHash, refreshNativeLinks, recreateNativeLink } from '../server/native-service.ts'
 import { runNativeWorker } from '../server/native-worker.ts'
 import { reconcileNativeTodos, reconcileNativeDepartures } from '../server/native-reconcile.ts'
 import { receiveNativeStream, processNativeInbox, applyNativeDeparture } from '../server/native-callbacks.ts'
 import { confirmNativeIntent, createNativeIntent } from '../server/native-commands.ts'
 import { startNativeStream, GuardedStreamClient, type NativeStreamClient } from '../server/native-stream.ts'
-import { enqueueNotification, getNotification, getNotificationSettings, openNotification, updateNotificationSettings } from '../server/notifications.ts'
+import { enqueueNotification, getNotification, getNotificationSettings, openNotification, targetAccessible, updateNotificationSettings } from '../server/notifications.ts'
 import { CollaborationService } from '../server/collaboration-service.ts'
+import { collaborationTargetAccessible } from '../server/collaboration-content.ts'
+import { Domain } from '../server/domain.ts'
 import { exportBusinessData } from '../server/data-transfer.ts'
 import { currentNotificationMessage, runNotificationWorker } from '../server/notification-worker.ts'
 import { EventAck, TOPIC_CARD, type DWClientDownStream } from 'dingtalk-stream'
@@ -340,4 +342,179 @@ test('a manual acknowledgement reminder retains the unknown native ownership of 
   await runNotificationWorker(f.store, legacy, runAt)
   assert.equal(sends, 0); assert.equal(f.store.get<NotificationDelivery>('notificationDeliveries', reminder.id)?.status, 'skipped')
   assert.equal(f.store.list('nativeLinks').length, 1); assert.equal(f.store.list('notificationDeliveryContents').length, 0)
+})
+
+async function monthlyNativeFixture(t: TestContext, channel: 'todo' | 'card' = 'todo', kind: 'review' | 'acceptance' = 'review', digest = false, leaveSync = false) {
+  const f = await fixture(t, channel)
+  if (leaveSync) f.enable({ leaveSyncEnabled: true })
+  const reviewer = f.store.update<User>('users', f.user.id, f.user.version, { role: 'manager' })
+  const plan = f.store.insert<MonthlyPlan>('plans', { month: '2026-11', title: '重复的月度目标', ownerId: f.other.id, collaboratorIds: [], projectId: null, category: '研究', expectedOutcome: '原始目标要求', acceptanceCriteria: '评审', dueDate: '2026-11-30', priority: 'medium', status: kind === 'review' ? 'submitted' : 'published', publishedVersion: kind === 'review' ? null : 1, reviewComment: '', sourcePlanId: null, actualOutcome: '', acceptanceStatus: kind === 'review' ? 'pending' : 'submitted', acceptanceNote: '' })
+  let target: Notification['targets'][number] = { type: 'plan', id: plan.id }
+  if (digest) {
+    const item = f.store.insert<DigestItem>('digestItems', { recipientId: reviewer.id, sourceId: plan.id, sourceKind: 'monthly_submitted', target, taskId: null, ownerId: f.other.id, title: plan.title, lines: ['待审核'], occurredAt: f.now.toISOString(), consumedBy: null, generation: null, actionable: false })
+    const row = f.store.insert<NotificationDigest>('notificationDigests', { recipientId: reviewer.id, type: 'approval_manager', day: '2026-11-06', slot: 'daily', periodStart: f.enabledAt.toISOString(), periodEnd: f.now.toISOString(), itemIds: [item.id], generatedAt: f.now.toISOString(), ruleVersion: 1, notificationId: null })
+    target = { type: 'digest', id: row.id }
+  }
+  const note = enqueueNotification(f.store, { eventKey: `monthly-native-${kind}`, recipientId: reviewer.id, title: '月度目标待处理', body: '请进入平台核对', kind: digest ? 'collaboration_digest' : 'proposal_review', actionable: false, targets: [target] })!
+  assert.equal(routeNativeNotification(f.store, note.id, f.now, undefined, f.client), true)
+  const remove = () => kind === 'review'
+    ? new Domain(f.store).deletePlan(f.manager, plan.id, { version: plan.version, reason: '与导入目标重复' })
+    // Current commands forbid deleting published acceptance work. Keep the synchronizer safe
+    // for a legacy/imported tombstone attached to an already-existing external acceptance link.
+    : f.store.update<MonthlyPlan>('plans', plan.id, plan.version, { deletion: { deletedAt: f.now.toISOString(), deletedBy: f.manager.id, reason: '旧数据删除标记' } })
+  return { ...f, reviewer, plan, note, remove }
+}
+
+test('deleted monthly review and legacy acceptance close existing todos and cards without reopening notifications or sending a new obligation', async t => {
+  for (const channel of ['todo', 'card'] as const) for (const kind of ['review', 'acceptance'] as const) await t.test(`${channel}/${kind}`, async t => {
+    const f = await monthlyNativeFixture(t, channel, kind)
+    await runNativeWorker(f.store, f.client, f.now)
+    const originalLink = f.firstLink(), notes = f.store.list('notifications'), deliveries = f.store.list('notificationDeliveries')
+    const deleted = f.remove()
+    assert.equal(getNotification(f.store, f.reviewer, f.note.id).unavailable, true)
+    assert.equal(targetAccessible(f.store, f.reviewer, { type: 'plan', id: f.plan.id }), false)
+    assert.equal(collaborationTargetAccessible(f.store, f.reviewer, { type: 'plan', id: f.plan.id }), false)
+    assert.equal(nativeDesired(f.store, f.reviewer.id, originalLink.action), undefined, 'new delivery cannot project the deleted obligation')
+    await runNativeWorker(f.store, f.client, new Date(f.now.getTime() + 1000))
+    const link = f.firstLink(), update = f.calls.at(-1)!
+    assert.equal(link.id, originalLink.id); assert.equal(link.providerId, originalLink.providerId)
+    assert.equal(link.state, 'closed'); assert.equal(link.desired.done, true)
+    assert.match(link.desired.title, /已删除/); assert.match(link.desired.summary, /已删除/)
+    assert.equal(link.desired.summary.includes('原始目标要求'), false)
+    assert.equal(update.kind, channel === 'todo' ? 'update' : 'card_update')
+    if (channel === 'todo') assert.equal(update.input.done, true)
+    else { assert.equal(update.input[1].actionKind, ''); assert.equal(update.input[1].status, '平台已处理') }
+    assert.deepEqual(f.store.list('notifications'), notes)
+    assert.deepEqual(f.store.list('notificationDeliveries'), deliveries)
+    assert.deepEqual(f.store.get('plans', f.plan.id), deleted, 'closing an external obligation does not approve or accept business work')
+    const callCount = f.calls.length
+    await runNativeWorker(f.store, f.client, new Date(f.now.getTime() + 2000))
+    assert.equal(f.calls.length, callCount, 'a settled deletion closure does not send repeatedly')
+    assert.equal(f.store.list('nativeLinks').length, 1)
+  })
+})
+
+test('deletion before first native send cancels create and cannot create or recreate a deleted plan obligation', async t => {
+  for (const channel of ['todo', 'card'] as const) await t.test(channel, async t => {
+    const f = await monthlyNativeFixture(t, channel), action = f.firstLink().action
+    f.remove()
+    await runNativeWorker(f.store, f.client, f.now)
+    assert.equal(f.calls.length, 0)
+    assert.equal(f.firstLink().state, 'closed')
+    assert.ok(f.store.list<ChannelOperation>('nativeOperations').every(operation => operation.status === 'cancelled'))
+    const note = enqueueNotification(f.store, { eventKey: 'late-monthly-source', recipientId: f.reviewer.id, title: '旧来源通知', body: '过期', kind: 'proposal_review', actionable: false, targets: [{ type: 'plan', id: f.plan.id }] })!
+    assert.equal(routeNativeNotification(f.store, note.id, f.now, { ...action, notificationId: note.id }, f.client), false)
+    assert.equal(f.store.list('nativeLinks').length, 1)
+    const link = f.firstLink()
+    f.store.update<ExternalObjectLink>('nativeLinks', link.id, link.version, { state: 'external_missing' })
+    assert.throws(() => recreateNativeLink(f.store, f.manager, link.id, f.client, f.now), { status: 409 })
+    assert.equal(f.calls.length, 0)
+  })
+})
+
+test('deleted plan closure respects live manager access, original notification scope and binding or activation generation', async t => {
+  for (const change of ['demoted', 'disabled', 'rebound', 'activation', 'notification-target', 'notification-recipient'] as const) await t.test(change, async t => {
+    const f = await monthlyNativeFixture(t)
+    await runNativeWorker(f.store, f.client, f.now)
+    f.remove()
+    if (change === 'demoted') f.store.update<User>('users', f.reviewer.id, f.reviewer.version, { role: 'member' })
+    if (change === 'disabled') f.store.update<User>('users', f.reviewer.id, f.reviewer.version, { active: false })
+    if (change === 'rebound') f.store.update<DingTalkIdentity>('externalIdentities', f.binding.id, f.binding.version, { userid: 'replacement-account' })
+    if (change === 'activation') f.enable({ verificationNote: '新代际' })
+    if (change === 'notification-target') f.store.update<Notification>('notifications', f.note.id, f.note.version, { targets: [{ type: 'task', id: f.task.id }] })
+    if (change === 'notification-recipient') f.store.update<Notification>('notifications', f.note.id, f.note.version, { recipientId: f.other.id })
+    const calls = f.calls.length
+    await runNativeWorker(f.store, f.client, new Date(f.now.getTime() + 1000))
+    assert.equal(f.calls.length, calls, 'revoked scope or identity does not receive a terminal update')
+    assert.equal(f.firstLink().state, 'isolated')
+  })
+})
+
+test('a deleted single-plan approval digest closes its existing native link while keeping digest content hidden', async t => {
+  const f = await monthlyNativeFixture(t, 'todo', 'review', true)
+  await runNativeWorker(f.store, f.client, f.now)
+  f.remove()
+  const view = getNotification(f.store, f.reviewer, f.note.id)
+  assert.equal(!!view.content?.items.some(item => item.target.type === 'plan' && item.target.id === f.plan.id), false)
+  await runNativeWorker(f.store, f.client, new Date(f.now.getTime() + 1000))
+  assert.equal(f.firstLink().state, 'closed')
+  assert.equal(f.calls.at(-1)?.kind, 'update'); assert.equal(f.calls.at(-1)?.input.done, true)
+})
+
+test('deleted review with an uncertain original todo reconciles its source before closing and never creates twice', async t => {
+  const f = await monthlyNativeFixture(t)
+  let creates = 0
+  f.client.createTodo = async () => { creates++; throw new DingTalkError('unknown', 'unknown') }
+  await runNativeWorker(f.store, f.client, f.now)
+  assert.equal(f.firstLink().state, 'unknown')
+  f.remove()
+  const link = f.firstLink()
+  f.store.update<ExternalObjectLink>('nativeLinks', link.id, link.version, { reconcileAt: f.now.toISOString() })
+  f.client.listTodos = async () => ({ items: [{ taskId: 'reconciled-existing-todo', sourceId: link.sourceId, subject: link.desired.title, isDone: false }], nextToken: null })
+  await runNativeWorker(f.store, f.client, new Date(f.now.getTime() + 1000))
+  assert.equal(creates, 1)
+  assert.equal(f.firstLink().providerId, 'reconciled-existing-todo')
+  assert.equal(f.firstLink().state, 'closed')
+  assert.equal(f.calls.at(-1)?.kind, 'update'); assert.equal(f.calls.at(-1)?.input.done, true)
+})
+
+test('a goal deleted while leave reconciliation awaits cancels its pending native creation before any send', async t => {
+  for (const channel of ['todo', 'card'] as const) await t.test(channel, async t => {
+    const f = await monthlyNativeFixture(t, channel, 'review', false, true)
+    let polled = false
+    f.client.listLeaveRecords = async () => { await Promise.resolve(); polled = true; f.remove(); return { records: [], nextToken: null } }
+    await runNativeWorker(f.store, f.client, f.now)
+    assert.equal(polled, true)
+    assert.equal(f.calls.length, 0)
+    assert.equal(f.firstLink().state, 'closed')
+    assert.equal(f.firstLink().desired.done, true)
+    assert.ok(f.store.list<ChannelOperation>('nativeOperations').every(operation => operation.status === 'cancelled'))
+    assert.equal(f.store.list('nativeDeliveryAttempts').length, 0)
+  })
+})
+
+test('a goal deleted during awaited reconciliation replaces an already-queued native update with the latest terminal state', async t => {
+  for (const channel of ['todo', 'card'] as const) await t.test(channel, async t => {
+    const f = await monthlyNativeFixture(t, channel, 'review', false, true)
+    await runNativeWorker(f.store, f.client, f.now)
+    const providerId = f.firstLink().providerId, initialCallCount = f.calls.length
+    const edited = new Domain(f.store).updatePlan(f.manager, f.plan.id, { version: f.plan.version, title: '查询期间再次核对的目标' })
+    f.client.listTodos = async () => ({ items: [{ taskId: providerId!, sourceId: f.firstLink().sourceId, subject: f.plan.title, isDone: false }], nextToken: null })
+    let polled = false
+    f.client.listLeaveRecords = async () => {
+      await Promise.resolve(); polled = true
+      new Domain(f.store).deletePlan(f.manager, edited.id, { version: edited.version, reason: '查询期间确认重复' })
+      return { records: [], nextToken: null }
+    }
+    await runNativeWorker(f.store, f.client, new Date(f.now.getTime() + 25 * 3600000))
+    assert.equal(polled, true)
+    const sent = f.calls.slice(initialCallCount)
+    assert.equal(sent.length, 1, 'no stale intermediate update leaves the worker')
+    assert.equal(sent[0].kind, channel === 'todo' ? 'update' : 'card_update')
+    if (channel === 'todo') { assert.equal(sent[0].input.done, true); assert.match(sent[0].input.subject, /已删除/) }
+    else { assert.equal(sent[0].input[1].status, '平台已处理'); assert.match(sent[0].input[1].title, /已删除/) }
+    assert.equal(f.firstLink().providerId, providerId)
+    assert.equal(f.firstLink().state, 'closed')
+    assert.ok(f.store.list<ChannelOperation>('nativeOperations').some(operation => operation.status === 'cancelled' && operation.kind.endsWith('_update')))
+  })
+})
+
+test('a later pending goal deleted during an earlier native send is rechecked before its own create', async t => {
+  const f = await monthlyNativeFixture(t)
+  const { id: _id, version: _version, createdAt: _createdAt, updatedAt: _updatedAt, ...fields } = f.plan
+  const second = f.store.insert<MonthlyPlan>('plans', { ...fields, title: '尚未发送的第二目标' })
+  const note = enqueueNotification(f.store, { eventKey: 'second-native-review', recipientId: f.reviewer.id, kind: 'proposal_review', title: '第二目标待审核', body: '请核对', targets: [{ type: 'plan', id: second.id }], actionable: false })!
+  assert.equal(routeNativeNotification(f.store, note.id, f.now, undefined, f.client), true)
+  let creates = 0
+  f.client.createTodo = async input => {
+    creates++; assert.equal(input.subject.includes(f.plan.title), true)
+    await Promise.resolve()
+    new Domain(f.store).deletePlan(f.manager, second.id, { version: second.version, reason: '前一请求期间确认重复' })
+    return { taskId: 'first-only' }
+  }
+  await runNativeWorker(f.store, f.client, f.now)
+  assert.equal(creates, 1)
+  const secondLink = f.store.list<ExternalObjectLink>('nativeLinks').find(link => link.action.id === second.id)!
+  assert.equal(secondLink.state, 'closed'); assert.equal(secondLink.providerId, null)
+  assert.equal(f.store.list<NativeDeliveryAttempt>('nativeDeliveryAttempts').length, 1)
 })

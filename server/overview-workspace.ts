@@ -59,7 +59,7 @@ function overviewFacts(store: Store, actor: User, options: { period: WorkPeriod;
     AND NOT EXISTS (SELECT 1 FROM entities t WHERE t.collection='tasks' AND t.id=json_extract(e.data,'$.taskId') AND json_extract(t.data,'$.cancellation') IS NOT NULL)
     ${options.period === 'all' && !options.personal ? '' : "AND json_extract(e.data,'$.weekStart')<=? AND date(json_extract(e.data,'$.weekStart'),'+6 days')>=?"}`,
     [...ownerValues, ...(options.period === 'all' && !options.personal ? [] : [end, start])])
-  const plans = rows<MonthlyPlan>(store, 'plans', planFields)
+  const plans = rows<MonthlyPlan>(store, 'plans', planFields, "AND json_extract(e.data,'$.deletion') IS NULL")
   const tasks = rows<Task>(store, 'tasks', taskFields, `AND json_extract(e.data,'$.cancellation') IS NULL${ownerWhere}
     ${(options.period === 'all' || options.includeCarryover) && !options.personal ? '' : `AND (json_extract(e.data,'$.dueDate') BETWEEN ? AND ?
       OR EXISTS (SELECT 1 FROM entities p WHERE p.collection='plans' AND p.id=json_extract(e.data,'$.monthlyPlanId') AND json_extract(p.data,'$.month')=?)

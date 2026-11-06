@@ -54,7 +54,7 @@ export function taskTrackingEligible(store: Store, task: Task, _now = new Date()
   if (!owner || !canUseAccount(owner) || isObserver(owner)) return false
   if (task.monthlyPlanId) {
     const plan = store.get<MonthlyPlan>('plans', task.monthlyPlanId)
-    if (!plan || plan.status !== 'published' || plan.visibility) return false
+    if (!plan || plan.deletion || plan.status !== 'published' || plan.visibility) return false
     if (plan.projectId && store.get<Project>('projects', plan.projectId)?.status !== 'active') return false
   }
   return true

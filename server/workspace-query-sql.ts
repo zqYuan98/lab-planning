@@ -24,6 +24,7 @@ export function workspaceWhere(f: WorkspaceSqlFilter) {
     if (f.month && f.scope !== 'open') add(collection === 'weeklyRecords' ? `substr(${field('weekStart')},1,7)=?` : `EXISTS (SELECT 1 FROM entities p WHERE p.collection='plans' AND p.id=${field('monthlyPlanId')} AND ${field('month','p')}=?)`, f.month)
   }
   if (collection === 'plans') {
+    add(`${field('deletion')} IS NULL`)
     if (!f.manager) add(`(${field('ownerId')}=? OR EXISTS (SELECT 1 FROM json_each(${field('collaboratorIds')}) c WHERE c.value=?))`, f.actorId, f.actorId)
     if (f.ownerId) add(`${field('ownerId')}=?`, f.ownerId)
     if (f.month) add(`${field('month')}=?`, f.month)
@@ -42,7 +43,7 @@ export function workspaceWhere(f: WorkspaceSqlFilter) {
   if (collection === 'reports' && !f.manager) throw new HttpError(403, '只有管理者可以读取报告档案')
   if (collection === 'users') add(`${field('active')}=1 AND (${field('registrationStatus')} IS NULL OR ${field('registrationStatus')}='approved') AND ${field('role')}<>'observer'`)
   if (collection === 'users' && f.role) add(`${field('role')}=?`, f.role)
-  if (collection === 'projects' && !f.manager) add(`EXISTS (SELECT 1 FROM entities p WHERE p.collection='plans' AND ${field('projectId','p')}=e.id AND (${field('ownerId','p')}=? OR EXISTS (SELECT 1 FROM json_each(${field('collaboratorIds','p')}) c WHERE c.value=?)))`, f.actorId, f.actorId)
+  if (collection === 'projects' && !f.manager) add(`EXISTS (SELECT 1 FROM entities p WHERE p.collection='plans' AND ${field('deletion','p')} IS NULL AND ${field('projectId','p')}=e.id AND (${field('ownerId','p')}=? OR EXISTS (SELECT 1 FROM json_each(${field('collaboratorIds','p')}) c WHERE c.value=?)))`, f.actorId, f.actorId)
   if (f.status) add(`${field('status')}=?`, f.status)
   if (f.type) add(`${field('type')}=?`, f.type)
   if (f.period) add(`${field('period')}=?`, f.period)

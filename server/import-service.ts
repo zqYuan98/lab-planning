@@ -18,6 +18,7 @@ import { isManager } from './authorization.ts'
 import { managerActor } from './authorization.ts'
 import type { DingTalkImportProvenance } from '../shared/dingtalk-monthly-api.ts'
 import { WORK_SOURCES } from '../shared/entity-rules.ts'
+import { isActiveMonthlyPlan } from '../shared/monthly-plan-state.ts'
 
 interface ImportSource extends Entity { ownerId: string; fileName: string; mimeType: string; base64: string; hash: string; parsed: ParsedImportFile }
 export interface HistoricalRecord extends Entity { importedBy: string; batchId: string; sourceId: string; row: ImportRow }
@@ -355,6 +356,7 @@ export class ImportService {
       const candidatePlan = planId ? this.store.get<MonthlyPlan>('plans', planId) : undefined
       const plan = candidatePlan && (isManager(actor) || participates(candidatePlan, actor.id)) ? candidatePlan : undefined
       if (planId && !plan) issues.push('关联月计划不存在或无权使用')
+      if (plan && !isActiveMonthlyPlan(plan)) issues.push('原目标已删除，请排除此来源并核对保留的目标')
       if (plan?.visibility === 'reference') issues.push('历史目标引用不能用于新增任务')
       const linked = rows.find(r => r.id === row.linkedRowId && r.kind === 'monthly' && r.selected)
       if (!task && !plan && !linked && row.isTemporary !== true) issues.push('请选择月计划、关联本批次月计划行，或标为独立临时周任务并填写原因')
@@ -658,6 +660,7 @@ export class ImportService {
           }
           const record = this.store.get<MonthlyPlan | { submitted: boolean }>(previous.result.collection, previous.result.id)
           if (!record) throw new HttpError(409, '来源对应的业务记录不存在，请核对原导入记录')
+          if (previous.result.collection === 'plans' && !isActiveMonthlyPlan(record as MonthlyPlan)) throw new HttpError(409, '原目标已删除，请排除此来源并核对保留的目标')
           const isPublished = row.kind === 'monthly' ? (record as MonthlyPlan).status === 'published' : (record as { submitted: boolean }).submitted
           if (existingWriter && !isPublished) activateId = previous.result.id
           else {

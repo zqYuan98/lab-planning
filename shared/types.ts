@@ -11,6 +11,8 @@ export interface AnnualGoal extends Entity { title: string; year: number; target
 export type PlanStatus = Of<typeof PLAN_STATUSES>
 export interface MonthlyPlan extends Entity {
   annualGoalId?: string | null;
+  /** Removal of an unpublished proposal; audit and source references remain intact. */
+  deletion?: { deletedAt: string; deletedBy: string; reason: string };
   /** Member-only historical reference projection; never a selectable current goal. */
   visibility?: Of<typeof PLAN_VISIBILITIES>;
   month: string; title: string; projectId: string | null; category: string; ownerId: string;

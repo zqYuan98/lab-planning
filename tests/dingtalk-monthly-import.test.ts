@@ -355,6 +355,28 @@ test('link decisions cannot target an unrelated plan and a row cannot be both li
   assert.equal(f.store.list('dingtalkSourceItems').length, 0)
 })
 
+test('a link decision becomes stale when its target is deleted and requires explicit resolution', async t => {
+  const f = fixture(t), plan = existingPlan(f)
+  let batch = await fetchBatch(f)
+  batch = f.service.resolve(f.actor, batch.id, { version: batch.version, rowId: batch.rows[0].id, action: 'link', planId: plan.id, reason: '确认关联原目标' }).batch
+  batch = reviewBatch(f, batch)
+  const deleted = f.domain.deletePlan(f.actor, plan.id, { version: plan.version, reason: '来源重复' })
+  const review = f.service.review(f.actor, batch.id)
+  assert.equal(review.rows[0].resolution, undefined)
+  assert.equal(review.rows[0].requiresResolution, true)
+  assert.match(review.rows[0].reason, /原目标已删除/)
+  await assert.rejects(f.service.commit(f.actor, batch.id, { version: batch.version }), /逐条处理/)
+  assert.deepEqual(f.store.get('plans', plan.id), deleted)
+  assert.deepEqual(f.imports.get(f.actor, batch.id), batch)
+  assert.equal(f.store.list('dingtalkSourceItems').length, 0)
+  batch = f.service.resolve(f.actor, batch.id, { version: batch.version, rowId: batch.rows[0].id, action: 'exclude', reason: '确认排除已删除目标来源' }).batch
+  batch = reviewBatch(f, batch)
+  const saved = await f.service.commit(f.actor, batch.id, { version: batch.version })
+  assert.equal(saved.committedCount, 0)
+  assert.equal(saved.excludedCount, 1)
+  assert.equal(f.store.list('plans').length, 1)
+})
+
 test('removing every source item by explicit exclusion records the decision without creating work', async t => {
   const f = fixture(t)
   let batch = await fetchBatch(f)
@@ -438,12 +460,13 @@ test('several source revisions and renumbered aliases of one plan never become m
   assert.equal(f.store.list<{ planId: string }>('dingtalkSourceItems').filter(item => item.planId === planId).length, 6)
 })
 
-for (const change of ['deleted', 'moved'] as const) test(`an imported target ${change} from this month can be excluded while other new work proceeds`, async t => {
+for (const change of ['deleted', 'soft_deleted', 'moved'] as const) test(`an imported target ${change} from this month can be excluded while other new work proceeds`, async t => {
   const f = fixture(t)
   let batch = reviewBatch(f, await fetchBatch(f))
   const first = await f.service.commit(f.actor, batch.id, { version: batch.version })
   const plan = f.store.get<MonthlyPlan>('plans', first.rows[0].result!.id)!
   if (change === 'deleted') f.store.delete('plans', plan.id, plan.version)
+  else if (change === 'soft_deleted') f.domain.deletePlan(f.actor, plan.id, { version: plan.version, reason: '确认来源重复' })
   else f.store.update<MonthlyPlan>('plans', plan.id, plan.version, { month: '2026-12', dueDate: '2026-12-25' })
   const next = [...f.remote.source.rows[1].cells]; next[0] = '2'; next[3] = '仍可处理的新增目标'; next[4] = '独立工作内容'
   f.remote.source.rows.push({ rowNumber: 3, cells: next }); f.remote.source.range = 'A1:I3'
@@ -452,6 +475,7 @@ for (const change of ['deleted', 'moved'] as const) test(`an imported target ${c
   assert.equal(view.rows[0].status, 'imported')
   assert.deepEqual(view.rows[0].plans, [])
   assert.equal(view.rows[0].requiresResolution, true)
+  if (change === 'soft_deleted') assert.match(view.rows[0].reason, /原目标已删除，请排除此来源并核对保留的目标/)
   assert.equal(view.rows[1].status, 'new')
   assert.throws(() => f.service.resolve(f.actor, batch.id, { version: batch.version, rowId: batch.rows[0].id, action: 'new', reason: '不能自动重建原目标' }), /不能重复新增/)
   batch = reviewBatch(f, batch)
@@ -462,8 +486,12 @@ for (const change of ['deleted', 'moved'] as const) test(`an imported target ${c
   assert.equal(saved.committedCount, 1)
   assert.equal(saved.excludedCount, 1)
   assert.equal(saved.rows[0].result, undefined)
-  assert.equal(f.store.list<MonthlyPlan>('plans').filter(item => item.month === '2026-11').length, 1)
+  assert.equal(f.store.list<MonthlyPlan>('plans').filter(item => item.month === '2026-11' && !item.deletion).length, 1)
   if (change === 'deleted') assert.equal(f.store.get('plans', plan.id), undefined)
+  else if (change === 'soft_deleted') {
+    assert.ok(f.store.get<MonthlyPlan>('plans', plan.id)!.deletion)
+    assert.equal(f.store.list<{ planId: string }>('dingtalkSourceItems').filter(item => item.planId === plan.id).length, 1)
+  }
   else assert.equal(f.store.get<MonthlyPlan>('plans', plan.id)!.month, '2026-12')
 })
 

@@ -2,6 +2,8 @@ import { LIMITS } from '../../shared/entity-rules'
 import AnnualGoalPicker from '../components/AnnualGoalPicker'
 import GoalOwnerWork from '../components/GoalOwnerWork'
 import { monthlyWorkflow, monthlyIntentModal, monthlyPublishInput, monthlyStatusLabels } from '../monthly-workflow'
+import { isActiveMonthlyPlan } from '../../shared/monthly-plan-state'
+import MonthlyPlanDeletionDialog, { MonthlyPlanDeletionNotice } from '../components/MonthlyPlanDeletionDialog'
 import { draftText } from '../draft-recovery'
 import { useEffect, useRef, useState } from 'react'
 import type { MonthlyScope, MonthlyWorkspace, PeriodReferences, PublicationSummary } from '../../shared/period-workspace'
@@ -89,7 +91,7 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
   const workflow = (plan: MonthlyPlan) => {
     const flow = monthlyWorkflow(plan, data.user, !!plan.projectId && archivedProjectIds.has(plan.projectId))
     if (!period || period.value) return flow
-    return { ...flow, canEdit: false, canSubmit: false, canReview: false, canPublish: false, canCreateOwnTask: false, canResult: false, primary: null, nextStep: '正在重新读取当前权限和目标状态，完成后显示可用操作。' }
+    return { ...flow, canEdit: false, canSubmit: false, canReview: false, canPublish: false, canCreateOwnTask: false, canResult: false, canDelete: false, primary: null, nextStep: '正在重新读取当前权限和目标状态，完成后显示可用操作。' }
   }
   const canPublish = (plan: MonthlyPlan) => workflow(plan).canPublish
   const canEdit = (plan: MonthlyPlan) => workflow(plan).canEdit
@@ -98,7 +100,7 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
   const initialMonth = intent?.month || currentMonth()
   const initialPlan = data.plans.find((plan) => plan.id === intent?.id)
   const [includeInactive, setIncludeInactive] = useState(!!initialPlan && !visibleMonthlyPlan(initialPlan, data.users))
-  const [scope, setScope] = useState<MonthlyScope>('current')
+  const [scope, setScope] = useState<MonthlyScope>(initialPlan?.deletion && !initialPlan.visibility ? 'deleted' : 'current')
   const readyToPublish =
     manager &&
     intent?.action === 'publish' &&
@@ -135,6 +137,7 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
     const plan = period?.value?.detail
     if (!plan || handledIntent.current) return
     handledIntent.current = true; setMonth(plan.month); setSelected(plan)
+    if (plan.deletion && !plan.visibility) setScope('deleted')
     setIncludeInactive(!visibleMonthlyPlan(plan, data.users))
     setModal(intentModal(plan))
   }, [period?.value?.detail])
@@ -142,13 +145,14 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
   // A cleared/pending page has no list membership. Keep modal references separate
   // so an open detail or draft cannot repopulate rows or counters after revocation.
   const listPlans = period ? period.value?.items ?? [] : data.plans
-  const monthPlans = listPlans.filter((plan) => !plan.visibility && plan.month === month && visibleMonthlyPlan(plan, data.users, includeInactive))
+  const monthPlans = listPlans.filter((plan) => !plan.visibility && isActiveMonthlyPlan(plan) && plan.month === month && visibleMonthlyPlan(plan, data.users, includeInactive))
+  const deletedPlans = listPlans.filter((plan) => !plan.visibility && !isActiveMonthlyPlan(plan) && plan.month === month && visibleMonthlyPlan(plan, data.users, includeInactive))
   const historicalPlans = listPlans.filter((plan) => !!plan.visibility && plan.month === month && visibleMonthlyPlan(plan, data.users, includeInactive))
-  const pagePlans = period ? period.value?.items ?? [] : scope === 'historical' ? historicalPlans : monthPlans
+  const pagePlans = period ? period.value?.items ?? [] : scope === 'historical' ? historicalPlans : scope === 'deleted' ? deletedPlans : monthPlans
   const filtered = pagePlans.filter(
     (plan) =>
-      (scope === 'historical' ? !!plan.visibility : !plan.visibility) &&
-      (scope === 'historical' || filter === 'all' || plan.status === filter) &&
+      (scope === 'historical' ? !!plan.visibility : !plan.visibility && (scope === 'deleted' ? !isActiveMonthlyPlan(plan) : isActiveMonthlyPlan(plan))) &&
+      (scope !== 'current' || filter === 'all' || plan.status === filter) &&
       `${plan.title}${nameOf(data, plan.ownerId)}${projectOf(data, plan.projectId)}`.includes(
         search,
       ),
@@ -184,8 +188,8 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
       const [result, events] = await Promise.all([period ? api<{ plan: MonthlyPlan; references: PeriodReferences }>(`/workspace/monthly/plans/${encodeURIComponent(plan.id)}`) : Promise.resolve({ plan, references: undefined }), type === 'history' ? api<AuditEvent[]>(`/plans/${encodeURIComponent(plan.id)}/history`) : Promise.resolve(null)])
       if (sequence !== detailSequence.current || context !== captureMutationContext()) return
       const currentFlow = monthlyWorkflow(result.plan, data.user, !!result.plan.projectId && (result.references?.projects ?? data.projects).some(project => project.id === result.plan.projectId && project.status === 'archived'))
-      const permitted = type === 'submit' ? currentFlow.canSubmit : type === 'review' ? currentFlow.canReview : type === 'publish-one' ? currentFlow.canPublish : type === 'edit' ? currentFlow.canEdit : type === 'task' ? currentFlow.canCreateOwnTask : type === 'result' ? currentFlow.canResult : true
-      const nextModal = result.plan.visibility && type !== 'history' || !permitted ? 'detail' : type
+      const permitted = type === 'submit' ? currentFlow.canSubmit : type === 'review' ? currentFlow.canReview : type === 'publish-one' ? currentFlow.canPublish : type === 'edit' ? currentFlow.canEdit : type === 'task' ? currentFlow.canCreateOwnTask : type === 'result' ? currentFlow.canResult : type === 'delete' ? currentFlow.canDelete : true
+      const nextModal = (result.plan.visibility || result.plan.deletion) && type !== 'history' || !permitted ? 'detail' : type
       lastDetailRead.current = `${plan.id}:${nextModal}:${period?.value?.revision ?? ''}`
       setSelected(result.plan); setDetailReferences(result.references); setHistory(events); setModal(nextModal)
     } catch (failure) { if (sequence === detailSequence.current) notify(failure instanceof Error ? failure.message : '目标读取失败') }
@@ -286,11 +290,13 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
           </div>
         )}
       </div>
-      {!manager && <div className="tabs" role="group" aria-label="月度目标范围">
-        <button className={scope === 'current' ? 'selected' : ''} onClick={() => { detailSequence.current++; setScope('current') }}>当前参与<span>{period?.value?.summary.statuses.all ?? monthPlans.length}</span></button>
-        <button className={scope === 'historical' ? 'selected' : ''} onClick={() => { detailSequence.current++; setScope('historical') }}>历史记录<span>{period?.value?.summary.historical ?? historicalPlans.length}</span></button>
-      </div>}
+      <div className="tabs" role="group" aria-label="月度目标范围">
+        <button className={scope === 'current' ? 'selected' : ''} onClick={() => { detailSequence.current++; setScope('current') }}>{manager ? '当前目标' : '当前参与'}<span>{period?.value?.summary.statuses.all ?? monthPlans.length}</span></button>
+        {!manager && <button className={scope === 'historical' ? 'selected' : ''} onClick={() => { detailSequence.current++; setScope('historical') }}>历史记录<span>{period?.value?.summary.historical ?? historicalPlans.length}</span></button>}
+        <button className={scope === 'deleted' ? 'selected' : ''} onClick={() => { detailSequence.current++; setScope('deleted') }}>已删除<span>{period?.value?.summary.statuses.deleted ?? deletedPlans.length}</span></button>
+      </div>
       {scope === 'historical' && <p className="modal-intro">以下为曾参与目标的历史快照或历史任务引用，仅供查阅，不计入当前参与目标。</p>}
+      {scope === 'deleted' && <p className="modal-intro">以下目标已删除，仅供查阅原因与变更历史，不计入当前目标、统计和待办。</p>}
       {scope === 'current' && <div className="tabs" role="group" aria-label="计划状态筛选">
         {[['all', '全部'], ...Object.entries(statuses)].map(
           ([value, label]) => (
@@ -389,9 +395,10 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
                           )}
                         </td>
                         <td>
-                          <Badge tone={plan.visibility ? 'neutral' : tones[plan.status]}>
-                            {plan.visibility === 'reference' ? '仅供查阅' : `${plan.visibility ? '当时：' : ''}${statuses[plan.status]}`}
+                          <Badge tone={plan.deletion || plan.visibility ? 'neutral' : tones[plan.status]}>
+                            {plan.deletion ? '已删除 · 只读' : plan.visibility === 'reference' ? '仅供查阅' : `${plan.visibility ? '当时：' : ''}${statuses[plan.status]}`}
                           </Badge>
+                          {plan.deletion?.reason && <p className="cell-description">删除原因：{plan.deletion.reason}</p>}
                           {plan.reviewComment && (
                             <p className="cell-description review-comment">
                               {plan.reviewComment}
@@ -437,7 +444,7 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
                                   {manager ? '成果验收' : '提交成果'}
                                 </button>
                               )}
-                            {!plan.visibility && plan.status === 'published' &&
+                            {!plan.visibility && isActiveMonthlyPlan(plan) && plan.status === 'published' &&
                               plan.acceptanceStatus !== 'accepted' &&
                               (!plan.projectId ||
                                 !archivedProjectIds.has(plan.projectId)) &&
@@ -447,6 +454,7 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
                                 </button>
                               )}
                             {canCreateOwnTask(plan) && <button onClick={() => open('task', plan)}>关联个人任务</button>}
+                            {workflow(plan).canDelete && <button className="danger" onClick={() => void open('delete', plan)}>删除目标</button>}
                             <button
                               onClick={() => void open('history', plan)}
                             >
@@ -466,19 +474,19 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
         <div className="panel">
           <Empty
             title={
-              scope === 'historical' ? '本月暂无可查看的历史目标' : search || filter !== 'all'
+              scope === 'deleted' ? '本月暂无可查看的已删除目标' : scope === 'historical' ? '本月暂无可查看的历史目标' : search || filter !== 'all'
                 ? '没有符合条件的计划'
                 : manager ? '从第一个团队月度目标开始' : '本月暂无你参与的月度目标'
             }
-            description={scope === 'historical' ? '负责人或参与人员变更后，曾参与的目标可在此查阅。' : manager ? '指定负责人和参与人员，明确预期成果与验收标准。' : '可提报本人的临时月度目标，或参与管理者发布的团队目标。'}
-            action={
+            description={scope === 'deleted' ? '删除后的目标保留原因和操作历史，可在此查看。' : scope === 'historical' ? '负责人或参与人员变更后，曾参与的目标可在此查阅。' : manager ? '指定负责人和参与人员，明确预期成果与验收标准。' : '可提报本人的临时月度目标，或参与管理者发布的团队目标。'}
+            action={scope === 'current' ?
               <button
                 className="button secondary"
                 onClick={() => showModal(manager ? 'create' : 'temporary')}
               >
                 <Plus size={16} />
                 {manager ? '新增月度目标' : '新增临时目标'}
-              </button>
+              </button> : undefined
             }
           />
         </div>
@@ -622,9 +630,15 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
                 placeholder="说明通过的范围，或需要补充的内容"
               />
             </Field>
+            {workflow(selected).canDelete && <div className="monthly-review-deletion"><p>发现重复或误建目标，可直接删除并保留原因，无需先退回成员。</p><button type="button" className="button danger" onClick={() => void open('delete', selected)}>删除重复目标</button></div>}
           </Form>
         </Modal>
       )}
+      {modal === 'delete' && selected && <MonthlyPlanDeletionDialog key={selected.id} plan={selected} data={data} enabled={workflow(selected).canDelete} onClose={close} onSaved={async () => {
+        await refresh()
+        close()
+        notify('目标已删除，已退出当前列表、统计和待办，历史记录保留')
+      }} />}
       {modal === 'result' && selected && workflow(selected).canResult && (
         <Modal title={manager ? '确认月度成果' : '提交本月成果'} onClose={close}>
           <MonthlyResultForm key={selected.id} plan={selected} manager={manager} userId={data.user.id} onCancel={close} onSaved={() => saved('月度成果已更新')} />
@@ -675,6 +689,7 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
       )}
       {modal === 'history' && selected && (
         <Modal title={`变更历史 · ${selected.title}`} onClose={close} wide>
+          <MonthlyPlanDeletionNotice plan={selected} data={data} />
           {selected.visibility && <p className="modal-intro">历史记录 · 只读。以下仅展示你曾参与期间可查看的内容，不代表当前负责人和执行状态。</p>}
           {history === null ? (
             <div className="loading-inline">正在读取历史记录…</div>
@@ -697,6 +712,7 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
                         published_change: '发布后修订',
                         merge: '来源提报合并',
                         merge_create: '合并成果创建',
+                        delete: '删除目标',
                       } as Record<string, string>
                     )[event.action] || event.action}
                   </Badge>
@@ -719,21 +735,24 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
       )}
       {modal === 'detail' && selected && (
         <Modal title={selected.title} onClose={close} wide>
+          <MonthlyPlanDeletionNotice plan={selected} data={data} />
           {selected.visibility && <div className="context-box"><Badge>{selected.visibility === 'reference' ? '历史引用 · 只读' : '历史记录 · 只读'}</Badge><p>{selected.visibility === 'reference' ? '此目标仅保留历史任务关联，责任信息和目标详情不可查看。' : '以下为你曾参与期间的目标快照，负责人和状态均为当时信息。'}此记录不计入当前参与目标。</p></div>}
           {selected.visibility !== 'reference' && <div className="row-meta"><PriorityBadge priority={selected.priority} /><WorkTypeBadge isTemporary={selected.isTemporary} isMonthly /></div>}
           {selectedWorkflow && <section className="monthly-workflow-panel" aria-label="月度目标下一步">
             <h3>当前状态：{selectedWorkflow.stateLabel}</h3>
             <p>{selectedWorkflow.nextStep}</p>
-            {selected.reviewComment && !selected.visibility && <p>审核意见：{selected.reviewComment}</p>}
+            {selected.reviewComment && !selected.visibility && !selected.deletion && <p>审核意见：{selected.reviewComment}</p>}
             <div className="monthly-workflow-actions">
               {selectedWorkflow.primary && <button className="button primary" onClick={() => void open(selectedWorkflow.primary!.action === 'publish' ? 'publish-one' : selectedWorkflow.primary!.action === 'create-task' ? 'task' : selectedWorkflow.primary!.action, selected)}>{selectedWorkflow.primary.label}</button>}
               {selectedWorkflow.canEdit && <button className="button secondary" onClick={() => void open('edit', selected)}>编辑目标内容</button>}
               {selectedWorkflow.canResult && selectedWorkflow.primary?.action !== 'result' && <button className="button secondary" onClick={() => void open('result', selected)}>{manager ? '成果验收' : '提交成果'}</button>}
               {selectedWorkflow.canCreateOwnTask && selected.status !== 'published' && <button className="button secondary" onClick={() => void open('task', selected)}>准备个人任务（周草稿）</button>}
+              {selectedWorkflow.canDelete && <button className="button danger" onClick={() => void open('delete', selected)}>删除目标</button>}
+              {selected.deletion && <button className="button secondary" onClick={() => void open('history', selected)}>查看变更历史</button>}
             </div>
           </section>}
           {manager && selectedWorkflow?.canEdit && <div className="carry-actions"><button className="button secondary" onClick={() => showModal('carry')}>跨期处理 / 继续已有流程</button></div>}
-          {manager && <NotificationStatus type="plan" id={selected.id} data={data} />}
+          {manager && !selected.deletion && <NotificationStatus type="plan" id={selected.id} data={data} />}
           {selected.isTemporary && (
             <div className="context-box">
               <Badge tone="amber">临时目标 · 本月阶段成果</Badge>
@@ -745,7 +764,7 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
           )}
           {selected.importSource && (
             <p className="modal-intro">
-              {selected.visibility ? `已有计划导入，当时状态为${statuses[selected.status]}。` : selected.status === 'published' ? '已有计划导入，当前已发布，无需重新提报。' : `已有计划导入，当前状态为${statuses[selected.status]}。`}原文状态：
+              {selected.deletion ? `已有计划导入，目标现已删除，删除前状态为${statuses[selected.status]}。` : selected.visibility ? `已有计划导入，当时状态为${statuses[selected.status]}。` : selected.status === 'published' ? '已有计划导入，当前已发布，无需重新提报。' : `已有计划导入，当前状态为${statuses[selected.status]}。`}原文状态：
               {selected.importSource.sourceStatus || '原表未注明'}
               ；原有成果已保留，验收结论单独记录。
             </p>
@@ -780,7 +799,7 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
                 {selected.visibility === 'reference' ? '未保留' : <>{selected.dueDate ||
                   (selected.importSource ? '原表未注明' : '暂无')}{' '}
                 ·{' '}
-                {statuses[selected.status]}</>}
+                {selected.deletion ? `已删除（删除前：${statuses[selected.status]}）` : statuses[selected.status]}</>}
               </p>
             </div>
             <div>
@@ -801,7 +820,7 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
               </p>
             </div>
           </div>
-          {!selected.visibility && selected.status !== 'merged' && (manager || selected.ownerId === data.user.id) && <GoalOwnerWork planId={selected.id} scope={periodScope(data)} />}
+          {!selected.visibility && isActiveMonthlyPlan(selected) && selected.status !== 'merged' && (manager || selected.ownerId === data.user.id) && <GoalOwnerWork planId={selected.id} scope={periodScope(data)} />}
         </Modal>
       )}
     </>

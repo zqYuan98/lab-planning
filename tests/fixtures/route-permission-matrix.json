@@ -11,6 +11,12 @@
   "member": 404,
   "manager": 404
  },
+ "DELETE /api/plans/:id": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 404,
+  "manager": 404
+ },
  "DELETE /api/users/:id": {
   "anonymous": 401,
   "observer": 403,
@@ -282,6 +288,12 @@
   "manager": 404
  },
  "GET /api/period-reviews/:id/export": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 404,
+  "manager": 404
+ },
+ "GET /api/plans/:id/deletion-preview": {
   "anonymous": 401,
   "observer": 404,
   "member": 404,

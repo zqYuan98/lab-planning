@@ -106,11 +106,11 @@ export class DirectoryWorkspaceService {
     if (!ids.length) return new Map<string, number>()
     const placeholders = ids.map(() => '?').join(',')
     const rows = isManager(actor)
-      ? this.store.selectRows(`SELECT json_extract(data,'$.projectId') AS projectId,COUNT(*) AS n FROM entities WHERE collection='plans' AND json_extract(data,'$.status')='published' AND json_extract(data,'$.projectId') IN (${placeholders}) GROUP BY projectId`, ids)
+      ? this.store.selectRows(`SELECT json_extract(data,'$.projectId') AS projectId,COUNT(*) AS n FROM entities WHERE collection='plans' AND json_extract(data,'$.deletion') IS NULL AND json_extract(data,'$.status')='published' AND json_extract(data,'$.projectId') IN (${placeholders}) GROUP BY projectId`, ids)
       : this.store.selectRows(`WITH viewer AS (SELECT ? AS actorId), visible AS (
           SELECT CASE WHEN json_extract(p.data,'$.ownerId')=viewer.actorId OR EXISTS(SELECT 1 FROM json_each(p.data,'$.collaboratorIds') c WHERE c.value=viewer.actorId)
             THEN p.data ELSE ${historicalPlanDataSql('p.id', 'viewer.actorId')} END AS data
-          FROM entities p,viewer WHERE p.collection='plans')
+          FROM entities p,viewer WHERE p.collection='plans' AND json_extract(p.data,'$.deletion') IS NULL)
         SELECT json_extract(data,'$.projectId') AS projectId,COUNT(*) AS n FROM visible WHERE json_extract(data,'$.status')='published' AND json_extract(data,'$.projectId') IN (${placeholders}) GROUP BY projectId`, [actor.id, ...ids])
     return new Map(rows.map(row => [String(row.projectId), Number(row.n)]))
   }
@@ -132,7 +132,7 @@ export class DirectoryWorkspaceService {
   private annualPlans(actor: User, year: number, ids: string[]): MonthlyPlan[] {
     if (!ids.length || isObserver(actor)) return []
     const visibility = isManager(actor) ? '' : ` AND (${field('ownerId')}=? OR EXISTS(SELECT 1 FROM json_each(e.data,'$.collaboratorIds') c WHERE c.value=?))`
-    return this.store.selectJson<MonthlyPlan>(`SELECT json_object('id',e.id,'month',${field('month')},'annualGoalId',${field('annualGoalId')},'sourcePlanId',${field('sourcePlanId')},'mergedIntoId',${field('mergedIntoId')},'mergedFromIds',json(COALESCE(${field('mergedFromIds')},'[]')),'status',${field('status')},'acceptanceStatus',${field('acceptanceStatus')}) AS data FROM entities e WHERE e.collection='plans' AND substr(${field('month')},1,4)=? AND ${field('annualGoalId')} IN (${ids.map(() => '?').join(',')}) AND ${field('visibility')} IS NULL${visibility}`, [String(year), ...ids, ...(isManager(actor) ? [] : [actor.id, actor.id])])
+    return this.store.selectJson<MonthlyPlan>(`SELECT json_object('id',e.id,'month',${field('month')},'annualGoalId',${field('annualGoalId')},'sourcePlanId',${field('sourcePlanId')},'mergedIntoId',${field('mergedIntoId')},'mergedFromIds',json(COALESCE(${field('mergedFromIds')},'[]')),'status',${field('status')},'acceptanceStatus',${field('acceptanceStatus')}) AS data FROM entities e WHERE e.collection='plans' AND ${field('deletion')} IS NULL AND substr(${field('month')},1,4)=? AND ${field('annualGoalId')} IN (${ids.map(() => '?').join(',')}) AND ${field('visibility')} IS NULL${visibility}`, [String(year), ...ids, ...(isManager(actor) ? [] : [actor.id, actor.id])])
   }
   goalDetail(actor: User, id: string, input: Query): AnnualGoalDetail {
     return this.store.readTransaction(() => {

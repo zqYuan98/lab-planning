@@ -11,7 +11,7 @@ export interface AnnualGoalProgress {
 
 /** Pass only currently authorized plans; neither aggregation nor ancestry widens that scope. */
 export function annualGoalProgress(goal: AnnualGoal, plans: readonly MonthlyPlan[]): AnnualGoalProgress {
-  const candidates = plans.filter(plan => !plan.visibility && plan.annualGoalId === goal.id && Number(plan.month.slice(0, 4)) === goal.year)
+  const candidates = plans.filter(plan => !plan.deletion && !plan.visibility && plan.annualGoalId === goal.id && Number(plan.month.slice(0, 4)) === goal.year)
   const byId = new Map(candidates.map(plan => [plan.id, plan]))
   const parents = new Map(candidates.map(plan => [plan.id, plan.id]))
   const root = (id: string): string => {

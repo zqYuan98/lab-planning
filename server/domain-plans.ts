@@ -1,15 +1,20 @@
 import { assertBusinessActor } from './object-access.ts'
 import { createHash } from 'node:crypto'
-import type { AnnualGoal, AuditEvent, Entity, MonthlyPlan, Publication, Task, User } from '../shared/types.ts'
+import type { AnnualGoal, AuditEvent, Entity, MonthlyPlan, Publication, Task, User, WeeklyRecord } from '../shared/types.ts'
+import type { MonthlyPlanDeletionPreview } from '../shared/monthly-plan-deletion.ts'
+import type { CarryWorkflow } from '../shared/carry-workflows.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
 import { isActiveTask } from '../shared/task-state.ts'
+import { isActiveMonthlyPlan } from '../shared/monthly-plan-state.ts'
+import { isActiveWeeklyRecord } from '../shared/weekly-record-state.ts'
 import { projectPlan, visiblePlanHistory } from './plan-visibility.ts'
 import { notifyPublishedPlans } from './notification-events.ts'
 import { HttpError } from './store.ts'
 import { DomainBase, bool, choice, date, manager, month, own, participates, text, type Input } from './domain-common.ts'
 import { assertOperationEpoch } from './operation-context.ts'
-import { isManager } from './authorization.ts'
+import { isManager, isMember } from './authorization.ts'
 import { LIMITS, PRIORITIES, WORK_SOURCES } from '../shared/entity-rules.ts'
+import { submittedWeeklyEvidence } from './carry-workflows-history.ts'
 
 interface MonthlyCarryReceipt extends Entity {
   actorId: string; requestId: string; sourcePlanId: string; sourceVersion: number; payloadHash: string; targetPlanId: string
@@ -34,16 +39,87 @@ export class MonthlyService extends DomainBase {
     return Math.max(0, ...this.store.list<Publication>('publications').filter(item => item.month === period).map(item => item.revision)) + 1
   }
   private snapshot(actor: User, period: string, revision: number, reason: string): Publication {
-    return this.store.insert<Publication>('publications', { month: period, revision, actorId: actor.id, reason, plans: this.store.list<MonthlyPlan>('plans').filter(item => item.month === period && item.status === 'published') })
+    return this.store.insert<Publication>('publications', { month: period, revision, actorId: actor.id, reason, plans: this.store.list<MonthlyPlan>('plans').filter(item => isActiveMonthlyPlan(item) && item.month === period && item.status === 'published') })
+  }
+  private active(plan: MonthlyPlan) {
+    if (!isActiveMonthlyPlan(plan)) throw new HttpError(409, '月度目标已删除，仅可查看历史记录', 'PLAN_DELETED')
   }
   private visible(actor: User, plan: MonthlyPlan) {
     if (!this.planVisible(actor, plan)) throw new HttpError(403, '无权查看此月计划')
   }
   private editable(actor: User, plan: MonthlyPlan) {
     own(actor, plan.ownerId)
+    this.active(plan)
     if (isManager(actor)) return
     if (!plan.isTemporary) throw new HttpError(403, '普通月度目标需由管理者维护')
     if (!['draft', 'returned'].includes(plan.status)) throw new HttpError(403, '提交后的临时目标需由管理者退回后修改')
+  }
+  private deletionScope(actor: User, plan: MonthlyPlan) {
+    if (!isManager(actor) && (!isMember(actor) || plan.ownerId !== actor.id)) throw new HttpError(403, '只有管理者或目标本人可以核对删除此目标')
+  }
+  private deletionPermission(actor: User, plan: MonthlyPlan): string | undefined {
+    if (isManager(actor)) return
+    if (!plan.isTemporary && (plan.importSource || !this.store.entityEvents('plan', plan.id).some(event => event.action === 'create' && event.actorId === actor.id))) {
+      return '普通目标由管理者创建或导入，请联系管理者删除；成员只能删除自己提报的目标'
+    }
+  }
+  private deletionBlockers(actor: User, plan: MonthlyPlan): string[] {
+    const blockers: string[] = []
+    const permission = this.deletionPermission(actor, plan)
+    if (permission) blockers.push(permission)
+    if (!isActiveMonthlyPlan(plan)) blockers.push('此月度目标已经删除，历史记录仍然保留')
+    if (plan.visibility) blockers.push('历史目标引用不能删除，请核对当前目标')
+    if (!['draft', 'returned', 'submitted', 'approved'].includes(plan.status)) blockers.push('只有尚未发布且未合并的月度目标可以删除')
+    if (!isManager(actor) && !['draft', 'returned'].includes(plan.status)) blockers.push('成员只能删除自己的草稿或退回修改目标；待审核目标请联系管理者处理')
+    const historicalPublication = this.store.entityEvents('plan', plan.id).some(event => [event.before, event.after].some(value => {
+      const snapshot = value as Partial<MonthlyPlan> | null
+      return snapshot?.id === plan.id && (snapshot.status === 'published' || snapshot.publishedVersion != null)
+    }))
+    if (plan.publishedVersion != null || historicalPublication || this.store.list<Publication>('publications').some(publication => publication.plans.some(snapshot => snapshot.id === plan.id))) blockers.push('此目标已有发布记录，不能删除正式承诺')
+    if (plan.acceptanceStatus !== 'pending' || [plan.actualOutcome, plan.acceptanceNote, plan.rootCause, plan.remedy].some(value => value?.trim())) blockers.push('此目标已有实际成果或验收记录，不能作为未执行的重复项删除')
+    const tasks = this.store.list<Task>('tasks').filter(task => task.monthlyPlanId === plan.id)
+    const taskIds = new Set(tasks.map(task => task.id))
+    const activeTasks = tasks.filter(isActiveTask)
+    if (activeTasks.length) blockers.push(`仍关联 ${activeTasks.length} 项有效个人任务，请由管理者关联到正确的已发布目标，或先处理周安排再作废无成果的重复任务`)
+    const records = this.store.list<WeeklyRecord>('weeklyRecords').filter(record => record.monthlyPlanId === plan.id || taskIds.has(record.taskId))
+    const activeRecords = records.filter(isActiveWeeklyRecord)
+    if (activeRecords.length) blockers.push(`仍关联 ${activeRecords.length} 项有效周安排（含草稿），请先核对并处理周安排`)
+    const submittedRecordIds = records.length ? submittedWeeklyEvidence(this.store).ids : new Set<string>()
+    if (tasks.some(task => task.status === 'done' || task.completionNote?.trim() || task.evidenceUrl?.trim())
+      || records.some(record => record.submitted || submittedRecordIds.has(record.id) || record.actualOutcome?.trim() || record.evidenceUrl?.trim())
+      || this.store.list<{ taskId: string }>('taskDeliveries').some(delivery => taskIds.has(delivery.taskId))) blockers.push('关联任务或周安排已有提交、成果或验收证据，不能删除其月度目标')
+    const linkedPlans = this.store.list<MonthlyPlan>('plans').filter(other => other.id !== plan.id && isActiveMonthlyPlan(other)
+      && (other.sourcePlanId === plan.id || other.mergedIntoId === plan.id || other.mergedFromIds?.includes(plan.id)
+        || plan.sourcePlanId === other.id || plan.mergedIntoId === other.id || plan.mergedFromIds?.includes(other.id)))
+    if (linkedPlans.length) blockers.push('此目标仍关联跨月承接或合并目标，请先核对目标承接关系')
+    if (this.store.list<CarryWorkflow>('carryWorkflows').some(workflow => !['completed', 'cancelled'].includes(workflow.status)
+      && (workflow.sourcePlanId === plan.id || workflow.targetPlanId === plan.id))) blockers.push('此目标仍有进行中的跨期处理，请先取消或完成该流程')
+    return blockers
+  }
+  deletionPreview(actor: User, id: string): MonthlyPlanDeletionPreview {
+    return this.store.readTransaction(() => {
+      actor = assertBusinessActor(this.store, actor)
+      const plan = this.need<MonthlyPlan>('plans', id)
+      this.deletionScope(actor, plan)
+      const blockers = this.deletionBlockers(actor, plan)
+      return { plan: projectPlan(actor, plan, this.store), canDelete: !blockers.length, blockers }
+    })
+  }
+  delete(actor: User, id: string, input: Input): MonthlyPlan {
+    return this.store.transaction(() => {
+      actor = assertBusinessActor(this.store, actor)
+      const before = this.need<MonthlyPlan>('plans', id)
+      this.deletionScope(actor, before)
+      const permission = this.deletionPermission(actor, before)
+      if (permission) throw new HttpError(403, permission)
+      this.current<MonthlyPlan>('plans', id, input)
+      const reason = text(input.reason, '删除原因')
+      const blockers = this.deletionBlockers(actor, before)
+      if (blockers.length) throw new HttpError(409, blockers.join('；'), 'PLAN_DELETE_BLOCKED')
+      const after = this.store.update<MonthlyPlan>('plans', id, before.version, { deletion: { deletedAt: new Date().toISOString(), deletedBy: actor.id, reason } })
+      this.audit(actor, 'plan', id, 'delete', before, after, reason)
+      return projectPlan(actor, after, this.store)
+    })
   }
   create(actor: User, input: Input): MonthlyPlan {
     actor = assertBusinessActor(this.store, actor)
@@ -151,6 +227,7 @@ export class MonthlyService extends DomainBase {
     manager(actor)
     return this.store.transaction(() => {
       const before = this.current<MonthlyPlan>('plans', id, input)
+      this.active(before)
       if (before.status !== 'submitted') throw new HttpError(400, '只有已提交的月计划可以审核')
       const decision = choice(input.decision, ['approve', 'return'], '审核决定')
       const comment = text(input.comment, '退回原因', decision === 'return')
@@ -176,6 +253,7 @@ export class MonthlyService extends DomainBase {
       // Validate the exact preview before any status, audit, notification or snapshot write.
       const plans = ids.map(id => this.current<MonthlyPlan>('plans', id, { version: (versions as Input)[id] }))
       for (const plan of plans) {
+        this.active(plan)
         if (plan.month !== period || plan.status !== 'approved') throw new HttpError(409, '只能发布所属月份内已审核通过的计划，请刷新后重试')
         if (plan.projectId) this.activeProject(plan.projectId)
       }
@@ -200,6 +278,7 @@ export class MonthlyService extends DomainBase {
       const sources = ids.map(id => this.need<MonthlyPlan>('plans', id))
       const first = sources[0]
       for (const source of sources) {
+        this.active(source)
         if (!['submitted', 'approved'].includes(source.status)) throw new HttpError(409, '只可合并尚未发布的已提交或审核通过提报')
         const sameScope = first.projectId ? source.projectId === first.projectId : source.projectId === null && source.category === first.category
         if (source.month !== first.month || !sameScope) throw new HttpError(400, '只可合并同月同项目的提报；没有项目时须属于同一工作类别')
@@ -237,6 +316,7 @@ export class MonthlyService extends DomainBase {
     return this.store.transaction(() => {
       const before = this.need<MonthlyPlan>('plans', id)
       own(actor, before.ownerId)
+      this.active(before)
       this.current<MonthlyPlan>('plans', id, input)
       if (before.status !== 'published') throw new HttpError(400, '只有已发布计划可以提交或确认月度成果')
       const status = choice(input.acceptanceStatus, ['submitted', 'accepted', 'not_completed'], '验收状态')
@@ -279,10 +359,12 @@ export class MonthlyService extends DomainBase {
         if (receipt.actorId !== currentActor.id || receipt.payloadHash !== payloadHash) throw new HttpError(409, '此提交标识已用于不同承接内容，请核对原结果后重新发起', 'IDEMPOTENCY_MISMATCH')
         const target = this.store.get<MonthlyPlan>('plans', receipt.targetPlanId)
         if (!target) throw new HttpError(409, '原承接目标已不存在，请核对历史记录后重新处理', 'CARRY_TARGET_MISSING')
+        this.active(target)
         this.visible(currentActor, target)
         return projectPlan(currentActor, target, this.store)
       }
       const source = this.need<MonthlyPlan>('plans', payload.sourcePlanId)
+      this.active(source)
       if (source.version !== payload.sourceVersion) throw new HttpError(409, '来源目标已更新，请重新核对后发起承接', 'SOURCE_VERSION_CONFLICT')
       own(currentActor, source.ownerId)
       if (source.status === 'merged') throw new HttpError(400, '请从合并后的月计划发起跨月承接')

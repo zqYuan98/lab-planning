@@ -61,6 +61,7 @@ const planSchema = z.object({ ...entity, annualGoalId: id.nullable().optional(),
   expectedOutcome: line, acceptanceCriteria: line, dueDate: z.union([day, z.literal('')]), priority: z.enum(PRIORITIES), status: z.enum(PLAN_STATUSES),
   reviewComment: line, publishedVersion: z.number().int().positive().nullable(), sourcePlanId: id.nullable(), actualOutcome: line, acceptanceStatus: z.enum(ACCEPTANCE_STATUSES), acceptanceNote: line, rootCause: line.optional(), remedy: line.optional(),
   mergedFromIds: z.array(id).max(50).optional(), mergedIntoId: id.optional(), importSource: importSourceSchema.optional(), visibility: z.enum(PLAN_VISIBILITIES).optional(),
+  deletion: deletionSchema.optional(),
   isTemporary: z.boolean().optional(), temporaryReason: line.optional(),
   workSource: z.enum(WORK_SOURCES).optional(), assignedBy: z.string().max(LIMITS.assignedBy).optional(), assignedOn: z.union([day, z.literal('')]).optional(),
 }).strict().superRefine((row, ctx) => {
@@ -224,6 +225,7 @@ export function projectRow(collection: TransferCollection, value: unknown): Reco
   if (row.workOrigin) row.workOrigin = pick(row.workOrigin, ['kind', 'actorId', 'reason'])
   if (row.importSource) row.importSource = pick(row.importSource, Object.keys(importSourceSchema.shape))
   if (collection === 'tasks' && row.cancellation) row.cancellation = pick(row.cancellation, ['cancelledAt', 'cancelledBy', 'reason'])
+  if (collection === 'plans' && row.deletion) row.deletion = pick(row.deletion, ['deletedAt', 'deletedBy', 'reason'])
   if (collection === 'weeklyRecords') {
     if (row.deletion) row.deletion = pick(row.deletion, ['deletedAt', 'deletedBy', 'reason'])
     if (row.planApproval) row.planApproval = pick(row.planApproval, ['required', 'approvedSubmissionId', 'approvedFingerprint', 'suspended'])
@@ -299,6 +301,7 @@ export function rowReferences(collection: TransferCollection, value: unknown): D
     if (['projects', 'annualGoals', 'plans', 'tasks', 'weeklyRecords'].includes(target)) add('users', row.ownerId)
     if (target === 'plans') {
       add('annualGoals', row.annualGoalId); add('projects', row.projectId); add('plans', row.sourcePlanId); add('plans', row.mergedIntoId)
+      if (row.deletion) add('users', (row.deletion as NonNullable<MonthlyPlan['deletion']>).deletedBy)
       for (const id of row.collaboratorIds as string[]) add('users', id)
       for (const id of (row.mergedFromIds ?? []) as string[]) add('plans', id)
     }
@@ -382,6 +385,10 @@ export function remapUsers(collection: TransferCollection, value: unknown, mappi
   if (collection === 'tasks' && row.cancellation) {
     const cancellation = row.cancellation as NonNullable<Task['cancellation']>
     cancellation.cancelledBy = mapping[cancellation.cancelledBy] ?? cancellation.cancelledBy
+  }
+  if (collection === 'plans' && row.deletion) {
+    const deletion = row.deletion as NonNullable<MonthlyPlan['deletion']>
+    deletion.deletedBy = mapping[deletion.deletedBy] ?? deletion.deletedBy
   }
   if ((collection === 'tasks' || collection === 'weeklyRecords') && row.workOrigin) { const origin = row.workOrigin as { actorId: string }; origin.actorId = mapping[origin.actorId] ?? origin.actorId }
   if (['projects', 'annualGoals', 'plans', 'tasks', 'weeklyRecords'].includes(collection)) replace('ownerId')

@@ -43,7 +43,7 @@ export function registerSql(filter: RegisterFilter) {
     FROM taskObjects e
     UNION ALL
     SELECT e.data,e.id,0,EXISTS(SELECT 1 FROM completedCarrySources c WHERE c.planId=e.id),${f('createdAt')},'plan',1,0,${f('workSource')},${f('priority')},CASE WHEN ${f('isTemporary')}=1 THEN 'temporary' ELSE 'monthly' END,NOT EXISTS(SELECT 1 FROM completedCarrySources c WHERE c.planId=e.id),0,0,0
-    FROM entities e WHERE e.collection='plans' AND ${f('ownerId')}=? AND ${f('status')}<>'merged' AND ${f('acceptanceStatus')}<>'accepted'
+    FROM entities e WHERE e.collection='plans' AND ${f('deletion')} IS NULL AND ${f('ownerId')}=? AND ${f('status')}<>'merged' AND ${f('acceptanceStatus')}<>'accepted'
       AND NOT EXISTS(SELECT 1 FROM taskObjects t WHERE ${f('monthlyPlanId','t')}=+e.id)
   )`
   const values: (string | number)[] = [filter.actorId, filter.manager ? 1 : 0, filter.actorId, filter.actorId, filter.actorId, filter.actorId, filter.actorId, filter.weekStart, filter.actorId, filter.weekStart, filter.actorId]

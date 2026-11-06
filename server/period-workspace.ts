@@ -6,6 +6,7 @@ import type { AuditEvent, MonthlyPlan, Project, Publication, Task, User, WeeklyR
 import type { MonthlyWorkspace, PeriodCandidates, PeriodReferences, PublicationSummary, WeeklyWorkspace } from '../shared/period-workspace.ts'
 import { canUseAccount, registrationApproved } from '../shared/auth-policy.ts'
 import { isActiveTask } from '../shared/task-state.ts'
+import { isActiveMonthlyPlan } from '../shared/monthly-plan-state.ts'
 import { isActiveWeeklyRecord, isEffectiveWeeklyRecord } from '../shared/weekly-record-state.ts'
 import { safeUser } from './auth.ts'
 import { HttpError, type Store } from './store.ts'
@@ -115,14 +116,15 @@ export class PeriodWorkspaceService {
       const ctx = pageContext(this.store, actor); actor = ctx.actor
       queryKeys(input, ['month', 'includeInactive', 'scope', 'status', 'q', 'cursor', 'limit', 'id'])
       const month = date(input.month, true), inactive = flag(input.includeInactive), status = queryText(input.status), q = queryText(input.q), scope = queryText(input.scope) || 'current'
-      if (!['current', 'historical'].includes(scope)) throw new HttpError(400, '月度目标范围无效')
+      if (!['current', 'historical', 'deleted'].includes(scope)) throw new HttpError(400, '月度目标范围无效')
       const all = this.planRows(actor, month), refs = this.references(actor, [], all), users = new Map(refs.users.map(user => [user.id, user])), projects = new Map(refs.projects.map(project => [project.id, project]))
       const visible = all.filter(plan => { const owner = users.get(plan.ownerId); return !!owner && (canUseAccount(owner) || inactive && registrationApproved(owner)) || plan.collaboratorIds.some(id => { const user = users.get(id); return !!user && canUseAccount(user) }) })
-      const currentPlans = visible.filter(plan => !plan.visibility), historical = visible.filter(plan => !!plan.visibility)
+      const currentPlans = visible.filter(plan => !plan.visibility && isActiveMonthlyPlan(plan)), historical = visible.filter(plan => !!plan.visibility), deleted = visible.filter(plan => !plan.visibility && !isActiveMonthlyPlan(plan))
       const statuses = Object.fromEntries(['all', 'draft', 'submitted', 'returned', 'approved', 'published', 'merged'].map(status => [status, status === 'all' ? currentPlans.length : currentPlans.filter(plan => plan.status === status).length]))
-      const publishable = all.filter(plan => !plan.visibility && plan.status === 'approved' && (!plan.projectId || projects.get(plan.projectId)?.status !== 'archived')).length
+      statuses.deleted = deleted.length
+      const publishable = all.filter(plan => isActiveMonthlyPlan(plan) && !plan.visibility && plan.status === 'approved' && (!plan.projectId || projects.get(plan.projectId)?.status !== 'archived')).length
       const publications = this.publicationCount(actor, month)
-      const filtered = (scope === 'historical' ? historical : currentPlans).filter(plan => (!status || status === 'all' || plan.status === status) && (!q || `${plan.title}${users.get(plan.ownerId)?.name ?? '未指定'}${plan.projectId ? projects.get(plan.projectId)?.name ?? '历史项目' : '部门工作'}`.includes(q)))
+      const filtered = (scope === 'historical' ? historical : scope === 'deleted' ? deleted : currentPlans).filter(plan => (scope !== 'current' || !status || status === 'all' || plan.status === status) && (!q || `${plan.title}${users.get(plan.ownerId)?.name ?? '未指定'}${plan.projectId ? projects.get(plan.projectId)?.name ?? '历史项目' : '部门工作'}`.includes(q)))
       const page = readPage(input, filtered, ctx, 'monthly'), references = this.references(actor, [], page.items)
       const id = queryText(input.id), current = id ? this.store.get<MonthlyPlan>('plans', id) : undefined
       const detail = current ? this.planVisibility(actor, [current])[0] ?? this.planRows(actor, current.month).find(plan => plan.id === current.id) : undefined
@@ -151,7 +153,7 @@ export class PeriodWorkspaceService {
       const kind = queryText(input.kind), purpose = queryText(input.purpose), owner = queryText(input.ownerId) || actor.id, q = queryText(input.q).toLocaleLowerCase()
       if (!['plans', 'tasks'].includes(kind) || !['weekly', 'relink', 'publish', 'merge'].includes(purpose)) throw new HttpError(400, '候选条件无效')
       if (!isManager(actor) && owner !== actor.id || ['publish', 'merge', 'relink'].includes(purpose) && !isManager(actor)) throw new HttpError(403, '无权读取该候选范围')
-      const values: (string | number)[] = [], planClauses = ["p.collection='plans'", "json_extract(p.data,'$.visibility') IS NULL", "json_extract(p.data,'$.status')<>'merged'", "(json_extract(p.data,'$.projectId') IS NULL OR EXISTS(SELECT 1 FROM entities pr WHERE pr.collection='projects' AND pr.id=json_extract(p.data,'$.projectId') AND json_extract(pr.data,'$.status')='active'))"]
+      const values: (string | number)[] = [], planClauses = ["p.collection='plans'", "json_extract(p.data,'$.deletion') IS NULL", "json_extract(p.data,'$.visibility') IS NULL", "json_extract(p.data,'$.status')<>'merged'", "(json_extract(p.data,'$.projectId') IS NULL OR EXISTS(SELECT 1 FROM entities pr WHERE pr.collection='projects' AND pr.id=json_extract(p.data,'$.projectId') AND json_extract(pr.data,'$.status')='active'))"]
       if (!['publish', 'merge'].includes(purpose)) { planClauses.push("(json_extract(p.data,'$.ownerId')=? OR EXISTS(SELECT 1 FROM json_each(p.data,'$.collaboratorIds') c WHERE c.value=?))"); values.push(owner, owner) }
       if (input.month) { planClauses.push("json_extract(p.data,'$.month')=?"); values.push(date(input.month, true)) }
       if (purpose === 'publish') planClauses.push("json_extract(p.data,'$.status')='approved'")
