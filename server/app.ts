@@ -8,7 +8,10 @@ import { appOrigin, clearSession, createSession, createOriginGuard, requireAuth,
 import { Domain } from './domain.ts'
 import { HttpError, Store } from './store.ts'
 import { createReportRouter } from './report-routes.ts'
-import { createAiSettingsRouter, createImportRouter } from './import-routes.ts'
+import { createAiSettingsRouter, createImportRouter, getImportService } from './import-routes.ts'
+import { createDingTalkDocumentsClient, type DingTalkDocumentsClient } from './dingtalk-documents-client.ts'
+import { DingTalkMonthlyImportService } from './dingtalk-monthly-import.ts'
+import { createDingTalkMonthlyRouter } from './dingtalk-monthly-routes.ts'
 import { requireIntegrationAuth } from './integration-auth.ts'
 import { createDataRouter } from './data-routes.ts'
 import { createWeeklySubmissionRouter } from './weekly-submission-routes.ts'
@@ -41,7 +44,7 @@ import { UsageAnalyticsStore } from './usage-analytics.ts'
 import { usageAnalyticsRouter, usageAnalyticsSuccessMiddleware } from './usage-analytics-routes.ts'
 import { requestTiming } from './request-timing.ts'
 
-interface AppOptions { store?: Store; dbPath?: string; enableScheduler?: boolean; dingtalkClient?: DingTalkClient; nativeClient?: DingTalkNativeClient; usageAnalytics?: UsageAnalyticsStore }
+interface AppOptions { store?: Store; dbPath?: string; enableScheduler?: boolean; dingtalkClient?: DingTalkClient; nativeClient?: DingTalkNativeClient; documentsClient?: DingTalkDocumentsClient; usageAnalytics?: UsageAnalyticsStore }
 /** Trust named loopback or explicit proxy addresses, never a caller-supplied hop count. */
 function trustedProxies(value = process.env.TRUST_PROXY): false | string[] {
   if (!value || value === 'false') return false
@@ -63,6 +66,7 @@ export function createApp(options: AppOptions = {}) {
   const domain = new Domain(store)
   const app = express()
   const dingtalk = options.dingtalkClient ?? createDingTalkClient()
+  const documentImports = new DingTalkMonthlyImportService(store, getImportService(store), options.documentsClient ?? createDingTalkDocumentsClient())
   app.locals.store = store
   const usageAnalytics = options.usageAnalytics ?? new UsageAnalyticsStore(':memory:')
   app.locals.usageAnalytics = usageAnalytics
@@ -218,7 +222,7 @@ export function createApp(options: AppOptions = {}) {
   app.post('/api/weekly-records/:id/carry', mutate(domain.carryWeeklyRecord))
   app.use('/api', createReportRouter(store))
   app.use('/api', createReportAgentRouter(store))
-  app.use('/api', createImportRouter(store), createAiSettingsRouter(store), createDataRouter(store))
+  app.use('/api', createDingTalkMonthlyRouter(documentImports), createImportRouter(store, documentImports), createAiSettingsRouter(store), createDataRouter(store))
   app.use('/api', (_req, _res, next) => next(new HttpError(404, '接口不存在')))
 
   const dist = resolve(dirname(fileURLToPath(import.meta.url)), '../dist')

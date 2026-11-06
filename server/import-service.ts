@@ -15,6 +15,8 @@ import { participates, visiblePlan } from './plan-visibility.ts'
 import { withSilentImport } from './import-notification-context.ts'
 import { readImportDirectory } from './import-context.ts'
 import { isManager } from './authorization.ts'
+import { managerActor } from './authorization.ts'
+import type { DingTalkImportProvenance } from '../shared/dingtalk-monthly-api.ts'
 import { WORK_SOURCES } from '../shared/entity-rules.ts'
 
 interface ImportSource extends Entity { ownerId: string; fileName: string; mimeType: string; base64: string; hash: string; parsed: ParsedImportFile }
@@ -86,6 +88,7 @@ export class ImportService {
   private batch(actor: User, id: string): ImportBatch {
     const batch = this.store.get<ImportBatch>('importBatches', id)
     if (!batch) throw new HttpError(404, '导入批次不存在')
+    if (batch.dingtalk) managerActor(this.store, actor)
     if (!isManager(actor) && batch.ownerId !== actor.id) throw new HttpError(403, '无权查看此导入批次')
     const job = this.store.get<ImportJob>('importJobs', id)
     return job ? { ...batch, analysis: { status: job.status, completedChunks: job.completedChunks, totalChunks: job.totalChunks, ...(job.error ? { error: job.error } : {}) } } : batch
@@ -101,7 +104,7 @@ export class ImportService {
   }
   list(actor: User): ImportBatchSummary[] {
     actor = assertBusinessActor(this.store, actor)
-    return this.store.list<ImportBatch>('importBatches').filter(b => isManager(actor) || b.ownerId === actor.id)
+    return this.store.list<ImportBatch>('importBatches').filter(b => isManager(actor) || !b.dingtalk && b.ownerId === actor.id)
       .reverse().map(batch => { const { rows, ...rest } = this.get(actor, batch.id); return { ...rest, rowCount: rows.length } })
   }
   source(actor: User, id: string) {
@@ -167,7 +170,12 @@ export class ImportService {
         if (!linked && identity) this.store.delete('importSourceIdentities', identity.id, identity.version)
         if (source) this.store.delete('importSources', source.id, source.version)
         for (const chunk of this.store.list<ParsedChunk>('importParsedChunks').filter(chunk => chunk.sourceId === before.sourceId)) this.store.delete('importParsedChunks', chunk.id, chunk.version)
+        if (before.dingtalk) {
+          const snapshot = this.store.get<Entity>('dingtalkSnapshots', before.dingtalk.snapshotId)
+          if (snapshot) this.store.delete('dingtalkSnapshots', snapshot.id, snapshot.version)
+        }
       }
+      if (before.dingtalk) for (const resolution of this.store.list<Entity & { batchId: string }>('dingtalkImportResolutions').filter(item => item.batchId === id)) this.store.delete('dingtalkImportResolutions', resolution.id, resolution.version)
       this.store.insert<AuditEvent>('events', { entityType: 'import', entityId: id, actorId: actor.id, action: 'delete', reason: '', before: { fileName: before.fileName, sourceId: before.sourceId, status: before.status, mode: before.mode, rowCount: before.rows.length }, after: { deletedHistoryIds: history.map(record => record.id), sourceRemoved: !shared } })
       return { ok: true, deletedHistoryCount: history.length }
     })
@@ -216,6 +224,24 @@ export class ImportService {
   }
   private audit(actor: User, id: string, action: string, after: unknown) {
     this.store.insert<AuditEvent>('events', { entityType: 'import', entityId: id, actorId: actor.id, action, reason: '', before: null, after })
+  }
+  /** Internal connector boundary: callers supply a complete, server-read cell snapshot. */
+  createDocumentBatch(actor: User, source: { id: string; parsed: ParsedImportFile; rows: Partial<ImportRow>[]; provenance: DingTalkImportProvenance }): ImportBatch {
+    actor = managerActor(this.store, actor)
+    return this.store.transaction(() => {
+      const existing = this.store.list<ImportBatch>('importBatches').find(batch => batch.sourceId === source.id)
+      if (existing) return this.get(actor, existing.id)
+      if (!source.rows.length || source.rows.length > 1000) throw new HttpError(400, '钉钉目标必须包含1至1000条事项')
+      const parsed = source.parsed
+      const raw = JSON.stringify(parsed)
+      const previous = this.store.get<ImportSource>('importSources', source.id)
+      if (previous && previous.hash !== hash(raw)) throw new HttpError(409, '来源快照已变化，请重新获取')
+      if (!previous) this.store.insert<ImportSource>('importSources', { id: source.id, ownerId: actor.id, fileName: parsed.fileName, mimeType: 'application/vnd.lab.dingtalk-sheet+json', base64: Buffer.from(raw).toString('base64'), hash: hash(raw), parsed })
+      const rows = this.checked(actor, this.match(actor, source.rows.map((row, index) => this.normalizeRow(row, index))), 'draft')
+      const batch = this.store.insert<ImportBatch>('importBatches', { ownerId: actor.id, sourceId: source.id, fileName: parsed.fileName, kind: 'table', status: 'parsed', sourceSheets: parsed.sheets?.map(sheet => ({ name: sheet.name, rowCount: sheet.rows.length })) ?? [], warnings: parsed.warnings, rows, mode: 'draft', requiresCompletionReview: true, dingtalk: source.provenance })
+      this.audit(actor, batch.id, 'dingtalk_fetch', { documentId: source.provenance.documentId, sheetId: source.provenance.sheetId, targetMonth: source.provenance.targetMonth, contentHash: source.provenance.contentHash, rowCount: rows.length })
+      return batch
+    })
   }
   private mutable(actor: User, id: string, version: unknown) {
     const batch = this.batch(actor, id)
@@ -349,6 +375,7 @@ export class ImportService {
   startAnalysis(actor: User, id: string, input: Input, credentialGuard?: () => void): ImportBatch {
     actor = assertBusinessActor(this.store, actor)
     const batch = this.mutable(actor, id, input.version)
+    if (batch.dingtalk) throw new HttpError(409, '钉钉目标按单元格读取，请使用重新获取，不使用模型重新解析')
     if (this.analyzing.has(id)) throw new HttpError(409, '此批次正在解析，请查看进度')
     if (this.store.list<ImportJob>('importJobs').filter(j => j.status === 'running' && j.ownerId === actor.id).length >= 2) throw new HttpError(429, '已有两份资料正在解析，请稍后再开始新任务')
     const source = this.source(actor, id)
@@ -460,6 +487,7 @@ export class ImportService {
     return this.store.transaction(() => {
       const before = this.mutable(actor, id, input.version)
       const mode = input.mode ?? before.mode
+      if (before.dingtalk && mode !== 'draft') throw new HttpError(400, '钉钉目标只可导入草稿，发布请使用月度目标流程')
       if (!['history', 'draft', 'existing'].includes(String(mode))) throw new HttpError(400, '导入方式无效')
       const authorizedRows = before.rows.filter(row => isManager(actor) || !row.ownerId || row.ownerId === actor.id)
       if (authorizedRows.length !== before.rows.length && mode !== before.mode) throw new HttpError(403, '包含其他成员资料的批次需由管理员调整整体保存方式')
@@ -470,9 +498,11 @@ export class ImportService {
         const row = value as ImportRow
         const original = authorizedRows.find(item => item.id === row?.id)
         const isNew = !original && typeof row?.id === 'string' && /^new:[\w-]{1,150}$/.test(row.id)
+        if (before.dingtalk && isNew) throw new HttpError(400, '钉钉目标按源表一行一项，请在原表补齐后重新获取')
         if ((!original && !isNew) || seen.has(row.id)) throw new HttpError(400, '记录标识无效或重复')
         seen.add(row.id)
         const normalized = this.normalizeRow(row, index, original)
+        if (before.dingtalk && (normalized.kind !== 'monthly' || normalized.month !== before.dingtalk.targetMonth)) throw new HttpError(400, '钉钉目标的类型和所属月份须与获取周期一致')
         if (isNew) {
           text(normalized.sourceText, '补录事项的原文', true, 20000)
           newIds.set(row.id, normalized.id)
@@ -566,7 +596,22 @@ export class ImportService {
   }
   commit(actor: User, id: string, input: Input): ImportBatch {
     actor = assertBusinessActor(this.store, actor)
+    if (this.batch(actor, id).dingtalk) throw new HttpError(409, '请通过钉钉来源确认入口重新核对原表后导入', 'DINGTALK_SOURCE_CHECK_REQUIRED')
     return withSilentImport(this.store, () => this.commitImported(actor, id, input))
+  }
+  /** Only the document service calls this after checking the remote snapshot and row ledger. */
+  commitVerifiedDocument(actor: User, id: string, input: Input, contentHash: string): ImportBatch {
+    actor = managerActor(this.store, actor)
+    const batch = this.batch(actor, id)
+    if (!batch.dingtalk || batch.dingtalk.contentHash !== contentHash || batch.mode !== 'draft') throw new HttpError(409, '来源核对已失效，请重新获取并预览')
+    return withSilentImport(this.store, () => this.commitImported(actor, id, input))
+  }
+  assertDocumentCompletion(actor: User, id: string, input: Input) {
+    actor = managerActor(this.store, actor)
+    const batch = this.mutable(actor, id, input.version)
+    if (!batch.dingtalk || batch.mode !== 'draft') throw new HttpError(400, '不是钉钉目标草稿')
+    this.assertCompletionReview(batch)
+    if (batch.rows.some(row => !row.selected && !row.exclusionReason?.trim())) throw new HttpError(400, '请填写排除理由')
   }
   private commitImported(actor: User, id: string, input: Input): ImportBatch {
     if (this.analyzing.has(id)) throw new HttpError(409, '解析进行中，请完成后再保存')

@@ -4,6 +4,8 @@ import WorkflowGuide from '../components/WorkflowGuide'
 import AnnualGoalPicker from '../components/AnnualGoalPicker'
 import ImportDeleteDialog, { type ImportDeleteTarget } from '../components/ImportDeleteDialog'
 import ImportSourceReview from '../components/ImportSourceReview'
+import DingTalkMonthlyImport from '../components/DingTalkMonthlyImport'
+import DingTalkImportReview from '../components/DingTalkImportReview'
 import { canRequestImportReview, importAnalysisRequest, importReconciliationText, importReviewCounts, importReviewRequired, importRowDisposition, importRowOutcomeLabel, importWorkFields, newImportCandidate, restoredImportOptions, selectImportTask, type ImportWorkFields } from '../import-review'
 import {
   Archive,
@@ -198,6 +200,7 @@ export default function Imports({
   const [batches, setBatches] = useState<ImportBatchSummary[]>([])
   const [pendingOnly, setPendingOnly] = useState(false)
   const [batch, setBatch] = useState<ImportBatch | null>(null)
+  const [dingtalkReviewState, setDingtalkReviewState] = useState<{ id: string; version: number; ready: boolean } | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
@@ -259,6 +262,7 @@ export default function Imports({
   const dragDepth = useRef(0)
   const lock = useRef(false)
   const activeBatchId = useRef<string | null>(null)
+  const workspaceRef = useRef<HTMLElement>(null)
   const interactionCount = useRef(0)
   const scope = `${shell.user.id}:${shell.user.role}:${shell.operationEpoch}:${shell.accessScopeVersion}`
   const [candidatePages, setCandidatePages] = useState<Partial<Record<ImportCandidateKind, ImportReferences>>>({})
@@ -288,6 +292,8 @@ export default function Imports({
   const selectedIssues = selected.filter((row) => row.issues.length)
   const reviewCounts = importReviewCounts(batch?.rows || [])
   const immutable = batch?.status === 'committed'
+  const dingtalkSource = !!batch?.dingtalk
+  const dingtalkReviewReady = !dingtalkSource || (dingtalkReviewState?.id === batch?.id && dingtalkReviewState?.version === batch?.version && dingtalkReviewState.ready)
   const readOnlyEditor = immutable && !editingHistory
   const editingNew = !!editing?.id.startsWith('new:') && !editingHistory
   const editingTaskLocked = !editingHistory && !readOnlyEditor && !!editing?.taskId
@@ -689,6 +695,14 @@ export default function Imports({
           {busy}…
         </div>
       )}
+      {manager && <DingTalkMonthlyImport key={scope} disabled={!!busy || !!editing || !!exclusion} run={run} onFetched={next => {
+        acceptBatch(next, true)
+        notify(next.status === 'committed' ? '已打开此来源的导入结果。' : `已获取 ${next.rows.length} 条月度目标候选，请校对来源与完整内容。`)
+        window.requestAnimationFrame(() => {
+          workspaceRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          workspaceRef.current?.focus({ preventScroll: true })
+        })
+      }} />}
       <section
         className={`import-upload panel${draggingFiles ? ' is-dragging' : ''}`}
         tabIndex={0}
@@ -882,7 +896,7 @@ export default function Imports({
             </p>
           )}
         </aside>
-        <section className="import-detail panel">
+        <section className="import-detail panel" ref={workspaceRef} tabIndex={-1}>
           {!batch ? (
             <Empty
               title="资料先保存，再按需整理"
@@ -973,7 +987,7 @@ export default function Imports({
                   </small>
                 </div>
               )}
-              {immutable && (
+              {immutable && !dingtalkSource && (
                 <div className="import-fork">
                   <div>
                     <strong>同一个文件，继续整理</strong>
@@ -1002,7 +1016,7 @@ export default function Imports({
                   </button>
                 </div>
               )}
-              {!immutable && (
+              {!immutable && !dingtalkSource && (
                 <details
                   className="import-parser"
                   open={batch.status === 'uploaded'}
@@ -1119,15 +1133,18 @@ export default function Imports({
                   </div>
                 </details>
               )}
-              <ImportSourceReview key={batch.id} batch={batch} disabled={batchBusy}
+              {dingtalkSource && <DingTalkImportReview key={`dingtalk:${batch.id}`} batch={batch} disabled={batchBusy} editing={!!editing || !!exclusion}
+                run={run} onResolved={acceptBatch} notify={notify} navigate={navigate}
+                onReadinessChange={(id, version, ready) => setDingtalkReviewState(previous => previous?.id === id && previous.version === version && previous.ready === ready ? previous : { id, version, ready })} />}
+              <ImportSourceReview key={`source:${batch.id}`} batch={batch} disabled={batchBusy}
                 reviewerName={data.users.find(user => user.id === batch.completionReview?.reviewedBy)?.name}
                 onConfirm={saveCompletionReview} />
-              {!immutable && !batch.rows.length && <button className="button secondary" disabled={batchBusy}
+              {!immutable && !dingtalkSource && !batch.rows.length && <button className="button secondary" disabled={batchBusy}
                 onClick={() => setEditing(newImportCandidate(batch, crypto.randomUUID()))}
               >按原始资料手动补录事项</button>}
               {(batch.status !== 'uploaded' || batch.rows.length > 0) && (
                 <>
-                  {!immutable && (
+                  {!immutable && !dingtalkSource && (
                     <div className="import-mode">
                       <div>
                         <h3>选择保存方式</h3>
@@ -1173,6 +1190,7 @@ export default function Imports({
                           <select
                             aria-label="批量纳入计划"
                             value={bulk.kind}
+                            disabled={dingtalkSource}
                             onChange={(event) =>
                               setBulk({ ...bulk, kind: event.target.value as Bulk['kind'], month: '', weekStart: '' })
                             }
@@ -1200,6 +1218,7 @@ export default function Imports({
                             <input
                               type={bulk.kind === 'monthly' ? 'month' : 'date'}
                               value={bulk.kind === 'monthly' ? bulk.month : bulk.weekStart}
+                              disabled={dingtalkSource}
                               onChange={(event) => setBulk({ ...bulk, [bulk.kind === 'monthly' ? 'month' : 'weekStart']: event.target.value })}
                             />
                           </Field>
@@ -1265,7 +1284,7 @@ export default function Imports({
                         <select
                           aria-label="批量匹配周记录的月度目标"
                           value={bulk.monthlyPlanId}
-                          disabled={bulk.nature === 'temporary'}
+                          disabled={dingtalkSource || bulk.nature === 'temporary'}
                           onChange={(event) =>
                             setBulk({
                               ...bulk,
@@ -1366,7 +1385,7 @@ export default function Imports({
                         ? savedBatchCounts(batch)
                         : `${importReconciliationText(batch.rows)} · ${selectedIssues.length} 项有待补项`}
                     </span>
-                    {!immutable && <button className="button secondary" disabled={batchBusy}
+                    {!immutable && !dingtalkSource && <button className="button secondary" disabled={batchBusy}
                       onClick={() => setEditing(newImportCandidate(batch, crypto.randomUUID()))}
                     >补录遗漏事项</button>}
                   </div>
@@ -1593,6 +1612,7 @@ export default function Imports({
                           每次校对保存后，可随时离开再继续。
                         </p>
                         {importReviewRequired(batch) && <p className="import-commit-warning">{!manager && batch.mode === 'existing' ? '可先交管理员核对资料；管理员补齐完整性核对后才能正式导入。' : '请先在“对照原始资料”中保存完整性核对。'}</p>}
+                        {dingtalkSource && !dingtalkReviewReady && <p className="import-commit-warning">请先完成上方钉钉来源与差异核对。</p>}
                         {!!reviewCounts.missingReasons && <p className="import-commit-warning">{reviewCounts.missingReasons} 项未选择且缺少排除原因，正式导入前需要补齐。</p>}
                         {!!reviewCounts.excluded && <p className="import-commit-warning">本次有 {reviewCounts.excluded} 项未选择，将保留候选和原因，不写入计划。</p>}
                       </div>
@@ -1600,7 +1620,8 @@ export default function Imports({
                         className="button primary"
                         disabled={
                           batchBusy ||
-                          ((manager || batch.mode !== 'existing') && (!selected.length || reviewCounts.missingReasons > 0 || importReviewRequired(batch))) ||
+                          !dingtalkReviewReady ||
+                          ((manager || batch.mode !== 'existing') && ((!selected.length && !dingtalkSource) || reviewCounts.missingReasons > 0 || importReviewRequired(batch))) ||
                           (!manager && batch.mode === 'draft' && selected.some(row => row.kind === 'monthly' && !row.isTemporary)) ||
                           ((manager || batch.mode !== 'existing') && batch.mode !== 'history' &&
                             selectedIssues.length > 0) ||
@@ -1629,7 +1650,9 @@ export default function Imports({
                         }
                       >
                         <Archive size={16} />
-                        {batch.mode === 'existing'
+                        {dingtalkSource
+                          ? selected.length ? `确认导入 ${selected.length} 条草稿` : '确认关联与排除结果'
+                          : batch.mode === 'existing'
                           ? manager
                             ? `确认 ${selected.length} 条并生效`
                             : batch.reviewRequestedAt
@@ -2557,7 +2580,7 @@ export default function Imports({
                 <Field label="纳入计划" hint={editingTaskLocked ? '已关联个人任务，保持纳入每周计划。' : undefined}>
                   <select
                     value={editing.kind}
-                    disabled={editingTaskLocked}
+                    disabled={editingTaskLocked || (dingtalkSource && !editingHistory)}
                     onChange={(event) =>
                       setEditing({
                         ...editing,
@@ -2588,6 +2611,7 @@ export default function Imports({
                   <input
                     type={editing.kind === 'monthly' ? 'month' : 'date'}
                     value={editing.kind === 'monthly' ? editing.month : editing.weekStart}
+                    disabled={dingtalkSource && !editingHistory}
                     onChange={(event) => setEditing({ ...editing, [editing.kind === 'monthly' ? 'month' : 'weekStart']: event.target.value })}
                   />
                 </Field>

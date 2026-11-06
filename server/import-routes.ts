@@ -6,13 +6,17 @@ import { requireManager } from './authorization.ts'
 import { readAiSettings, updateAiSettings, testAiConnection } from './ai-service.ts'
 import { listIntegrationTokens, createIntegrationToken, revokeIntegrationToken, assertIntegrationTokenActive } from './integration-auth.ts'
 import type { ImportBatch } from '../shared/import-types.ts'
+import type { DingTalkMonthlyImportService } from './dingtalk-monthly-import.ts'
 const services = new WeakMap<Store, ImportService>()
 export function closeImportServices(store: Store) { services.get(store)?.close() }
-
-export function createImportRouter(store: Store) {
-  const router = Router()
+export function getImportService(store: Store) {
   let service = services.get(store)
   if (!service) { service = new ImportService(store); services.set(store, service) }
+  return service
+}
+export function createImportRouter(store: Store, documents?: DingTalkMonthlyImportService) {
+  const router = Router()
+  const service = getImportService(store)
   const imports = service
   router.get('/imports', (req, res) => res.json(service.list(req.user)))
   router.get('/imports/history', (req, res) => res.json(service.history(req.user)))
@@ -28,10 +32,15 @@ export function createImportRouter(store: Store) {
     const tokenId = req.integrationToken?.id
     res.status(202).json(imports.startAnalysis(req.user, String(req.params.id), req.body, tokenId ? () => assertIntegrationTokenActive(store, tokenId, 'imports:write') : undefined))
   })
-  router.post('/imports/:id/commit', (req, res) => res.json(service.commit(req.user, String(req.params.id), req.body)))
+  router.post('/imports/:id/commit', async (req, res) => {
+    const id = String(req.params.id)
+    const batch = service.get(req.user, id)
+    res.json(batch.dingtalk && documents ? await documents.commit(req.user, id, req.body) : service.commit(req.user, id, req.body))
+  })
   router.post('/imports/:id/request-confirmation', (req, res) => res.json(service.requestConfirmation(req.user, String(req.params.id), req.body)))
   router.post('/imports/:id/fork', (req, res) => {
     const before = service.get(req.user, String(req.params.id))
+    if (before.dingtalk) throw new HttpError(409, '钉钉来源请使用重新获取，不能复制解析批次')
     const available = service.list(req.user).find(b => b.sourceId === before.sourceId && b.status === 'uploaded' && b.ownerId === req.user.id)
     if (available) return res.json(service.get(req.user, available.id))
     res.status(201).json(store.insert<ImportBatch>('importBatches', { ownerId: req.user.id, sourceId: before.sourceId, fileName: before.fileName, kind: before.kind, status: 'uploaded', sourceSheets: before.sourceSheets, warnings: [], rows: [], mode: before.mode, requiresCompletionReview: before.requiresCompletionReview, analysisOptions: before.analysisOptions }))

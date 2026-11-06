@@ -51,6 +51,7 @@ export interface ImportRow {
   resultDisposition?: 'created' | 'existing'
 }
 export interface ImportBatch {
+  dingtalk?: import('./dingtalk-monthly-api').DingTalkImportProvenance
   id: string
   version: number
   createdAt: string

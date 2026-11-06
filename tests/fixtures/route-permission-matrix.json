@@ -125,6 +125,18 @@
   "member": 404,
   "manager": 404
  },
+ "GET /api/dingtalk-documents/batches/:id": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 404
+ },
+ "GET /api/dingtalk-documents/status": {
+  "anonymous": 401,
+  "observer": 404,
+  "member": 403,
+  "manager": 200
+ },
  "GET /api/dingtalk/binding": {
   "anonymous": 401,
   "observer": 200,
@@ -832,6 +844,30 @@
   "observer": 403,
   "member": 403,
   "manager": 404
+ },
+ "POST /api/dingtalk-documents/batches/:id/commit": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "POST /api/dingtalk-documents/batches/:id/resolve": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 404
+ },
+ "POST /api/dingtalk-documents/discover": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 400
+ },
+ "POST /api/dingtalk-documents/fetch": {
+  "anonymous": 401,
+  "observer": 403,
+  "member": 403,
+  "manager": 409
  },
  "POST /api/dingtalk/bind": {
   "anonymous": 401,
