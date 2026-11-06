@@ -96,7 +96,7 @@ export default function DingTalkImportReview({ batch, disabled, editing, run, on
   const pending = presentation.counts?.pending || 0
   const unmatched = batch.rows.filter(row => row.selected && !row.ownerId).length
   const immutable = batch.status === 'committed'
-  const locked = disabled || loading || editing || immutable || !currentReview
+  const locked = disabled || loading || editing || immutable || !confirmedReview
 
   async function resolve(rowId: string, resolution: DingTalkRowResolution) {
     if (locked) return
