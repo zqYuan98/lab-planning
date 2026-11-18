@@ -751,7 +751,10 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
             </div>
           )}
           {selected.importSource && (
-            <p>导入原文状态：{selected.importSource.sourceStatus || '原表未注明'}</p>
+            <div className="context-box">
+              <strong>已有计划导入 · {selected.deletion ? '已删除' : selected.visibility ? `当时${statuses[selected.status]}` : `当前${statuses[selected.status]}`}</strong>
+              <p>原文状态：{selected.importSource.sourceStatus || '原表未注明'}</p>
+            </div>
           )}
           <div className="detail-grid">
             <div>
