@@ -14,7 +14,7 @@ import type { Navigate } from '../navigation'
 import { Badge, Empty, Field, Form, Modal, PageHeader, dateTime, nameOf, type PageProps } from '../ui'
 import WorkTaskPanel from '../components/WorkTaskPanel'
 import TaskProgressSummary from '../components/TaskProgressSummary'
-import { PriorityBadge, WorkTypeBadge, TaskLegend, ContextHelp } from '../components/TaskSignals'
+import { PriorityBadge, WorkTypeBadge, ContextHelp } from '../components/TaskSignals'
 import { taskPriority, workKind } from '../task-presentation'
 import { queryAffected } from '../query-invalidation'
 import DirectoryPagination, { firstDirectoryPage } from '../components/DirectoryPagination'
@@ -140,7 +140,6 @@ export default function WorkFollowups(props: PageProps & { navigate: Navigate })
       </ContextHelp>
       <div className="collaboration-toolbar"><Field label="搜索工作事项"><input type="search" value={query} onChange={e => { setQuery(e.target.value); setPaging(firstDirectoryPage()) }} placeholder="输入任务标题" /></Field><Field label="筛选范围"><select value={filter} onChange={e => { setFilter(e.target.value); setPaging(firstDirectoryPage()) }}><option value="all">全部周期（含已完成）</option><option value="unfinished">整个任务未完成</option><option value="done">整个任务已自报完成</option><option value="risk">有当前风险</option><option value="followup">待回应催办</option><option value="active">督办中</option><option value="paused">督办已暂停</option></select></Field>{manager && <button className="button primary" disabled={loading || !selected.length || !view.settings.enabled} onClick={() => { setPreview(null); setBatch(true) }}>催办所选 {selected.length ? `(${selected.length})` : ''}</button>}</div>
       <DirectoryPagination total={view.total ?? 0} nextCursor={view.nextCursor ?? null} paging={paging} setPaging={setPaging} loading={loading} />
-      <TaskLegend />
       {rows.length ? <div className="collaboration-list">{rows.map(row => {
         const plan = row.plan ?? undefined
         const priority = taskPriority(row.task, plan)

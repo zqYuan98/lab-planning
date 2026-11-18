@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { openTask } from '../navigation'
 import { Activity, AlertCircle, CalendarDays, ChevronRight, Target } from 'lucide-react'
-import { ContextHelp, PriorityBadge, TaskLegend, WorkTypeBadge } from '../components/TaskSignals'
+import { ContextHelp, PriorityBadge, WorkTypeBadge } from '../components/TaskSignals'
 import type { PersonalOverviewResponse, PersonalPlan } from '../../shared/overview-workspace'
 import { useWorkspaceQuery } from '../workspace-query'
 import Button from '@arco-design/web-react/es/Button'
@@ -241,7 +241,6 @@ export default function Overview({
           </span>
         </button>
       </section>
-      <TaskLegend />
 
       <div className="ov-workspace">
         <div className="ov-work-lists">

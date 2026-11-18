@@ -33,7 +33,7 @@ import WeeklySubmissionPanel from '../components/WeeklySubmissionPanel'
 import WorkWeekCalendarSummary from '../components/WorkWeekCalendarSummary'
 import NotificationStatus from '../components/NotificationStatus'
 import { TaskCancellationAction, TaskCancellationModal } from '../components/TaskCancellation'
-import { PriorityBadge, WorkTypeBadge, TaskLegend, ContextHelp } from '../components/TaskSignals'
+import { PriorityBadge, WorkTypeBadge, ContextHelp } from '../components/TaskSignals'
 import { taskPriority, workKind } from '../task-presentation'
 import { recordTarget, planReviewTarget, weeklyTaskIntentId, weeklyNavigationWeeks, advanceWeek, weeklyRecordState, type WorkTarget, type ReviewRequest } from '../weekly-submission-flow'
 import { weeklyPageQuery } from '../period-query'
@@ -416,7 +416,6 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
           />
         </label>
       </div>
-      <TaskLegend />
       {initialTask && !initialRecord && (
         <div className="navigation-context">
           <div>

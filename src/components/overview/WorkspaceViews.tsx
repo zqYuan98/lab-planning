@@ -67,7 +67,7 @@ export function WorkRowSignals({ row }: { row: WorkRow }) {
   return (
     <span className="task-signals">
       <PriorityBadge priority={row.priority} />
-      <WorkTypeBadge isTemporary={row.workKind === "temporary"} isMonthly={row.workKind === "monthly"} />
+      <WorkTypeBadge isTemporary={row.workKind === "temporary"} monthlyPlanId={row.monthlyPlanId} />
       {row.carryover && <span className="ow-pill status-draft">往期未完成</span>}
     </span>
   );

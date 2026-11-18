@@ -16,7 +16,7 @@ import { canUseAccount } from '../../shared/auth-policy'
 import { accountDisplayName, assignmentAccounts, visibleMonthlyPlan } from '../account-options'
 import WorkflowGuide from '../components/WorkflowGuide'
 import NotificationStatus from '../components/NotificationStatus'
-import { PriorityBadge, WorkTypeBadge, TaskLegend, ContextHelp } from '../components/TaskSignals'
+import { PriorityBadge, WorkTypeBadge, ContextHelp } from '../components/TaskSignals'
 import { taskPriority, workKind } from '../task-presentation'
 import {
   Plus,
@@ -317,7 +317,6 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
           ),
         )}
       </div>}
-      <TaskLegend />
       {action.error && (
         <div className="error" role="alert">
           {action.error}

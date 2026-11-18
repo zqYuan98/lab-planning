@@ -22,7 +22,7 @@ import type { RegisterPage } from '../../shared/workspace-query'
 import WorkRegisterCapture from '../components/WorkRegisterCapture'
 import WorkRegisterEditor from '../components/WorkRegisterEditor'
 import WorkRegisterReport from '../components/WorkRegisterReport'
-import { ContextHelp, PriorityBadge, TaskLegend, WorkTypeBadge } from '../components/TaskSignals'
+import { ContextHelp, PriorityBadge, WorkTypeBadge } from '../components/TaskSignals'
 import { priorityLabels, taskPriority, workKind, workKindLabels, type TaskPriority, type WorkKind } from '../task-presentation'
 import '../work-register.css'
 
@@ -172,7 +172,7 @@ export default function WorkRegister({ data, refresh, notify, navigate }: PagePr
         <div className="wr-view-tabs" role="group" aria-label="查看范围">{(Object.keys(workRegisterViewLabels) as WorkRegisterView[]).map(key => <button key={key} aria-pressed={view === key} className={view === key ? 'is-selected' : ''} onClick={() => setView(key)}>{workRegisterViewLabels[key]}<span>{result.counts[key]}</span></button>)}</div>
         <label className="wr-search"><Search size={16} /><span className="wr-sr-only">搜索我的工作事项</span><input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索事项、交办人或进展" /></label>
       </div>
-      <div className="wr-signal-filters"><SlidersHorizontal size={14} aria-hidden="true" /><label><span className="wr-sr-only">筛选优先级</span><select aria-label="筛选优先级" value={priority} onChange={event => setPriority(event.target.value as typeof priority)}><option value="">全部优先级</option><option value="high">高优先级</option><option value="medium">中优先级</option><option value="low">低优先级</option></select></label><label><span className="wr-sr-only">筛选工作类型</span><select aria-label="筛选工作类型" value={kind} onChange={event => setKind(event.target.value as typeof kind)}><option value="">全部类型</option><option value="monthly">月度计划</option><option value="temporary">临时任务</option><option value="routine">日常任务</option></select></label>{(priority || kind) && <button className="wr-filter-clear" onClick={() => { setPriority(''); setKind('') }}><X size={13} />清除筛选</button>}<TaskLegend /></div>
+      <div className="wr-signal-filters"><SlidersHorizontal size={14} aria-hidden="true" /><label><span className="wr-sr-only">筛选优先级</span><select aria-label="筛选优先级" value={priority} onChange={event => setPriority(event.target.value as typeof priority)}><option value="">全部优先级</option><option value="high">高优先级</option><option value="medium">中优先级</option><option value="low">低优先级</option></select></label><label><span className="wr-sr-only">筛选工作类型</span><select aria-label="筛选工作类型" value={kind} onChange={event => setKind(event.target.value as typeof kind)}><option value="">全部类型</option><option value="monthly">月度计划</option><option value="temporary">临时任务</option><option value="routine">日常任务</option></select></label>{(priority || kind) && <button className="wr-filter-clear" onClick={() => { setPriority(''); setKind('') }}><X size={13} />清除筛选</button>}</div>
       <div className="wr-list-caption"><span>{data.user.name}的{workRegisterViewLabels[view]}<b aria-live="polite">共 {resource.value?.total ?? '…'} 件 · 本页 {visibleRows.length} 件</b>{query.trim() && <small>含关键词「{query.trim()}」</small>}</span><span>按建立时间倒序</span></div>
       {resource.loading&&<p role="status">正在读取工作清单…</p>}
       {visibleRows.length ? <div className="wr-list">{visibleRows.map(row => {

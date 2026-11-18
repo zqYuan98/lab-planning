@@ -36,7 +36,6 @@ import {
 } from "../overview-workspace-data";
 import { Modal, type PageProps } from "../ui";
 import type { Navigate } from "../navigation";
-import { TaskLegend } from "../components/TaskSignals";
 import { createSubmissionRequestId } from "../weekly-submission-flow";
 import {
   Board,
@@ -441,7 +440,6 @@ export default function DepartmentOverview({
           </button>
         ))}
       </section>
-      <TaskLegend />
       <section className="ow-workspace" aria-label="部门多维工作空间">
         <label className="ow-mobile-view">
           <span>展示视图</span>
