@@ -134,7 +134,6 @@ export default function WorkRegister({ data, refresh, notify, navigate }: PagePr
         <span className="wr-hero-mark" aria-hidden="true"><ListTodo size={27} /></span>
         <div className="wr-hero-copy">
           <h1>我的工作清单</h1>
-          <p>看清优先级，专注下一步。</p>
         </div>
       </div>
       <div className="wr-hero-actions">

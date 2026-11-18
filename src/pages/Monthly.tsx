@@ -323,7 +323,7 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
             <button className="button primary" disabled={!approvedCount || action.busy} aria-describedby="monthly-publish-help" onClick={() => showModal('publish')}>
               <Send size={16} />批量发布已审核目标{approvedCount ? `（${approvedCount}）` : ''}
             </button>
-            <p id="monthly-publish-help">{approvedCount ? `将先预览 ${month} 全月 ${approvedCount} 条可发布目标；确认后才发布。` : '暂无可发布目标。草稿确认后即可发布；归档项目需先恢复。'}</p>
+            <p id="monthly-publish-help">{approvedCount ? `预览 ${month} 的 ${approvedCount} 条目标` : '暂无可发布目标。'}</p>
           </div>
         )}
       </div>

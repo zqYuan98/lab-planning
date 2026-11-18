@@ -135,7 +135,7 @@ export default function WeeklySubmissionPanel({ data: initialData, refresh, noti
   return (
     <section className="weekly-submission-panel" aria-label="周提报">
       <header className="submission-heading">
-        <div><h2>周提报</h2><p>按本周期截止时间更新本周完成情况，并提交下周计划。北京时间。</p></div>
+        <h2>周提报</h2>
         <div className="submission-tools">
           <Field label="截止周期（周一）"><input aria-label="提报截止周期" type="date" step={7} value={week} onChange={e => {
             if (!e.target.value) return
@@ -152,7 +152,7 @@ export default function WeeklySubmissionPanel({ data: initialData, refresh, noti
       {currentView && view && <>
         <WeeklyDeadlineBanner view={view} />
         {view.deadlineAt !== null && <details className="submission-rules"><summary>提报与审核规则</summary>
-          <p className="submission-explanation">已保存周记录与整份提报分开显示：先填写，再核对整份内容并提交；下周计划按上方日期统计。</p>
+          <p className="submission-explanation">截止时间使用北京时间。更新周记录后，请分别核对并提交本周完成情况和下周计划。工作日按共享日历计算，周记录按周一至周日归档。</p>
           {view.rule.planReviewEffectiveWeek && <p className="submission-explanation">周计划审核从 {view.rule.planReviewEffectiveWeek} 提报周期开始，覆盖 {advanceWeek(view.rule.planReviewEffectiveWeek, 7)} 起的下周计划。提交时效与审核结果分别记录，日常进展更新不重审。</p>}
         </details>}
         {!view.cycle && view.deadlineAt !== null && <p className="submission-notice">{week < view.rule.effectiveWeek ? `规则自 ${view.rule.effectiveWeek} 当周起生效，历史周期不记缺交。` : week > view.serverNow.slice(0,10) ? '此截止周期尚未开始，可以先填写周任务草稿。' : '此周期已暂停提报，不计缺交。'}</p>}
@@ -320,7 +320,7 @@ export function WeeklyDeadlineBanner({ view }: { view: Pick<WeeklySubmissionView
   const differsFromCalendar = !!current && (savedDeadline !== calendarDeadline || !!view.deadlinePolicy && view.deadlinePolicy.workingDays.join(',') !== current.workingDays.join(','))
   return <>
     <div className="submission-deadline"><Clock3 size={16} /><strong>{view.deadlineAt === null ? current?.workingDays.length ? '按已保存规则，本周期无提报义务' : weeklyDeadlineLabel(null) : `截止：${weeklyDeadlineLabel(view.deadlineAt)}`}</strong>{view.deadlinePolicy && <span>{view.deadlinePolicy.mode === 'last_workday' ? '按当周最后一个工作日截止' : '固定周五截止'}</span>}<span>自然周 · 完成情况：{view.week} ～ {advanceWeek(view.week,6)} · 下周计划：{view.nextWeek} ～ {advanceWeek(view.nextWeek,6)}</span>{view.deadlineAt === null && <span>无须正式提报，不计缺交；仍可安排任务和记录进展。</span>}</div>
-    {view.calendar && <div className="submission-work-calendar"><WorkWeekCalendarSummary calendar={view.calendar.current} /><WorkWeekCalendarSummary calendar={view.calendar.next} label="下周" /><p className="submission-explanation">工作日按共享日历计算，计入已载入的节假日与调休；周记录仍按周一至周日归档。</p></div>}
+    {view.calendar && <div className="submission-work-calendar"><WorkWeekCalendarSummary calendar={view.calendar.current} /><WorkWeekCalendarSummary calendar={view.calendar.next} label="下周" /></div>}
     {differsFromCalendar && <p className="submission-notice">本周期保存的截止规则与最新工作日历不同，仍以上方截止时间为准。管理员可在「提报规则」中预览当前周期截止修复；已有提交或缺交等历史事实时，原记录保留。</p>}
   </>
 }
