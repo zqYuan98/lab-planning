@@ -22,8 +22,7 @@
   margin-bottom: 12px;
 }
 .agent-intro h2, .agent-toolbar h3, .agent-content-block h3 { margin: 0; font-size: var(--font-title-s); }
-.agent-intro p, .agent-toolbar p { margin: 4px 0 0; }
-.agent-steps { display: flex; flex-wrap: wrap; gap: 8px 32px; margin: 0 0 22px; padding: 12px 12px 12px 32px; background: var(--palette-canvas); border: 1px solid var(--color-panel-border); border-radius: var(--radius-control); color: var(--color-muted); font-size: var(--font-caption); }
+.agent-toolbar p { margin: 4px 0 0; }
 .agent-note { color: var(--color-muted); font-size: var(--font-caption); line-height: 1.8; }
 .agent-toolbar > div { flex: 1; min-width: 200px; }
 .agent-check {
@@ -138,7 +137,7 @@
 .agent-preview .agent-word-page-wrapper > section.agent-word-page { box-shadow: 0 2px 9px rgba(var(--palette-ink-rgb), 0.071); margin-bottom: 20px; }
 .report-agent .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; }
 @media (max-width: 1050px) { .agent-template-layout { grid-template-columns: 220px minmax(0, 1fr); gap: 14px; } .agent-column-mappings { grid-template-columns: 1fr; } }
-@media (max-width: 760px) { .agent-template-layout, .agent-form-grid, .agent-report-list { grid-template-columns: 1fr; } .agent-template { padding: 14px; } .agent-editor-body { padding: 0 14px 20px; } .agent-steps { display: grid; gap: 5px; } .agent-toolbar { align-items: flex-start; } .agent-actions .button { max-width: 100%; white-space: normal; } .agent-region-body { padding: 8px; } .agent-preview .agent-word-page-wrapper { padding: 12px; } .agent-validation { padding: 12px; } }
+@media (max-width: 760px) { .agent-template-layout, .agent-form-grid, .agent-report-list { grid-template-columns: 1fr; } .agent-template { padding: 14px; } .agent-editor-body { padding: 0 14px 20px; } .agent-toolbar { align-items: flex-start; } .agent-actions .button { max-width: 100%; white-space: normal; } .agent-region-body { padding: 8px; } .agent-preview .agent-word-page-wrapper { padding: 12px; } .agent-validation { padding: 12px; } }
 /* One-page report workbench: template → period → report. */
 .workbench { max-width: 1120px; }
 .workbench-switch { display: inline-flex; gap: 4px; padding: 4px; margin: 4px 0 18px; background: var(--palette-fog); border-radius: var(--radius-control); }

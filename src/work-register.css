@@ -80,7 +80,6 @@
 .wr-scope-note { color: var(--color-section-muted); font-size: var(--font-caption); line-height: 1.8; margin: 15px 3px 0; }
 .wr-refresh-note { display: flex; align-items: center; gap: 12px; padding: 13px 16px; border: 1px solid var(--palette-amber-border); border-radius: var(--radius-panel); background: var(--palette-amber-soft); margin-bottom: 17px; }
 .wr-refresh-note p { flex: 1; margin: 0; line-height: 1.7; font-size: var(--font-small); color: var(--palette-amber-ink); }
-.wr-modal-intro { font-size: var(--font-small); line-height: 1.8; color: var(--palette-faded); margin: 0 0 20px; }
 .wr-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; }
 .wr-form-grid > * { min-width: 0; }
 .wr-editor textarea, .wr-capture textarea { line-height: 1.8; resize: vertical; }

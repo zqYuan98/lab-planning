@@ -4,7 +4,6 @@
 .feedback-fields { display: grid; gap: 18px; border: 0; min-width: 0; margin: 0; padding: 0; }
 .feedback-fields .field { margin: 0; }
 .feedback-field-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.feedback-intro { color: var(--color-muted); line-height: 1.8; margin: 0 0 2px; }
 .feedback-composer { max-width: 100vw; }
 .feedback-composer-heading { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 20px; }
 .feedback-composer-heading .icon-button { width: 36px; height: 36px; }
@@ -94,7 +93,6 @@
 .feedback-open-label { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; color: var(--color-action); }
 .feedback-waiting { font-size: var(--font-caption); color: var(--palette-amber-ink); margin: 4px 0 12px; }
 .feedback-load-more { display: flex; align-items: center; justify-content: center; gap: 16px; margin: 22px 0; color: var(--color-muted); font-size: var(--font-caption); }
-.feedback-scope-note { margin: 20px 0 0; color: var(--color-muted); font-size: var(--font-caption); }
 .feedback-detail-summary, .feedback-timeline, .feedback-action-panel { border: 1px solid var(--color-panel-border); background: var(--color-surface); border-radius: var(--radius-control); padding: 24px; min-width: 0; }
 .feedback-detail-summary > h2 { font-size: var(--font-title-s); margin: 20px 0 12px; }
 .feedback-description { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--font-body); line-height: 1.85; margin-bottom: 22px; }

@@ -1,12 +1,12 @@
 {
-  "requiredReasons": 22,
-  "colorLiterals": 1353,
+  "requiredReasons": 16,
+  "colorLiterals": 0,
   "gradients": 0,
-  "boxShadows": 82,
+  "boxShadows": 75,
   "important": 39,
-  "customPropertyFamilies": 18,
+  "customPropertyFamilies": 2,
   "inlineStyles": 11,
-  "cssFiles": 27,
-  "pageNarration": 35,
-  "distinctColors": 454
+  "cssFiles": 22,
+  "pageNarration": 9,
+  "distinctColors": 0
 }
