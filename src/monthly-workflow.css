@@ -17,8 +17,11 @@
 @media (max-width: 700px) {
   .monthly-publish-controls { max-width: none; align-items: stretch; width: 100%; }
   .monthly-workflow-panel { padding: 16px; }
-  .monthly-workflow-actions .button { flex: 1 1 150px; }
-  .monthly-workflow-actions .button,
+  .monthly-workflow-actions .button {
+    flex: 1 1 150px;
+    min-height: 44px;
+    min-width: 44px;
+  }
   .monthly-publish-controls .button,
   .monthly-plan-actions > button { min-height: 44px; min-width: 44px; }
   .monthly-deletion-dialog .button, .monthly-review-deletion .button { min-height: 44px; }

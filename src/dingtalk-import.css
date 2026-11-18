@@ -1,10 +1,24 @@
 .dingtalk-import { padding: 24px 26px; margin-bottom: 22px; }
 .dingtalk-import-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-.dingtalk-import-heading h2, .dingtalk-import-heading h3 { display: flex; align-items: center; gap: 9px; margin: 0; font-size: var(--font-title-s); font-weight: var(--weight-strong); }
-.dingtalk-import-heading h3 { font-size: var(--font-body); }
-.dingtalk-import-heading p, .dingtalk-import-connection, .dingtalk-review-meta { margin: 6px 0 0; color: var(--text-secondary); font-size: var(--font-caption); line-height: 1.7; }
+.dingtalk-import-heading h3 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  font-weight: var(--weight-strong);
+  font-size: var(--font-body);
+}
+.dingtalk-import-heading h2 { display: flex; align-items: center; gap: 9px; margin: 0; font-size: var(--font-title-s); font-weight: var(--weight-strong); }
+.dingtalk-import-connection {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--font-caption);
+  line-height: 1.7;
+  padding: 12px 0;
+  overflow-wrap: anywhere;
+}
+.dingtalk-import-heading p, .dingtalk-review-meta { margin: 6px 0 0; color: var(--text-secondary); font-size: var(--font-caption); line-height: 1.7; }
 .dingtalk-import-status, .dingtalk-review-retry { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.dingtalk-import-connection { padding: 12px 0; overflow-wrap: anywhere; }
 .dingtalk-import-connection strong { color: var(--text-body); font-weight: var(--weight-medium); }
 .dingtalk-import-connection > span { display: block; }
 .dingtalk-import-query { display: flex; align-items: flex-start; gap: 12px; }
@@ -30,9 +44,21 @@
 .dingtalk-review-counts { display: flex; flex-wrap: wrap; gap: 7px; margin: 14px 0; }
 .dingtalk-review-rows { display: grid; gap: 8px; margin-top: 12px; }
 .dingtalk-review-row { border: 1px solid var(--import-line); border-radius: var(--radius-control); background: #fff; padding: 12px; min-width: 0; }
-.dingtalk-review-row > summary { cursor: pointer; font-size: var(--font-caption); line-height: 1.8; overflow-wrap: anywhere; }
+.dingtalk-review-row > summary {
+  cursor: pointer;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+  min-height: 36px;
+  font-size: var(--font-small);
+}
 .dingtalk-review-row > summary > .badge { margin-left: 8px; }
-.dingtalk-review-row > p, .dingtalk-review-removed { font-size: var(--font-caption); line-height: 1.7; color: var(--text-secondary); }
+.dingtalk-review-removed {
+  font-size: var(--font-caption);
+  line-height: 1.7;
+  color: var(--text-secondary);
+  margin-top: 14px;
+}
+.dingtalk-review-row > p { font-size: var(--font-caption); line-height: 1.7; color: var(--text-secondary); }
 .dingtalk-review-source { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 12px; margin-top: 12px; }
 .dingtalk-review-source > div { min-width: 0; }
 .dingtalk-review-source strong { font-size: var(--font-caption); font-weight: var(--weight-strong); }
@@ -47,9 +73,7 @@
 .dingtalk-decision-footer { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .dingtalk-decision-footer p { margin: 0; color: var(--text-secondary); font-size: var(--font-small); line-height: 1.8; }
 .dingtalk-decision-footer button { flex-shrink: 0; min-height: 40px; }
-.dingtalk-review-row > summary { min-height: 36px; font-size: var(--font-small); }
 .dingtalk-row-decision :is(input, select, textarea) { min-height: 40px; font-size: var(--font-body); }
-.dingtalk-review-removed { margin-top: 14px; }
 .dingtalk-review-removed summary { cursor: pointer; }
 .dingtalk-review > button { margin-top: 15px; }
 @media (max-width: 640px) {

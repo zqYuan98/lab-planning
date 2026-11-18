@@ -92,11 +92,11 @@
   flex: 1;
   min-width: 0;
 }
-.account-delete-person strong,
-.account-delete-person p {
+.account-delete-person strong {
   overflow-wrap: anywhere;
 }
 .account-delete-person p {
+  overflow-wrap: anywhere;
   margin: 4px 0 0;
   color: var(--text-secondary);
   font-size: var(--font-small);

@@ -18,7 +18,6 @@
   line-height: 1.5;
 }
 
-.ow-page button,
 .ow-page input,
 .ow-page select {
   font: inherit;
@@ -646,13 +645,20 @@ button.ow-person:hover strong {
   text-overflow: ellipsis;
 }
 
-.ow-count,
-.ow-count button {
+.ow-count {
   font-variant-numeric: tabular-nums;
 }
-
-button.ow-count,
 .ow-count button {
+  font-variant-numeric: tabular-nums;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 3px 7px;
+  border-radius: var(--radius-tag);
+  color: var(--primary, #3b5bff);
+  font-weight: var(--weight-medium);
+}
+
+button.ow-count {
   min-width: 28px;
   min-height: 28px;
   padding: 3px 7px;
@@ -895,12 +901,6 @@ button.ow-count:hover,
   font-weight: var(--weight-strong);
 }
 
-.ow-lane-heading > :is(span, small):last-child {
-  color: var(--ow-muted);
-  font-size: var(--font-caption);
-  font-weight: var(--weight-medium);
-}
-
 .ow-task-card {
   display: block;
   width: 100%;
@@ -954,11 +954,6 @@ button.ow-count:hover,
   margin-top: 8px;
   color: var(--ow-muted);
   font-size: var(--font-caption);
-}
-
-.ow-card-meta > span {
-  max-width: 100%;
-  overflow-wrap: anywhere;
 }
 
 .ow-project-grid {
@@ -1098,15 +1093,15 @@ button.ow-count:hover,
   line-height: 1.5;
   text-align: left;
 }
-
 .ow-timeline-label :is(strong, button) {
   overflow: hidden;
   padding: 0;
   white-space: nowrap;
   text-overflow: ellipsis;
   text-align: left;
-  font-size: var(--font-caption);
   font-weight: var(--weight-medium);
+  min-height: 24px;
+  font-size: var(--font-small);
 }
 
 .ow-timeline-label > small {
@@ -1356,6 +1351,7 @@ button.ow-count:hover,
 
 /* New workspace structure and semantic status treatments. */
 .ow-page button {
+  font: inherit;
   cursor: pointer;
   touch-action: manipulation;
 }
@@ -1639,6 +1635,7 @@ button.ow-count:hover,
   padding-bottom: 1px;
 }
 .ow-lane-heading > :is(span, small):last-child {
+  font-weight: var(--weight-medium);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1650,8 +1647,14 @@ button.ow-count:hover,
   color: #64748b;
   font-size: var(--font-caption);
 }
-.ow-card-owner,
 .ow-card-meta > span {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ow-card-owner {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1661,10 +1664,6 @@ button.ow-count:hover,
   height: 24px;
   border-radius: var(--radius-control);
   font-size: var(--font-caption);
-}
-.ow-timeline-label :is(strong, button) {
-  min-height: 24px;
-  font-size: var(--font-small);
 }
 .ow-fact-note summary {
   width: fit-content;
@@ -2440,12 +2439,11 @@ button.ow-count:hover,
   box-shadow: 0 0 0 3px rgb(21 105 232 / 10%);
 }
 
-.workspace-shell .workspace-main > .ow-page .ow-search input,
-.workspace-shell .workspace-main > .ow-page .ow-search input::placeholder {
+.workspace-shell .workspace-main > .ow-page .ow-search input {
   color: #536985;
 }
-
 .workspace-shell .workspace-main > .ow-page .ow-search input::placeholder {
+  color: #536985;
   opacity: .88;
 }
 

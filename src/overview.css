@@ -26,8 +26,11 @@
   gap: 5px;
   text-align: right;
   flex-shrink: 0;
-  padding-top: 2px;
   font-size: var(--font-small);
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
 }
 .ov-period strong {
   font-weight: var(--weight-medium);
@@ -44,6 +47,7 @@
   border-radius: var(--radius-panel);
   margin-bottom: 28px;
   overflow: hidden;
+  border-top: 2px solid var(--text-primary);
 }
 .ov-stat {
   display: flex;
@@ -55,6 +59,7 @@
   background: transparent;
   border: 0;
   color: var(--ink);
+  transition: background-color 160ms ease;
 }
 .ov-stat + .ov-stat {
   border-left: 1px solid var(--border);
@@ -95,15 +100,14 @@
 .ov-stat.has-blocker > strong {
   color: #b42318;
 }
-.ov-stat-detail,
-.ov-stat-context {
+.ov-stat-detail {
   font-size: var(--font-small);
   line-height: 1.8;
-}
-.ov-stat-detail {
   color: var(--text-body);
 }
 .ov-stat-context {
+  font-size: var(--font-small);
+  line-height: 1.8;
   color: var(--muted);
 }
 .ov-workspace {
@@ -128,9 +132,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 58px;
   padding: 12px 20px;
   border-bottom: 1px solid var(--border);
+  min-height: 60px;
 }
 .ov-section-heading h2 {
   display: flex;
@@ -199,10 +203,10 @@
   min-width: 0;
 }
 .ov-item-copy strong {
-  font-size: var(--font-body);
   font-weight: var(--weight-medium);
   line-height: 1.65;
   overflow-wrap: anywhere;
+  font-size: var(--font-body);
 }
 .ov-item-copy small {
   color: var(--muted);
@@ -341,6 +345,7 @@
 .ov-shortcuts .arco-btn {
   height: 30px;
   padding: 0 8px;
+  min-height: 36px;
 }
 .ov-scope-note {
   color: var(--muted);
@@ -466,13 +471,6 @@
     display: none;
   }
 }
-
-.ov-item-copy strong { font-size: var(--font-body); }
-.ov-period { padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); }
-.ov-section-heading { min-height: 60px; }
-.ov-metrics { border-top: 2px solid var(--text-primary); }
-.ov-stat { transition: background-color 160ms ease; }
-.ov-shortcuts .arco-btn { min-height: 36px; }
 .ov-section-action .arco-btn { min-height: 38px; padding: 0 14px; }
 @media (max-width: 700px) {
   .overview-page .arco-btn { min-height: 44px; }
