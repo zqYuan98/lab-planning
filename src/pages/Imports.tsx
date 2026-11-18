@@ -657,7 +657,6 @@ export default function Imports({
       {savedRead && <div role="status">{savedRead.message}<button className="button secondary" disabled={!!busy} onClick={() => void run('正在重读保存结果', async () => { await savedRead.retry(); setSavedRead(null) })}>只重试读取</button></div>}
       <PageHeader
         title="数据导入"
-        description="把已有表格、文字和截图变成可校对的数据，支持管理导入批次与历史资料。"
         actions={
           <Badge tone={configured ? 'green' : 'neutral'}>
             {configured ? 'AI 解析已配置' : 'AI 解析待配置'}

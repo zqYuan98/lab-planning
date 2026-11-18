@@ -35,7 +35,6 @@ export default function Goals({ data, notify }: PageProps) {
       <PageHeader
         eyebrow="DIRECTION / ANNUAL GOALS"
         title="年度目标"
-        description="关联月度成果，按已验收的承接链计算年度进展，并保留人工覆盖。"
         actions={
           manager && (
             <button

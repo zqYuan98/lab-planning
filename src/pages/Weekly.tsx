@@ -245,7 +245,6 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
       <PageHeader
         eyebrow="EXECUTION / WEEKLY"
         title={manager ? '每周执行' : '我的周计划'}
-        description="看清本周重点，记录进展与交付。"
         actions={
           <>
             {navigate && <button className="button secondary" onClick={() => navigate('collaboration')}>进展与催办</button>}
@@ -386,7 +385,7 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
               : '—'}
           </strong>
         </span>
-        
+
       </div>
       <div className="tabs" role="group" aria-label="执行状态筛选">
         {[
@@ -700,9 +699,7 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
       )}
       {modal === 'carry' && selected && (
         <Modal title="顺延周承诺" onClose={close}>
-          <p className="modal-intro">
-            沿用同一个任务编号，保留本周记录。新周从未开始状态重新安排。
-          </p>
+          <details><summary>跨周后如何保留记录</summary><p>本周记录保留，下周沿用同一个任务，从未开始状态推进。</p></details>
           <Form
             onCancel={close}
             submitLabel="创建下一周记录"
@@ -737,9 +734,7 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
       {modal === 'relink' && selectedTask && period && <WeeklyRelink data={data} task={selectedTask} onClose={close} onSaved={saved} />}
       {modal === 'relink' && selectedTask && !period && (
         <Modal title="调整任务的月度归属" onClose={close}>
-          <p className="modal-intro">
-            任务编号保持不变；曾纳入周统计的记录保留原月度归属，从未提交且覆盖目标月份的草稿会同步调整，新周记录采用新的关联。
-          </p>
+          <details><summary>哪些周记录会调整</summary><p>已纳入周统计的记录保留原月度归属。符合目标月份的未提交草稿和新周记录使用新关联。</p></details>
           <Form
             onCancel={close}
             submitLabel="保存关联变更"
@@ -831,7 +826,7 @@ export function DeletedWeeklyRecordNotice({ data, record, onRelink, onRecreate, 
 function WeeklyRelink({ data, task, onClose, onSaved }: { data: PageProps['data']; task: Task; onClose: () => void; onSaved: (message: string) => Promise<void> }) {
   const candidates = usePeriodCandidates(data, task.ownerId, 'relink')
   return <Modal title="调整任务的月度归属" onClose={onClose}>
-    <p className="modal-intro">任务编号保持不变；已纳入周统计的记录保留原月度归属，符合条件的草稿同步调整。</p>
+    <details><summary>哪些周记录会调整</summary><p>已纳入周统计的记录保留原月度归属。符合目标月份的未提交草稿和新周记录使用新关联。</p></details>
     {candidates.error ? <div className="error" role="alert">{candidates.error}<button onClick={candidates.retry}>重新读取目标</button></div> : !candidates.value ? <p role="status">正在读取责任人参与的已发布目标…</p> : <Form onCancel={onClose} onSubmit={async event => { await api(`/tasks/${task.id}/relink`, json({ ...Object.fromEntries(new FormData(event.currentTarget)), version: task.version })); await onSaved('任务月度关联已调整') }}><Field label="关联已发布月度目标"><select name="monthlyPlanId" required defaultValue={task.monthlyPlanId || ''}><option value="" disabled>请选择目标</option>{candidates.value.plans.map(plan => <option key={plan.id} value={plan.id}>{plan.month} · {plan.title}</option>)}</select></Field><Field label="调整说明（选填）"><textarea name="reason" rows={3} /></Field></Form>}
   </Modal>
 }

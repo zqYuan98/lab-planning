@@ -98,7 +98,7 @@ export default function WorkRegisterEditor({ userId, task, onClose, onSaved }: E
     <form ref={draft.formRef} className="wr-editor" onSubmit={submit} onInput={event => { draft.rememberDraft(); trackCommitment(event.currentTarget) }} onChange={event => { draft.rememberDraft(); trackCommitment(event.currentTarget) }}>
       {draft.notice && <p className="form-hint" role="status">{draft.notice}</p>}
       {(comparison || draft.recovery) && <DraftComparison base={comparison?.base ?? draft.recovery?.baseValues ?? null} server={comparison?.server ?? draft.baseValues()} local={comparison?.local ?? draft.recovery!.values} onCancel={()=>{setComparison(null);draft.dismissRecovery()}} onMerge={values=>{if(comparison)setVersion(comparison.version);draft.applyValues(values,comparison?.server ?? draft.baseValues(),comparison?.version);setComparison(null);attempt.current=null;setError('已合并，请核对后重新保存。')}} />}
-      <p className="wr-modal-intro">维护整件工作的交付与进展。每周的具体承诺在周计划中安排。</p>
+
       {completionReview && <div className="wr-refresh-note"><p>旧导入将此任务标为已完成，但没有整体完成说明。若仍需推进，请改为进行中；若已全部完成，请保留已完成并补充最终交付说明。</p><button type="button" className="button secondary" disabled={busy} onClick={() => setStatus('doing')}>仍需推进</button></div>}
       <fieldset className="form-fields" disabled={busy || saved.current || writeUnavailable || !!comparison}>
         <Field label="事项名称"><input name="title" defaultValue={task.title} required maxLength={LIMITS.title} /></Field>

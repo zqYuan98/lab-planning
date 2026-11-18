@@ -172,7 +172,7 @@ export default function WeeklySubmissionPanel({ data: initialData, refresh, noti
       <WeeklyReviewQueue data={data} week={week} onUpdated={ruleUpdated} requestedDutyId={reviewDutyId} />
 
       {mode === 'submit' && selected && <Modal title={`${kindLabel(selected.kind)} · 整份提交`} onClose={closeMode} wide>
-        <p className="modal-intro">{nameOf(data, selected.ownerId)} · {selected.contentWeek} 当周。请核对以下内容；保存单条记录不会替代此处的整份提交。</p>
+        <h3>{nameOf(data, selected.ownerId)} · {selected.contentWeek} 当周</h3>
         <PlanReviewStatus duty={selected} />
         <WeeklyResultsPlanNotice duty={selected} onOpenPlan={target => { closeMode(); onReviewPlan(target) }} />
         {selected.kind === 'plan' && selected.planReviewRequired && <p className="submission-explanation">本次提交保存一份计划快照，供管理者或受托目标负责人审核。提交时间单独记录；等待审核或退回修改不会抹去原提交时间。</p>}
@@ -206,7 +206,7 @@ export default function WeeklySubmissionPanel({ data: initialData, refresh, noti
 
       {mode === 'review' && selected?.latestSubmission && manager && <Modal title="审核周计划" onClose={closeMode} wide>
         <div className="context-box"><strong>{nameOf(data, selected.ownerId)} · {selected.contentWeek} ～ {advanceWeek(selected.contentWeek, 6)}</strong><p>待审提交：{dateTime(selected.latestSubmission.submittedAt)} · {selected.latestSubmission.records.length} 项安排</p><Badge tone={tones[selected.status]}>{submissionProgress(selected).label}</Badge></div>
-        <p className="modal-intro">以下为本次提交时保存的计划、任务与月目标内容。审核通过后，相应计划纳入正式统计；日常执行进展可继续更新。</p>
+
         <WeeklySubmissionSnapshot submission={selected.latestSubmission} data={data} />
         {selected.latestSubmission.note && <p className="submission-notice">补充说明：{selected.latestSubmission.note}</p>}
         {selected.latestSubmission.reason && <p className="submission-explanation">管理员代录原因：{selected.latestSubmission.reason}</p>}

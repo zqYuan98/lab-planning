@@ -46,7 +46,7 @@ export default function MonthlyCarryForm({ plan, data, refresh, onSaved, onCance
   }
 
   return <>
-    <p className="modal-intro">保留 {source.month} 的承诺和结果，新建有来源关系的月度草稿。交办来源和临时目标信息继续保留。</p>
+    <details><summary>跨月后如何保留原目标</summary><p>{source.month} 的承诺和结果保留，新建草稿会关联原目标。</p></details>
     {!!existing.length && <div className="context-box"><strong>已有承接目标</strong>{existing.map(item => <p key={item.id}>{item.month} · {item.title} · 截止 {item.dueDate}{item.status === 'merged' ? '（已合并）' : ''}</p>)}</div>}
     {attempt && !reconciliation && <p className="form-hint" role="status">上一次承接结果尚待核对。下方保留原提交内容，点击“核对原承接结果”会安全重试同一次操作。</p>}
     {reconciliation && <div className="context-box" role="status">

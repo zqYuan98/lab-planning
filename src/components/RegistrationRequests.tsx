@@ -34,7 +34,7 @@ export default function RegistrationRequests({ data, notify }: PageProps) {
       <td><div className="team-account-actions"><button className="button secondary small" onClick={() => { setReviewing(user); setDecision('approve') }}>{user.registrationStatus === 'pending' ? '审核申请' : '重新审核'}</button><button className="text-button team-delete-button" aria-label={`删除账号：${user.name}`} onClick={() => openDeletion(user)}>删除</button></div></td>
     </tr>)}</tbody></table></div> : <div className="registration-empty"><Inbox size={18} aria-hidden="true" /><span>暂无注册申请，新的申请会显示在这里。</span></div>)}
     {reviewing && <Modal title="审核注册申请" onClose={closeReview}>
-      <p className="modal-intro">{reviewing.name} · {reviewing.email} · {reviewing.position || '未填写岗位'}</p>
+      <h3>{reviewing.name}</h3><p>{reviewing.email} · {reviewing.position || '未填写岗位'}</p>
       {reviewing.registrationReviewComment && <p>上次审核说明：{reviewing.registrationReviewComment}</p>}
       <Form submitLabel={decision === 'approve' ? '通过并启用账号' : '驳回申请'} onCancel={closeReview} onSubmit={async event => {
         const values = Object.fromEntries(new FormData(event.currentTarget))

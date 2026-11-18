@@ -44,7 +44,6 @@ export default function Projects({ data, notify, intent }: PageProps) {
       <PageHeader
         eyebrow="PORTFOLIO / PROJECTS"
         title="项目档案"
-        description="项目聚合相关成果；归档后仍保留计划、任务与汇报历史。"
         actions={
           manager && (
             <button

@@ -64,8 +64,7 @@ export default function ReportAgentCenter({ initialType = 'weekly', data, refres
   const resolvedTemplateId = templateId || activeTemplates.find(template => period && template.effectiveWeek <= normalizePeriod(period))?.id || ''
   if (data.user.role !== 'manager') return <Empty title="报告模板与生成面向部门管理者" />
   return <div className="report-agent">
-    <div className="agent-intro"><div><h2>{typeLabel}模板与生成</h2><p>沿用公司 Word 模板，冻结本期事实，逐项核对后定稿。</p></div><Field label="报告类型"><select value={type} onChange={event => { if (!allowDraftLeave()) return; const next = event.target.value as Report['type']; setType(next); setSelected(null); setTemplateId(''); setPeriod(next === 'monthly' ? previousMonth() : weekMonday(shanghaiToday())) }}><option value="weekly">周报</option><option value="monthly">月报</option></select></Field></div>
-    <ol className="agent-steps" aria-label="报告工作流程"><li>上传模板与范例</li><li>确认映射与写法</li><li>试填并启用</li><li>生成、审阅与定稿</li></ol>
+    <div className="agent-intro"><div><h2>{typeLabel}模板与生成</h2></div><Field label="报告类型"><select value={type} onChange={event => { if (!allowDraftLeave()) return; const next = event.target.value as Report['type']; setType(next); setSelected(null); setTemplateId(''); setPeriod(next === 'monthly' ? previousMonth() : weekMonday(shanghaiToday())) }}><option value="weekly">周报</option><option value="monthly">月报</option></select></Field></div>
     <nav className="report-tabs" aria-label="报告模板与生成功能"><button aria-pressed={tab === 'templates'} onClick={() => switchTab('templates')}>模板与范例</button><button aria-pressed={tab === 'generate'} onClick={() => switchTab('generate')}>生成与任务</button><button aria-pressed={tab === 'schedule'} onClick={() => switchTab('schedule')}>周期自动草稿</button></nav>
     {error && <div className="error" role="alert">{error}<button type="button" className="text-button" onClick={() => setLoadAttempt(value => value + 1)}>重新加载</button></div>}
     {!bootstrap ? <p role="status">正在读取模板和任务…</p> : <>

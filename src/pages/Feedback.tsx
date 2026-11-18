@@ -57,7 +57,7 @@ export default function Feedback({ data, intent, notify, navigate, onCreate }: P
     await load()
   }
   const rows = list?.items || []
-  return <div className="feedback-page"><PageHeader eyebrow="WORK / FEEDBACK" title="问题与建议" description="记录使用中的小问题，查看受理、处理和验证结果。"
+  return <div className="feedback-page"><PageHeader eyebrow="WORK / FEEDBACK" title="问题与建议"
     actions={<button className="button primary" onClick={onCreate}><MessageSquarePlus size={17} />提问题 / 建议</button>} />
     {selectedId ? detailLoading ? <p role="status">正在读取反馈详情…</p> : detailError ? <div className="feedback-load-error"><p className="error" role="alert">{detailError}</p><div className="feedback-actions"><button className="button secondary" onClick={() => navigate('feedback')}>返回列表</button><button className="button secondary" onClick={() => { setDetailLoading(true); void loadDetail().catch(error => setDetailError(feedbackError(error))).finally(() => setDetailLoading(false)) }}>重新读取</button></div></div>
       : detail && <FeedbackDetail data={data} detail={detail} onBack={() => navigate('feedback')} onRefresh={loadDetail} onChanged={changed} />
@@ -75,7 +75,7 @@ export default function Feedback({ data, intent, notify, navigate, onCreate }: P
           <div className="feedback-list-meta"><span>{row.reporterName} 提报 · {row.assigneeName} 受理</span><time dateTime={row.updatedAt}>更新于 {dateTime(row.updatedAt)}</time><span className="feedback-open-label">查看处理<ArrowRight size={15} /></span></div>
         </button>)}</div> : !loading && <Empty title={ownerFilter === 'assigned' ? '暂无分配给我的反馈' : status ? '此状态暂无反馈' : '暂无反馈'} description="使用中遇到问题，或者有更顺手的做法，都可以直接提报。" action={!status && ownerFilter === 'all' ? <button className="button primary" onClick={onCreate}>提一条问题或建议</button> : undefined} />}
         {list?.nextCursor && <div className="feedback-load-more"><button className="button secondary" disabled={loading || loadingMore} onClick={() => void load(list.nextCursor!).catch(() => {})}>{loadingMore ? '正在加载…' : '加载更早的反馈'}</button><span>已加载 {list.items.length} 条</span></div>}
-        <p className="feedback-scope-note">{scope === 'mine' ? '这里只显示您本人提报的反馈。' : '管理者可查看和受理本系统的反馈。'} 修复上线后，请提报人验证；管理者结案会保留具体原因。</p>
+
       </>}
   </div>
 }

@@ -101,7 +101,7 @@ export default function FeedbackComposer({ data, onClose, onCreated, context }: 
       {draft.storageError && <p className="error" role="alert">{draft.storageError}</p>}
       <div className="feedback-actions"><button className="button primary" onClick={() => onCreated(created.id)}>查看这条反馈</button><button className="button secondary" onClick={onClose}>继续工作</button></div>
     </section> : !draft.ready ? <p role="status">正在恢复本账号的反馈草稿…</p> : <form className="feedback-form" onSubmit={event => void submit(event)}>
-      <p className="feedback-intro">遇到小问题，或觉得哪一步可以更顺手，直接记在这里。您可以随时查看处理进度。</p>
+
       {draft.restored && <p className="feedback-notice" role="status">已恢复本账号未提交的反馈及截图，请核对后继续。定位信息保留为开始填写时的页面。</p>}
       <fieldset className="feedback-fields" disabled={busy}>
         <Field label="问题或建议" hint="可以描述：在哪一步、发生了什么、希望怎样。"><textarea required autoFocus name="description" rows={5} maxLength={10000} value={draft.value.description} onChange={event => draft.update(previous => ({ ...previous, description: event.target.value }))} placeholder="例如：填写本周进展后点保存，一直显示处理中……" /></Field>

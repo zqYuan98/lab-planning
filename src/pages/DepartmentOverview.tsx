@@ -303,7 +303,6 @@ export default function DepartmentOverview({
           </span>
           <div className="ow-heading-copy">
             <h1>部门概览</h1>
-            <p>团队进展与交付安排</p>
           </div>
         </div>
         <div className="ow-heading-controls">

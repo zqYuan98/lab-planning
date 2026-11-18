@@ -40,7 +40,7 @@ export default function NotificationSettings({ data, notify, refresh }: PageProp
     finally { setBusy(false) }
   }
   return <div className="notifications-page">
-    <PageHeader eyebrow="TEAM / NOTIFICATIONS" title="钉钉通知设置" description="按试点成员启用个人工作通知，分别查看投递、查看与确认情况。"
+    <PageHeader eyebrow="TEAM / NOTIFICATIONS" title="钉钉通知设置"
       actions={<button className="button secondary" disabled={busy} onClick={() => { setError(''); void load().catch(error => setError(error.message)) }}><RefreshCw size={16} />刷新状态</button>} />
     {error && <div className="error" role="alert">{error}</div>}
     {query.error && <div className="error" role="alert">状态读取失败：{query.error}。已确认的保存结果仍保留，请刷新状态。</div>}

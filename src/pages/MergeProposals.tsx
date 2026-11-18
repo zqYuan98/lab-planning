@@ -43,9 +43,7 @@ export default function MergeProposals({
     <Modal title="合并同一成果的提报" onClose={onClose} wide>
       {resource.error && <div role="alert" className="error">{resource.error}<button onClick={resource.retry}>重新读取可合并提报</button></div>}
       {!resource.value && !resource.error && <p role="status">正在核对整月可合并范围…</p>}
-      <p className="modal-intro">
-        仅合并同月、同项目（部门工作则同类别）且尚未拆分任务的提报。系统保留来源和原始责任，新事项以审核通过状态等待发布。
-      </p>
+      <details><summary>可合并哪些目标</summary><p>同月、同项目（部门工作则同类别）且未拆分任务的提报可以合并。合并后保留来源，新目标进入待发布。</p></details>
       <Form
         onCancel={onClose}
         submitLabel="合并为一项月度成果"

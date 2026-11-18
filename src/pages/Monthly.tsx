@@ -246,7 +246,6 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
       <PageHeader
         eyebrow="PLANNING / MONTHLY"
         title={manager ? '月度目标' : '我参与的月度目标'}
-        description={manager ? '聚焦月度交付，让团队优先级清晰可见。' : '追踪参与目标，将月度成果拆成每周行动。'}
         actions={
           <>
             {manager && (
@@ -333,8 +332,6 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
         {!manager && <button className={scope === 'historical' ? 'selected' : ''} onClick={() => { detailSequence.current++; setScope('historical') }}>历史记录<span>{period?.value?.summary.historical ?? historicalPlans.length}</span></button>}
         <button className={scope === 'deleted' ? 'selected' : ''} onClick={() => { detailSequence.current++; setScope('deleted') }}>已删除<span>{period?.value?.summary.statuses.deleted ?? deletedPlans.length}</span></button>
       </div>
-      {scope === 'historical' && <p className="modal-intro">以下为曾参与目标的历史快照或历史任务引用，仅供查阅，不计入当前参与目标。</p>}
-      {scope === 'deleted' && <p className="modal-intro">以下目标已删除，仅供查阅原因与变更历史，不计入当前目标、统计和待办。</p>}
       {scope === 'current' && <div className="tabs" role="group" aria-label="计划状态筛选">
         {[['all', '全部'], ...Object.entries(statuses)].map(
           ([value, label]) => (
@@ -513,7 +510,7 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
         />
       )}
       {modal === 'task' && selected && canCreateOwnTask(selected) && <Modal title="关联目标，建立个人任务" onClose={close}>
-        <p className="modal-intro">月度目标：{selected.title}<br />月份：{selected.month} · 项目：{projectOf(data, selected.projectId)}<br />任务负责人：{data.user.name}</p>
+        <h3>{selected.title}</h3><p>{selected.month} · {projectOf(data, selected.projectId)} · {data.user.name}</p>
         {selected.status !== 'published' && <p className="form-hint">目标当前为「{statuses[selected.status]}」，尚未发布。可先建立个人任务并保存周草稿，发布后才能正式排周。</p>}
         <Form onCancel={close} submitLabel={createdPersonalTask ? '重试加载已保存任务' : intent?.action === 'create-task' && navigate ? '建立任务并安排周工作' : '保存个人任务'} onSubmit={async event => {
           const values = Object.fromEntries(new FormData(event.currentTarget))
@@ -541,10 +538,7 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
       {modal === 'publish-one' && selected && canPublish(selected) && <PublishPlan data={data} plan={selected} publicationCount={publicationCount} onClose={close} onSaved={saved} />}
       {manager && modal === 'publish' && !period && (
         <Modal title="发布部门月度目标" onClose={close}>
-          <p className="modal-intro">
-            将 {month} 有效项目及部门工作中已审核通过的 {approved.length}{' '}
-            项成果发布为部门承诺。成员可据此提交正式周计划。
-          </p>
+          <h3>{month} 待发布目标（{approved.length}）</h3>
           <div className="compact-list">
             {approved.map((plan) => (
               <div key={plan.id}>
@@ -580,7 +574,7 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
       )}
       {modal === 'submit' && selected && workflow(selected).canSubmit && (
         <Modal title={manager ? '确认月度目标' : '提交月度目标审核'} onClose={close}>
-          <p className="modal-intro"><strong>{selected.title}</strong> · {selected.month}</p>
+          <h3>{selected.title} · {selected.month}</h3>
           <p>{manager ? '确认后进入待发布，发布后成员即可据此排周。' : '提交后状态变为“待审核”。管理员审核通过并发布后，才能提交正式周计划。'}</p>
           {selected.reviewComment && <p className="context-box">上次退回意见：{selected.reviewComment}</p>}
           <Form onCancel={close} submitLabel={manager ? '确认，进入待发布' : '确认提交审核'} onSubmit={async () => {
@@ -591,11 +585,7 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
       )}
       {modal === 'review' && selected && workflow(selected).canReview && (
         <Modal title="审核月度提报" onClose={close}>
-          <p className="modal-intro">
-            <strong>{selected.title}</strong>
-            <br />
-            {selected.expectedOutcome}
-          </p>
+          <h3>{selected.title}</h3><p>{selected.expectedOutcome || '未填写预期成果'}</p>
           <Form
             onCancel={close}
             submitLabel="保存审核决定"
@@ -654,7 +644,7 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
       {modal === 'versions' && period && <MonthPublications data={data} month={month} onClose={close} />}
       {modal === 'versions' && !period && (
         <Modal title={`${month} 发布版本`} onClose={close} wide>
-          <p className="modal-intro">发布版本保留当时的目标和负责人；当前安排以月度目标列表为准。</p>
+
           {publications.length ? (
             <div className="timeline">
               {publications.map((publication) => (
@@ -688,7 +678,7 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
       {modal === 'history' && selected && (
         <Modal title={`变更历史 · ${selected.title}`} onClose={close} wide>
           <MonthlyPlanDeletionNotice plan={selected} data={data} />
-          {selected.visibility && <p className="modal-intro">历史记录 · 只读。以下仅展示你曾参与期间可查看的内容，不代表当前负责人和执行状态。</p>}
+          {selected.visibility && <Badge>历史记录 · 只读</Badge>}
           {history === null ? (
             <div className="loading-inline">正在读取历史记录…</div>
           ) : history.length ? (
@@ -761,11 +751,7 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
             </div>
           )}
           {selected.importSource && (
-            <p className="modal-intro">
-              {selected.deletion ? `已有计划导入，目标现已删除，删除前状态为${statuses[selected.status]}。` : selected.visibility ? `已有计划导入，当时状态为${statuses[selected.status]}。` : selected.status === 'published' ? '已有计划导入，当前已发布，无需重新提报。' : `已有计划导入，当前状态为${statuses[selected.status]}。`}原文状态：
-              {selected.importSource.sourceStatus || '原表未注明'}
-              ；原有成果已保留，验收结论单独记录。
-            </p>
+            <p>导入原文状态：{selected.importSource.sourceStatus || '原表未注明'}</p>
           )}
           <div className="detail-grid">
             <div>
@@ -828,7 +814,7 @@ function PublishMonth({ data, month, publicationCount, onClose, onSaved }: { dat
   const candidates = usePeriodCandidates(data, data.user.id, 'publish', month), approved = candidates.value?.plans ?? []
   return <Modal title="发布部门月度目标" onClose={onClose}>
     {candidates.error ? <div role="alert" className="error">{candidates.error}<button onClick={candidates.retry}>重新读取完整清单</button></div> : !candidates.value ? <p role="status">正在核对整月可发布目标…</p> : <>
-      <p className="modal-intro">将 {month} 已审核通过的 {approved.length} 项成果发布为部门承诺。以下为完整可发布清单。</p>
+      <h3>{month} 待发布目标（{approved.length}）</h3>
       <div className="compact-list">{approved.map(plan => <div key={plan.id}><CheckCircle2 size={16} /><span>{plan.title}</span><small>{nameOf(candidates.value!, plan.ownerId)}</small></div>)}</div>
       <Form onCancel={onClose} submitLabel={`确认发布以上 ${approved.length} 条目标`} onSubmit={async event => { await api(`/months/${month}/publish`, json(monthlyPublishInput(approved, new FormData(event.currentTarget).get('reason')))); await onSaved('部门月度目标已发布') }}><Field label="发布说明（选填）"><textarea name="reason" rows={2} /></Field></Form>
     </>}
@@ -848,7 +834,7 @@ function MonthPublications({ data, month, onClose }: { data: PageProps['data']; 
   const [cursors, setCursors] = useState<string[]>([]), [selected, setSelected] = useState<string | null>(null)
   const firstPath = `/workspace/monthly/publications?month=${month}&limit=20`
   const query = useWorkspaceQuery<WorkspacePage<PublicationSummary>>(`${firstPath}${cursors.length ? `&cursor=${encodeURIComponent(cursors.at(-1)!)}` : ''}`, periodScope(data), undefined, { onCursorStale: () => { setCursors([]); return firstPath } })
-  return <Modal title={`${month} 发布版本`} onClose={onClose} wide><p className="modal-intro">发布版本保留当时的目标和负责人；当前安排以月度目标列表为准。</p>{query.error && <div className="error" role="alert">{query.error}<button onClick={() => { setCursors([]); void query.reload(`/workspace/monthly/publications?month=${month}&limit=20`).catch(() => {}) }}>重新读取版本</button></div>}{query.loading && <p>正在读取发布版本…</p>}{query.value?.items.map(row => <article key={row.id}><Badge>V{row.revision}</Badge><h3>{row.reason || '月度目标发布'}</h3><p>{dateTime(row.createdAt)} · {row.planCount} 项已发布成果</p><button className="text-button" onClick={() => setSelected(selected === row.id ? null : row.id)}>查看发布原件</button>{selected === row.id && <PublicationDetails data={data} id={row.id} />}</article>)}{query.value && <PeriodPager total={query.value.total} next={!!query.value.nextCursor} previous={!!cursors.length} loading={query.loading} onNext={() => setCursors(old => [...old, query.value!.nextCursor!])} onPrevious={() => setCursors(old => old.slice(0, -1))} />}</Modal>
+  return <Modal title={`${month} 发布版本`} onClose={onClose} wide>{query.error && <div className="error" role="alert">{query.error}<button onClick={() => { setCursors([]); void query.reload(`/workspace/monthly/publications?month=${month}&limit=20`).catch(() => {}) }}>重新读取版本</button></div>}{query.loading && <p>正在读取发布版本…</p>}{query.value?.items.map(row => <article key={row.id}><Badge>V{row.revision}</Badge><h3>{row.reason || '月度目标发布'}</h3><p>{dateTime(row.createdAt)} · {row.planCount} 项已发布成果</p><button className="text-button" onClick={() => setSelected(selected === row.id ? null : row.id)}>查看发布原件</button>{selected === row.id && <PublicationDetails data={data} id={row.id} />}</article>)}{query.value && <PeriodPager total={query.value.total} next={!!query.value.nextCursor} previous={!!cursors.length} loading={query.loading} onNext={() => setCursors(old => [...old, query.value!.nextCursor!])} onPrevious={() => setCursors(old => old.slice(0, -1))} />}</Modal>
 }
 function PublicationDetails({ data, id }: { data: PageProps['data']; id: string }) {
   const query = useWorkspaceQuery<{ publication: Publication; references: import('../../shared/period-workspace').PeriodReferences }>(`/workspace/monthly/publications/${encodeURIComponent(id)}`, periodScope(data))
@@ -931,7 +917,7 @@ function PlanEditor({
           )
         }}
       >
-        {temporary && <p className="modal-intro">按本月阶段填写成果和验收标准，可拆成多周推进。保存后提交管理者审核；未完成时可由管理者跨月承接。</p>}
+
         <div className="form-grid">
           <Field label="计划月份">
             <input
@@ -1002,9 +988,7 @@ function PlanEditor({
           </Field>
         </div>
         {imported && (
-          <p className="modal-intro">
-            这条目标来自已有计划导入。原表未注明的预期成果、验收标准和截止日期可继续留空；修订保留原因和历史版本。
-          </p>
+          <details><summary>原表缺少字段时怎么填</summary><p>原表未注明的预期成果、验收标准和截止日期可留空。</p></details>
         )}
         <Field label="预期交付成果">
           <textarea

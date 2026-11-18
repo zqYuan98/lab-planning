@@ -55,7 +55,6 @@ export default function Team({ data, notify, intent }: PageProps) {
       <PageHeader
         eyebrow="PEOPLE / TEAM"
         title="团队成员"
-        description="管理成员与账号。停用成员从日常列表隐藏，历史工作归属保留。"
         actions={
           <button className="button primary" onClick={() => setEditing('new')}>
             <Plus size={17} />
@@ -96,7 +95,6 @@ export default function Team({ data, notify, intent }: PageProps) {
           <strong>{activeCount}</strong>{' '}
           位启用成员
         </span>
-        <p>{status === 'inactive' ? '停用账号无法登录、接收新任务；原有计划和成果保留归属。' : '无业务记录的账号可删除；有业务记录的账号可停用并保留历史。'}</p>
       </div>
       {members.length ? (
         <div className="panel">

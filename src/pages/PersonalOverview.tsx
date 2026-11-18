@@ -130,11 +130,6 @@ export default function Overview({
       <header className="ov-page-heading">
         <div>
           <h1>{manager ? '部门概览' : '我的工作台'}</h1>
-          <p>
-            {manager
-              ? '本月目标与本周进展'
-              : '聚焦本周，推进重要的工作'}
-          </p>
         </div>
         <div className="ov-period">
           <strong>

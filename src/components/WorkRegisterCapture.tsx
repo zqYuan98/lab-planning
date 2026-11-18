@@ -56,7 +56,7 @@ export default function WorkRegisterCapture({ onClose, onSaved }: CaptureProps) 
 
   return <Modal wide title="快速记录工作事项" onClose={close}>
     <form className="wr-capture" onSubmit={submit}>
-      <p className="wr-modal-intro">先把事情记下来，交付要求和具体排期可以逐项补充。</p>
+
       <fieldset className="form-fields" disabled={busy || saved.current}>
         <Field label="工作事项 · 一行一件" hint="支持一次录入 1–50 件；换行会拆为独立事项。">
           <textarea value={text} onChange={event => setText(event.target.value)} rows={6} required placeholder={'整理实验室下一年度发展规划\n补充产业合作方案中的预算测算\n协调下周评审会的参会安排'} />
