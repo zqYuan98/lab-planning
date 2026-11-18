@@ -48,7 +48,7 @@ export class MyActionsService {
           : plan.status === 'approved' ? 'monthly_publish' : plan.status === 'published' && plan.acceptanceStatus === 'submitted' ? 'monthly_acceptance' : null
         const archived = plan.projectId && this.store.get<Project>('projects', plan.projectId)?.status === 'archived'
         if (type) add({ kind: type, sourceId: plan.id, sourceVersion: plan.version, businessGeneration: String(plan.version), assigneeIds: manager ? managers : [actor.id], title: plan.title,
-          requiredAction: type === 'monthly_submit' ? plan.status === 'returned' ? '按退回意见修改并重新提交审核' : '核对月度目标并提交审核'
+          requiredAction: type === 'monthly_submit' ? plan.status === 'returned' ? '按退回意见修改并重新提交审核' : manager ? '核对月度目标并确认' : '核对月度目标并提交审核'
             : type === 'monthly_review' ? '审核月度目标' : type === 'monthly_publish' ? '确认并发布已审核目标' : '验收月度成果',
           ...(archived && ['monthly_submit', 'monthly_publish'].includes(type) ? { blockedReason: '所属项目已归档，请先由管理员调整目标关联或恢复项目。' } : {}),
           dueAt: deadline(plan.dueDate), createdAt: plan.createdAt, sharedQueue: manager,

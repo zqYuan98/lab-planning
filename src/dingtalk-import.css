@@ -18,7 +18,7 @@
 .dingtalk-source-options { padding: 0; border: 0; min-width: 0; }
 .dingtalk-source-options legend { font-size: var(--font-small); font-weight: var(--weight-strong); margin-bottom: 10px; }
 .dingtalk-source-option { display: flex; align-items: flex-start; gap: 11px; padding: 14px; border: 1px solid var(--import-line); border-radius: var(--radius-control); margin-bottom: 8px; cursor: pointer; }
-.dingtalk-source-option.is-selected { border-color: #a8b8ed; background: #f5f7ff; }
+.dingtalk-source-option.is-selected { border-color: #a8b8ed; background: #f1f4fc; }
 .dingtalk-source-option input { flex: 0 0 auto; margin-top: 4px; }
 .dingtalk-source-option > span { min-width: 0; }
 .dingtalk-source-option strong { display: block; font-size: var(--font-small); font-weight: var(--weight-strong); overflow-wrap: anywhere; }

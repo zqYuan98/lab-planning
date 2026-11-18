@@ -24,7 +24,7 @@ export default function CarryWorkflowWizard({ sourcePlan, actorId, operationEpoc
   })
   const [targetId, setTargetId] = useState(''), [dueDate, setDueDate] = useState(''), [remainingWork, setRemainingWork] = useState(''), [reason, setReason] = useState(''), [split, setSplit] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([]), [week, setWeek] = useState(''), [commitments, setCommitments] = useState<Record<string, string>>({})
-  const [confirmed, setConfirmed] = useState(false), [cancelReason, setCancelReason] = useState(''), [cancelOpen, setCancelOpen] = useState(false)
+  const [cancelReason, setCancelReason] = useState(''), [cancelOpen, setCancelOpen] = useState(false)
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [refreshFailed, setRefreshFailed] = useState(false)
   const [pending, setPending] = useState<PendingCommand | null>(() => {
     try { const saved = JSON.parse(sessionStorage.getItem(storageKey) || 'null') as PendingCommand | null; return saved?.epoch === operationEpoch ? saved : null } catch { return null }
@@ -37,7 +37,7 @@ export default function CarryWorkflowWizard({ sourcePlan, actorId, operationEpoc
     try { if (value) sessionStorage.setItem(storageKey, JSON.stringify(value)); else sessionStorage.removeItem(storageKey) } catch { /* server list remains the recovery source */ }
   }
   const adopt = (next: CarryWorkflowView) => {
-    setView(next); setApplyPreview(null); setConfirmed(false); setCancelOpen(false)
+    setView(next); setApplyPreview(null); setCancelOpen(false)
     setSelectedIds(next.workflow.selectedTaskIds); setWeek(next.workflow.targetWeek); setCommitments(next.workflow.commitments || {})
     setStep(next.workflow.status === 'ready' ? 4 : ['completed', 'cancelled'].includes(next.workflow.status) ? 5 : 3)
   }
@@ -80,7 +80,7 @@ export default function CarryWorkflowWizard({ sourcePlan, actorId, operationEpoc
       return result
     } catch (caught) {
       if (caught instanceof ApiError && caught.status >= 400 && caught.status < 500) {
-        setAttempt(null); setApplyPreview(null); setConfirmed(false)
+        setAttempt(null); setApplyPreview(null)
         if (view) setStep(view.canApply ? 4 : 3)
         else if (caught.code === 'SOURCE_VERSION_CONFLICT') { setSourcePreview(null); setStep(1) }
       }
@@ -137,7 +137,7 @@ export default function CarryWorkflowWizard({ sourcePlan, actorId, operationEpoc
           const selection = { selectedTaskIds: selectedIds, targetWeek: week, commitments: Object.fromEntries(selectedIds.map(id => [id, commitments[id] ?? view.workflow.remainingWork])) }
           const saved = await send(`/carry-workflows/${view.workflow.id}`, { workflowVersion: view.workflow.version, ...selection }, 'PATCH')
           const preview = await api<CarryApplyPreview>(`/carry-workflows/${saved.workflow.id}/preview-apply`, json(selection))
-          setView(preview.view); setApplyPreview(preview); setConfirmed(false); setStep(5)
+          setView(preview.view); setApplyPreview(preview); setStep(5)
         })}>保存选择并预览影响</button>
       </fieldset>}
       {step === 5 && applyPreview && !terminal && <fieldset className="form-fields" disabled={busy || !!pending || refreshFailed}>
@@ -145,8 +145,7 @@ export default function CarryWorkflowWizard({ sourcePlan, actorId, operationEpoc
         {applyPreview.impacts.map(impact => <div className="carry-task" key={impact.task.id}><strong>{impact.task.title}</strong><small>沿用编号 {impact.task.id}；任务当前 V{impact.task.version}</small><p>任务关联到：{applyPreview.view.target.title}</p><p>调整周草稿：{impact.relinkDrafts.length ? impact.relinkDrafts.map(row => `${row.weekStart}（${row.id} / V${row.version}）`).join('、') : '无'}</p><p>保留历史记录：{impact.preservedRecords.length} 条（成果、正式提交、撤回历史及删除记录保留原归属）。</p>{impact.preservedRecords.length > 0 && <details><summary>逐条核对保留的周记录</summary><ul>{impact.preservedRecords.map(row => <li key={row.id}>{row.weekStart} · {row.id} · V{row.version}{row.deletion ? ' · 已删除' : row.submitted ? ' · 已提交' : ' · 保留原归属'}<p>{row.commitment}</p></li>)}</ul></details>}<p>{impact.existingTargetRecord ? `复用已有安排 ${impact.existingTargetRecord.id}，承诺保留：` : '新建目标周草稿，承诺：'}{impact.commitment}</p></div>)}
         <p className="form-hint">原月成果、发布快照、周审核和定稿报告保持原记录。任一清单变化均需重新预览；所有关联与排周一次完成。</p>
         <Field label="补充说明（选填）"><textarea value={reason} onChange={event => setReason(event.target.value)} rows={2} /></Field>
-        <label className="checkbox-label"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />已核对最新来源、全部任务及周记录影响，确认关联与排周</label>
-        <div className="carry-actions"><button className="button secondary" onClick={() => { setApplyPreview(null); setStep(4) }}>返回选择</button><button className="button primary" disabled={!confirmed} onClick={() => void run(async () => {
+        <div className="carry-actions"><button className="button secondary" onClick={() => { setApplyPreview(null); setStep(4) }}>返回选择</button><button className="button primary"  onClick={() => void run(async () => {
           await send(`/carry-workflows/${view.workflow.id}/apply`, { workflowVersion: applyPreview.view.workflow.version, ...applyPreview.selection, manifest: applyPreview.manifest, fingerprint: applyPreview.fingerprint, reason }); await refreshSaved()
         })}>确认关联与排周</button></div>
       </fieldset>}

@@ -137,4 +137,4 @@ status 为 preparing / awaiting_publication / ready / completed / cancelled。�
 
 迁移验证同时覆盖新事实集合、旧 v1～v5 包、账号映射、冻结快照和存储升级失败回滚。真实企业验收尚未完成时如实保留待验收状态，不以 CI 替代。
 
-实施与验收记录见[第三批验收](../../validation-2026-09-22-cross-period-review.md)，运行和发布状态见[功能状态台账](../../feature-status.md)。
+实施与验收记录见[第三批验收](../../archive/validation-2026-09-22-cross-period-review.md)，运行和发布状态见[功能状态台账](../../feature-status.md)。

@@ -55,3 +55,14 @@ test('publishing, changing a published goal and editing your own task need no ty
     assert.equal(task.dueDate, '2026-09-24')
   } finally { f.store.close() }
 })
+
+test('temporary goals and temporary work can be recorded without a typed background', () => {
+  const f = fixture(), d = f.domain
+  try {
+    const plan = d.createPlan(f.member, { ...f.planInput, ownerId: f.member.id, isTemporary: true })
+    assert.equal(plan.temporaryReason, '临时新增')
+    const task = d.createTask(f.member, { title: '紧急支持', isTemporary: true, dueDate: '2026-09-20' })
+    assert.equal(task.temporaryReason, '临时安排')
+    assert.equal(d.createTask(f.member, { title: '联调', isTemporary: true, temporaryReason: '产品组提出', dueDate: '2026-09-20' }).temporaryReason, '产品组提出')
+  } finally { f.store.close() }
+})

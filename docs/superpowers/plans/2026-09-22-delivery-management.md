@@ -10,7 +10,7 @@
 
 设计依据：[第二批规格](../specs/2026-09-22-lab-planning-delivery-management-design.md)。用户已明确要求完成第二批，按现有设计直接实施，不重复请求设计批准。
 
-截至 2026-09-22，Tasks 1–6 已完成：最终全量 852 项测试通过，生产构建成功，交叉复审及隔离浏览器验收完成。Docker CLI 不可用，未执行容器启动验证。详见[验证记录](../../validation-2026-09-22-delivery-management.md)。
+截至 2026-09-22，Tasks 1–6 已完成：最终全量 852 项测试通过，生产构建成功，交叉复审及隔离浏览器验收完成。Docker CLI 不可用，未执行容器启动验证。详见[验证记录](../../archive/validation-2026-09-22-delivery-management.md)。
 
 ## Task 1：对象访问与观察者（权限代理）
 

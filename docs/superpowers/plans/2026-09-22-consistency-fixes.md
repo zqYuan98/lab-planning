@@ -75,4 +75,4 @@ Files: modify `docs/api-contract.md`, relevant restore docs; create `docs/valida
 - [x] 更新接口、恢复步骤、实施状态和验收记录，核对 `git diff --check`。
 - [x] 保留可审查的本地分支改动；本任务不发布生产或发送真实通知。
 
-实施状态：全部完成本地实现与验收，757 项测试及生产构建通过，未部署。验收记录见 [第一批验收](../../validation-2026-09-22-consistency.md)。
+实施状态：全部完成本地实现与验收，757 项测试及生产构建通过，未部署。验收记录见 [第一批验收](../../archive/validation-2026-09-22-consistency.md)。

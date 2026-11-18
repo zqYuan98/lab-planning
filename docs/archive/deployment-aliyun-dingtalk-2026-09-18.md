@@ -1,8 +1,8 @@
 # 阿里云钉钉功能升级记录（2026-09-18）
 
-状态：**北京时间 2026-09-18 15:16:17 完成升级，正式入口为 https://lab.notvitamin.com/，工作入口为 https://lab.notvitamin.com/work。** 原账号、密码及业务数据保留。消息中心、消息确认、提醒、钉钉绑定和通知管理代码已上线。**同日 16:16:38 已配置企业应用凭据并通过钉钉取令牌验证，外发保持关闭；应用发布、真实免登和消息送达尚未验收。** 详见[后台核对与配置记录](dingtalk-console-audit-2026-09-18.md)。下文保留 15:16 升级时的验收事实。
+状态：**北京时间 2026-09-18 15:16:17 完成升级，正式入口为 https://lab.notvitamin.com/，工作入口为 https://lab.notvitamin.com/work。** 原账号、密码及业务数据保留。消息中心、消息确认、提醒、钉钉绑定和通知管理代码已上线。**同日 16:16:38 已配置企业应用凭据并通过钉钉取令牌验证，外发保持关闭；应用发布、真实免登和消息送达尚未验收。** 详见[后台核对与配置记录](../dingtalk-console-audit-2026-09-18.md)。下文保留 15:16 升级时的验收事实。
 
-本次在已完成迁移的阿里云服务上升级程序，没有重新初始化或覆盖数据库，没有在正式库创建测试账号。此前的首次迁移见[阿里云迁移记录](aliyun-migration-2026-09-18.md)，钉钉管理员操作见[接入手册](dingtalk-public-server.md)。
+本次在已完成迁移的阿里云服务上升级程序，没有重新初始化或覆盖数据库，没有在正式库创建测试账号。此前的首次迁移见[阿里云迁移记录](../aliyun-migration-2026-09-18.md)，钉钉管理员操作见[接入手册](../dingtalk-public-server.md)。
 
 ## 发布版本与运行位置
 
@@ -68,7 +68,7 @@ SHA-256: 4ebaa2b6324bbca34f72d1354669c3099af10dc815bbc169b9f24604d5c4b92b
 
 创建并发布企业内部 H5 应用，移动端与 PC 首页填写 **`https://lab.notvitamin.com/work`**，按控制台要求配置域名 **`lab.notvitamin.com`**、成员可见范围和对应接口权限。准备 CorpId、Client ID / AppKey、Client Secret / AppSecret、AgentId，由部署人员直接保存到服务器环境文件，不写入前端或代码库。
 
-当前阿里云使用 systemd，不执行 Compose 命令。修改 `/etc/lab-planning/app.env` 后，通过 `sudo systemctl restart lab-planning.service` 加载配置；正常升级和重启保持现有 `DINGTALK_DEPLOYMENT_ID`。先在外发关闭状态联调本人身份绑定和免登，再按[小范围通知试点](dingtalk-public-server.md#6-小范围启用个人通知)显式启用。
+当前阿里云使用 systemd，不执行 Compose 命令。修改 `/etc/lab-planning/app.env` 后，通过 `sudo systemctl restart lab-planning.service` 加载配置；正常升级和重启保持现有 `DINGTALK_DEPLOYMENT_ID`。先在外发关闭状态联调本人身份绑定和免登，再按[小范围通知试点](../dingtalk-public-server.md#6-小范围启用个人通知)显式启用。
 
 ## 运维与回退
 

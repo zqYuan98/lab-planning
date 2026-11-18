@@ -71,4 +71,4 @@ Files: create `docs/feature-status.md`, `docs/validation-2026-09-22-cross-period
 
 并行分工：跨期代理负责 Task 1；历史代理负责 Task 2；查询代理负责 Task 3。主代理负责 Task 4～6、协议协调及交叉复审。共享文件先沟通责任边界，不覆盖其他代理改动。定向命令使用 `npx tsx --test tests/<领域>.test.ts`，稳定后合并执行完整 `npm test` 与 `npm run build`。
 
-完成记录：2026-09-24，914 项全量测试、构建及最终性能预算通过。浏览器和独立恢复于 2026-09-22 完成。详见[第三批验收](../../validation-2026-09-22-cross-period-review.md)；第三批尚未部署生产。
+完成记录：2026-09-24，914 项全量测试、构建及最终性能预算通过。浏览器和独立恢复于 2026-09-22 完成。详见[第三批验收](../../archive/validation-2026-09-22-cross-period-review.md)；第三批尚未部署生产。

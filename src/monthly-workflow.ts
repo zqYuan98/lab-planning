@@ -4,7 +4,7 @@ import { isActiveMonthlyPlan } from '../shared/monthly-plan-state'
 import type { NavigationIntent } from './navigation'
 
 export const monthlyStatusLabels: Record<MonthlyPlan['status'], string> = {
-  draft: '草稿', submitted: '待审核', returned: '退回修改', approved: '审核通过，待发布', published: '已发布', merged: '已合并',
+  draft: '草稿', submitted: '待审核', returned: '退回修改', approved: '待发布', published: '已发布', merged: '已合并',
 }
 export type MonthlyWorkflowAction = 'submit' | 'review' | 'publish' | 'create-task' | 'result'
 

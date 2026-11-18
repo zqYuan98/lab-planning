@@ -13,7 +13,7 @@
 | P1 正式提报 | 相关实质进展提示重新核对；提交携带进展快照清单 | 新进展与旧快照冲突、首次准时/迟交事实保留、无变化不伪造进展 |
 | P2 原生接入 | 原生待办、卡片预览确认、确定性机器人、官方 Stream、分页对账、离职撤权与补偿 | 模拟 wire 协议、持久收件箱、绑定隔离、外部结果未知不重发/换渠道 |
 
-日常使用与配置顺序见 [协作操作说明](dingtalk-collaboration-operations.md)。详细运行与外部验收见 [P0](validation-2026-09-20-dingtalk-foundation.md)、[P2](validation-2026-09-20-dingtalk-native.md)。
+日常使用与配置顺序见 [协作操作说明](../dingtalk-collaboration-operations.md)。详细运行与外部验收见 [P0](validation-2026-09-20-dingtalk-foundation.md)、[P2](validation-2026-09-20-dingtalk-native.md)。
 
 ## 自动化记录
 

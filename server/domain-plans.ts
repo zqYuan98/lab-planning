@@ -12,7 +12,6 @@ import { notifyPublishedPlans } from './notification-events.ts'
 import { HttpError } from './store.ts'
 import { DomainBase, bool, choice, date, manager, month, own, participates, text, type Input } from './domain-common.ts'
 import { assertOperationEpoch } from './operation-context.ts'
-import { isManager } from './authorization.ts'
 import { isManager, isMember } from './authorization.ts'
 import { LIMITS, PRIORITIES, WORK_SOURCES } from '../shared/entity-rules.ts'
 import { submittedWeeklyEvidence } from './carry-workflows-history.ts'
@@ -152,7 +151,8 @@ export class MonthlyService extends DomainBase {
       collaboratorIds: this.collaborators(input.collaboratorIds, ownerId),
       expectedOutcome: text(input.expectedOutcome, '预期成果'), acceptanceCriteria: text(input.acceptanceCriteria, '验收标准'), dueDate,
       priority: choice(input.priority ?? 'medium', PRIORITIES, '优先级'),
-      isTemporary, temporaryReason: isTemporary ? text(input.temporaryReason, '临时目标原因') : '',
+      // 临时目标的背景可以不写；留空时记为“临时新增”，保持“临时目标必有来源说明”的数据约定。
+      isTemporary, temporaryReason: isTemporary ? text(input.temporaryReason, '临时目标原因', false) || '临时新增' : '',
       status: 'draft', reviewComment: '', publishedVersion: null, sourcePlanId,
       actualOutcome: '', acceptanceStatus: 'pending', acceptanceNote: '', ...metadata,
     })
@@ -171,7 +171,7 @@ export class MonthlyService extends DomainBase {
       if (input.isTemporary !== undefined && bool(input.isTemporary, '临时目标标记') !== !!before.isTemporary) throw new HttpError(400, '月度目标类型不能直接修改')
       const patch: Partial<MonthlyPlan> = {}
       if (input.annualGoalId !== undefined) patch.annualGoalId = this.annualLink(input.annualGoalId, before.month)
-      if (before.isTemporary && input.temporaryReason !== undefined) patch.temporaryReason = text(input.temporaryReason, '临时目标原因')
+      if (before.isTemporary && input.temporaryReason !== undefined) patch.temporaryReason = text(input.temporaryReason, '临时目标原因', false) || '临时新增'
       if (input.title !== undefined) patch.title = text(input.title, '计划标题', true, LIMITS.title)
       if (input.projectId !== undefined) {
         patch.projectId = input.projectId ? text(input.projectId, '项目') : null

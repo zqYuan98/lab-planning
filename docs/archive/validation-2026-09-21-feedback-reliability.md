@@ -1,6 +1,6 @@
 # 问题反馈与使用可靠性第一期验收
 
-2026-09-21 完成本地实现与验收；同日 09:45 已另行完成正式部署，见[上线记录](deployment-aliyun-feedback-2026-09-21.md)。本文保留本地开发时点的验证事实，范围承接[体验审查](usability-and-feedback-review-2026-09-20.md)中的第一批：反馈闭环、常用表单草稿、错误定位与完整消息历史。原有工作区变更保留，开发阶段未提交或推送 Git，也未访问正式数据库或发送真实外部消息。
+2026-09-21 完成本地实现与验收；同日 09:45 已另行完成正式部署，见[上线记录](deployment-aliyun-feedback-2026-09-21.md)。本文保留本地开发时点的验证事实，范围承接[体验审查](../usability-and-feedback-review-2026-09-20.md)中的第一批：反馈闭环、常用表单草稿、错误定位与完整消息历史。原有工作区变更保留，开发阶段未提交或推送 Git，也未访问正式数据库或发送真实外部消息。
 
 ## 已实现
 
@@ -40,11 +40,11 @@
 
 以上 JSON、可复跑验收脚本和截图位于 `output/feedback-20260921/`。主流程与恢复验收均先遇到测试定位/动画等待问题，修正脚本后完整复跑通过；报告采用最终结果。人工检查手机和桌面截图，抽屉动画结束后表单与按钮完整可见。
 
-![手机反馈提报](../output/feedback-20260921/feedback-composer-mobile.png)
+![手机反馈提报](../../output/feedback-20260921/feedback-composer-mobile.png)
 
 ## 变更与后续边界
 
-实现前对 230 个已有文件保存了基线，位于 `output/feedback-20260921/baseline/`；修改清单为 `changed-from-baseline.json`。新增反馈前后端、草稿及错误模块与聚焦测试，未新增生产依赖。接口细节见 [API 契约](api-contract.md#problem-feedback-2026-09-21)，实施计划见 [计划记录](superpowers/plans/2026-09-21-feedback-reliability.md)。
+实现前对 230 个已有文件保存了基线，位于 `output/feedback-20260921/baseline/`；修改清单为 `changed-from-baseline.json`。新增反馈前后端、草稿及错误模块与聚焦测试，未新增生产依赖。接口细节见 [API 契约](../api-contract.md#problem-feedback-2026-09-21)，实施计划见 [计划记录](../superpowers/plans/2026-09-21-feedback-reliability.md)。
 
 任务终止/取消、跨月阶段承接简化、未通过验收后的整改责任链仍作为后续批次。本记录不声称这些项目已实施。正式发布、生产备份及发布后检查已在后续部署操作中完成，详情见上方独立上线记录；实际发布包保留了未发布工作区改动的边界。
 

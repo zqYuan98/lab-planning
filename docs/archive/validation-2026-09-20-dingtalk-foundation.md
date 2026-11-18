@@ -41,8 +41,8 @@ node --import tsx scripts/verified-backup.ts retention-apply <已核对的预览
 
 ## 存储 v2 兼容回退产物
 
-本轮基线的原 Store 已配套生成[独立兼容回退说明](../output/collaboration-implementation-20260920/compatibility-rollback/README.md)与[最小补丁](../output/collaboration-implementation-20260920/compatibility-rollback/storage-v2-compatibility.patch)。补丁仅调整旧 `server/storage-migrations.ts` 的版本门：保留创建新库的版本 1 行为，允许名称为 `notification-queue-and-diagnostic-indexes` 的已知 v2 附加索引迁移；未知 v2 和 v3 仍拒绝打开。它不降库、不删除索引，也不修改未知业务集合。
+本轮基线的原 Store 已配套生成[独立兼容回退说明](../../output/collaboration-implementation-20260920/compatibility-rollback/README.md)与[最小补丁](../../output/collaboration-implementation-20260920/compatibility-rollback/storage-v2-compatibility.patch)。补丁仅调整旧 `server/storage-migrations.ts` 的版本门：保留创建新库的版本 1 行为，允许名称为 `notification-queue-and-diagnostic-indexes` 的已知 v2 附加索引迁移；未知 v2 和 v3 仍拒绝打开。它不降库、不删除索引，也不修改未知业务集合。
 
-重现命令：`node --import tsx output/collaboration-implementation-20260920/compatibility-rollback/verify.mjs`。9 项隔离验证通过，结果与源码 SHA-256 见[验证记录](../output/collaboration-implementation-20260920/compatibility-rollback/verification-result.json)。验证包含原旧版拒绝 v2、真实 v1→v2 不重写原实体、兼容旧 Store 对原任务/周记录的读写及事务回滚、新进展/回调/未知操作三类实体逐字节保留、4 个索引及 v2 迁移记录不变，以及新版 Store 再打开并读取回退期写入。配套 `apply-to-release.mjs` 的检查模式不写文件，应用模式只替换独立且匹配基线的旧发布副本中迁移文件，并拒绝当前工作树及其子目录、祖先目录。
+重现命令：`node --import tsx output/collaboration-implementation-20260920/compatibility-rollback/verify.mjs`。9 项隔离验证通过，结果与源码 SHA-256 见[验证记录](../../output/collaboration-implementation-20260920/compatibility-rollback/verification-result.json)。验证包含原旧版拒绝 v2、真实 v1→v2 不重写原实体、兼容旧 Store 对原任务/周记录的读写及事务回滚、新进展/回调/未知操作三类实体逐字节保留、4 个索引及 v2 迁移记录不变，以及新版 Store 再打开并读取回退期写入。配套 `apply-to-release.mjs` 的检查模式不写文件，应用模式只替换独立且匹配基线的旧发布副本中迁移文件，并拒绝当前工作树及其子目录、祖先目录。
 
 该产物供独立旧版发布副本使用，未覆盖当前源码或生产。回退前须停止新增通知和 P1/P2 自动任务，核对在途 accepted/unknown 与回调状态，并取得已验证备份；旧业务代码缺少新协作/原生同步 hooks，回退期间不能继续承诺这些新功能，也不得让两个版本并发写库。重新升级前须核对回退期业务变更与新跟踪状态。这里证明的是存储兼容，真实部署的停机切换、完整旧版应用验收与恢复计时仍需在企业环境完成。

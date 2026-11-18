@@ -50,7 +50,7 @@ export class ObjectGrantService {
       if (!Array.isArray(caps) || !caps.includes('read') || caps.some(cap => !['read', 'read_evidence', 'export_summary'].includes(String(cap)))) throw new HttpError(400, '授权能力必须包含读取且仅使用支持的能力')
       const capabilities = [...new Set(caps)] as ObjectCapability[], historyPolicy = input.historyPolicy ?? 'current_onward'
       if (!['current_onward', 'all_history'].includes(String(historyPolicy))) throw new HttpError(400, '历史范围无效')
-      const reason = required(input.reason, '授权原因', 2000), now = this.clock().toISOString()
+      const reason = typeof input.reason === 'string' && input.reason.trim() ? required(input.reason, '授权说明', 2000) : '', now = this.clock().toISOString()
       const expiresAt = input.expiresAt === undefined || input.expiresAt === null || input.expiresAt === '' ? null : required(input.expiresAt, '有效期', 40)
       if (expiresAt && (!Number.isFinite(Date.parse(expiresAt)) || new Date(expiresAt).toISOString() !== expiresAt || expiresAt <= now)) throw new HttpError(400, '有效期须为未来的规范 UTC 时间')
       const prior = this.store.list<ObjectGrant>('objectGrants').find(grant => grant.subjectId === subjectId && grant.objectType === type && grant.objectId === objectId)

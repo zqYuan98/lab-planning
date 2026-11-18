@@ -139,7 +139,7 @@ test('a cleared monthly page cannot rebuild rows or counts from retained detail 
   const member = render(f.former)
   assert.match(member, /当前参与<span>0<\/span>/)
   assert.match(member, /历史记录<span>0<\/span>/)
-  assert.match(member, /审核通过，待发布<span>0<\/span>/)
+  assert.match(member, /待发布<span>0<\/span>/)
   assert.doesNotMatch(member, /class="table-title"|>编辑<|>提交成果<|>关联个人任务</)
   assert.match(member, /保留打开详情的目标/)
   assert.match(member, /历史成果要求/, 'the independent detail content remains available')

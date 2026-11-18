@@ -16,6 +16,8 @@ jobs:
       - run: npm ci
       - name: Design scale and copy rules
         run: npm run lint:design
+      - name: Markdown links resolve
+        run: npm run lint:docs
       - run: npm test
       - run: npm run build
       - run: npm run perf

@@ -358,7 +358,7 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
           </button>
         </div>
       )}
-      <section className="context-box" aria-label="本周投入汇总"><p>本周投入：预计 {effort.plannedEffortDays} 人日 · 实际 {effort.actualEffortDays} 人日 · 未填预计 {effort.missingPlannedCount} 项 / 实际 {effort.missingActualCount} 项</p>{recordCalendar && <p>本周每人工作日容量：{recordCalendar.workingDays.length} 人日。</p>}{effort.byOwnerWeek.filter(item => item.overCapacity).map(item => <WeeklyCapacityNotice key={`${item.ownerId}:${item.weekStart}`} name={nameOf(data, item.ownerId)} capacityDays={item.capacityDays ?? recordCalendar?.workingDays.length} />)}<details><summary>按项目查看投入</summary>{effort.byProject.map(item => <p key={item.projectId ?? 'none'}>{item.projectName}：预计 {item.plannedEffortDays} / 实际 {item.actualEffortDays} 人日（未填 {item.missingPlannedCount} / {item.missingActualCount} 项）</p>)}</details><small>覆盖当前成员筛选的全部有效周记录，不受列表分页、关键词和状态筛选影响。</small></section>
+      <section className="context-box" aria-label="本周投入汇总"><p>本周投入：预计 {effort.plannedEffortDays} 人日 · 实际 {effort.actualEffortDays} 人日 · 未填预计 {effort.missingPlannedCount} 项 / 实际 {effort.missingActualCount} 项</p>{recordCalendar && <p>本周每人工作日容量：{recordCalendar.workingDays.length} 人日。</p>}{effort.byOwnerWeek.filter(item => item.overCapacity).map(item => <WeeklyCapacityNotice key={`${item.ownerId}:${item.weekStart}`} name={nameOf(data, item.ownerId)} capacityDays={item.capacityDays ?? recordCalendar?.workingDays.length} />)}<details><summary>按项目查看投入</summary>{effort.byProject.map(item => <p key={item.projectId ?? 'none'}>{item.projectName}：预计 {item.plannedEffortDays} / 实际 {item.actualEffortDays} 人日（未填 {item.missingPlannedCount} / {item.missingActualCount} 项）</p>)}</details></section>
       <div className="weekly-summary">
         <span>
           已纳入周统计 <strong>{summary.official}</strong> 项
@@ -386,7 +386,7 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
               : '—'}
           </strong>
         </span>
-        <small>按全部已纳入周统计的记录计算，筛选不改变口径。</small>
+        
       </div>
       <div className="tabs" role="group" aria-label="执行状态筛选">
         {[
@@ -466,9 +466,6 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
                   <div className="row-meta">
                     <PriorityBadge priority={priority} />
                     <WorkTypeBadge isTemporary={isTemporary} monthlyPlanId={record.monthlyPlanId} />
-                    <span className="task-code">
-                      #{record.taskId.slice(-6).toUpperCase()}
-                    </span>
                     <WorkOriginLabel row={record} data={data} />
                     {record.submitted && (record.planApproval?.required || record.workOrigin?.kind === 'assigned') && <Badge tone={recordState.tone}>{recordState.label}</Badge>}
                     {record.submitted ? (
@@ -564,8 +561,7 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
                   )}
                 <footer className="weekly-card-footer">
                   <small>
-                    {recordState.label} · 整份提报另行确认{' '}
-                    · 记录 V{record.version}
+                    {recordState.label}
                   </small>
                   <div className="row-actions">
                     {canEdit && (
@@ -601,6 +597,10 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
                           </button>
                         )}
                         <WeeklyRecordSubmissionActions record={record} onOpen={reviewWork} />
+                      </>
+                    )}
+                    {(canEdit || manager) && <details className="row-more"><summary>更多</summary><div className="row-more-menu">
+                    {canEdit && (
                         <button
                           disabled={!availableOwner(record.ownerId)}
                           title={!availableOwner(record.ownerId) ? '责任人账号已停用，无法新安排任务' : undefined}
@@ -610,7 +610,6 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
                         >
                           顺延一周
                         </button>
-                      </>
                     )}
                     {manager && task && (
                       <button
@@ -622,6 +621,7 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
                       </button>
                     )}
                     {manager && <button className="weekly-delete-action" onClick={() => void openRecord('delete', record)}><Trash2 size={14} />删除周安排</button>}
+                    </div></details>}
                   </div>
                 </footer>
               </article>
@@ -1067,12 +1067,11 @@ function WeeklyCreate({
             </Field>
             <WeeklyTaskDeadlineField calendar={calendar} planDueDate={plan?.dueDate} />
             {temporary && (
-              <Field label="临时工作原因">
+              <Field label="来源或背景（选填）">
                 <textarea
                   name="temporaryReason"
-                  required
-                  rows={3}
-                  placeholder="说明来源、紧急性及为什么尚未列入月度目标"
+                  rows={2}
+                  placeholder="例如：产品组临时提出的联调需求"
                 />
               </Field>
             )}

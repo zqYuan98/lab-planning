@@ -13,24 +13,24 @@
   line-height: 1.6;
   -webkit-font-smoothing: auto;
   color: var(--text-primary);
-  background: #f6f7f8;
+  background: #f7f9fc;
   --primary: #3b5bff;
   --primary-hover: #2f4de5;
   --primary-soft: #eef2ff;
   --forest: var(--primary);
-  --forest-dark: #ffffff;
-  --paper: #f6f7f8;
+  --forest-dark: #fff;
+  --paper: #f7f9fc;
   /* Neutral ink throughout the product; hierarchy comes from size and weight. */
   --text-primary: #181818;
-  --text-body: #282828;
+  --text-body: #27272a;
   --text-secondary: #3d3d3d;
   --text-placeholder: #595959;
   --text-disabled: #929292;
   --ink: var(--text-primary);
   --muted: var(--text-secondary);
-  --border: #e5e6eb;
+  --border: #e5e7eb;
   --amber: #bf740f;
-  --white: #ffffff;
+  --white: #fff;
   --radius: 6px;
 }
 body {
@@ -90,15 +90,15 @@ textarea::placeholder {
   border-color: #e1e6ef;
 }
 .button.secondary:hover:not(:disabled) {
-  background: #f6f8ff;
+  background: #f1f4fc;
   border-color: #cfd8ff;
 }
 .button.danger {
   color: #bf445b;
-  background: #fff0f3;
+  background: #fff0f1;
 }
 .icon-button:hover {
-  background: #edf1fc;
+  background: #eef2ff;
 }
 .page-header {
   margin-bottom: 22px;
@@ -152,7 +152,7 @@ textarea::placeholder {
   border-radius: var(--radius-control);
   padding: 4px 8px;
   color: var(--text-secondary);
-  background: #f0f3f8;
+  background: #f1f4fc;
   font-size: var(--font-caption);
 }
 .badge-green {
@@ -161,15 +161,15 @@ textarea::placeholder {
 }
 .badge-amber {
   color: #b37116;
-  background: #fff4e3;
+  background: #fff8e9;
 }
 .badge-blue {
-  color: #4964d9;
+  color: #4b66da;
   background: #eef2ff;
 }
 .badge-red {
   color: #c05061;
-  background: #fff0f3;
+  background: #fff0f1;
 }
 .workflow-strip {
   background: #fff;
@@ -230,18 +230,18 @@ textarea::placeholder {
 }
 .tabs span {
   color: var(--text-secondary);
-  background: #edf1f8;
+  background: #f1f4fc;
   border-radius: var(--radius-tag);
 }
 .tabs button.selected span {
   color: var(--primary);
-  background: #edf1ff;
+  background: #eef2ff;
 }
 table {
   font-size: var(--font-small);
 }
 th {
-  background: #fafafa;
+  background: #f7f9fc;
   color: var(--text-body);
   font-size: var(--font-caption);
   border-color: var(--border);
@@ -251,7 +251,7 @@ td {
   color: var(--text-body);
 }
 tbody tr:hover {
-  background: #fafafa;
+  background: #f7f9fc;
 }
 .table-title {
   color: var(--text-primary);
@@ -274,14 +274,14 @@ tbody tr:hover {
   color: #526fd5;
 }
 .row-actions button:hover {
-  color: #294be4;
+  color: #2f4de5;
 }
 .row-actions button.danger {
-  color: #c35063;
+  color: #c05061;
 }
 .note {
   color: var(--text-secondary);
-  background: #f6f8fd;
+  background: #f7f9fc;
   border-radius: var(--radius-tag);
   margin: 16px;
 }
@@ -302,7 +302,7 @@ tbody tr:hover {
 }
 .avatar.light,
 .project-icon {
-  background: #f2f3f5;
+  background: #f7f9fc;
   color: #6380e5;
 }
 .project-icon {
@@ -312,7 +312,7 @@ tbody tr:hover {
   color: var(--text-secondary);
 }
 .week-switcher .icon-button:hover {
-  background: #f2f3f5;
+  background: #f7f9fc;
 }
 .weekly-card {
   padding: 22px;
@@ -325,8 +325,7 @@ tbody tr:hover {
 }
 .owner-chip,
 .linked-plan,
-.linked-plan > span,
-.task-code {
+.linked-plan > span{
   color: var(--text-secondary);
 }
 .weekly-facts,
@@ -343,11 +342,11 @@ tbody tr:hover {
   font-size: var(--font-caption);
 }
 .evidence-link {
-  color: #4465da;
+  color: #4b66da;
 }
 .goal-icon {
-  background: #f2f3f5;
-  color: #6683e8;
+  background: #f7f9fc;
+  color: #6380e5;
 }
 .label-text,
 .goal-body small,
@@ -361,7 +360,7 @@ tbody tr:hover {
   color: #3b5bff;
 }
 .progress-track {
-  background: #edf1f8;
+  background: #f1f4fc;
 }
 .progress-track > div {
   background: #7395f6;
@@ -386,14 +385,14 @@ tbody tr:hover {
   color: var(--text-secondary);
 }
 .modal-heading .icon-button:hover {
-  background: #f1f4fb;
+  background: #f1f4fc;
 }
 .modal-intro,
 .context-box p {
   color: var(--text-secondary);
 }
 .context-box {
-  background: #f6f8ff;
+  background: #f1f4fc;
   border-color: #e4eaff;
   border-radius: var(--radius-control);
 }
@@ -407,7 +406,7 @@ tbody tr:hover {
   color: var(--text-secondary);
 }
 .timeline > div {
-  border-color: #dfe6f7;
+  border-color: #e4eafa;
 }
 .timeline h3 {
   color: var(--text-body);
@@ -417,14 +416,14 @@ tbody tr:hover {
   color: var(--text-secondary);
 }
 .error {
-  background: #fff2f4;
+  background: #fff0f1;
   border-color: #f6dbe2;
   color: #b3425d;
 }
 .toast {
   color: #304b99;
   background: #fff;
-  border-color: #dfe7ff;
+  border-color: #dfe6ff;
   box-shadow: 0 8px 35px #263e7314;
 }
 .toast svg {
@@ -437,9 +436,9 @@ tbody tr:hover {
   flex-wrap: wrap;
   gap: 12px;
   padding: 12px 16px;
-  border: 1px solid #dde6ff;
+  border: 1px solid #dfe6ff;
   border-radius: var(--radius-control);
-  background: #f5f8ff;
+  background: #f7f9fc;
   margin: 12px 0 18px;
   color: #5770a2;
   font-size: var(--font-caption);
@@ -448,7 +447,7 @@ tbody tr:hover {
   padding: 0;
 }
 .navigation-highlight {
-  box-shadow: inset 3px 0 #6e89ff;
+  box-shadow: inset 3px 0 #7187ff;
 }
 .reports-page {
   --report-green: var(--text-primary);
@@ -470,14 +469,14 @@ tbody tr:hover {
   border-radius: var(--radius-control);
 }
 .report-history {
-  background: #f7f8fa;
+  background: #f7f9fc;
 }
 .report-history-title > span {
-  background: #e7edfa;
+  background: #e5effc;
   color: var(--text-secondary);
 }
 .report-history-item:hover {
-  background: #f2f3f5;
+  background: #f7f9fc;
 }
 .report-history-item.is-selected {
   background: #fff;
@@ -525,17 +524,17 @@ tbody tr:hover {
   color: var(--text-secondary);
 }
 .report-document-footer {
-  background: #fafafa;
+  background: #f7f9fc;
 }
 .report-facts section h3 {
   border-color: #7394ef;
 }
 .report-table-wrap th {
-  background: #f5f8fd;
+  background: #f7f9fc;
   color: var(--text-secondary);
 }
 .report-table-wrap tbody tr:nth-child(even) {
-  background: #fafbff;
+  background: #f7f9fc;
 }
 .report-table-wrap td small {
   color: var(--text-secondary);
@@ -544,11 +543,11 @@ tbody tr:hover {
   color: #486ee0;
 }
 .report-empty-inline {
-  background: #f8faff;
-  border-color: #dce5f7;
+  background: #f7f9fc;
+  border-color: #d9e7fb;
 }
 .report-publications > div {
-  background: #fafbff;
+  background: #f7f9fc;
 }
 .report-publications p,
 .report-change-log,
@@ -557,7 +556,7 @@ tbody tr:hover {
   color: var(--text-secondary);
 }
 .report-change-log > div {
-  border-color: #dce5f4;
+  border-color: #dbe5f1;
 }
 .report-highlights label {
   border-color: var(--border);
@@ -648,7 +647,6 @@ textarea::placeholder {
 .owner-chip,
 .linked-plan,
 .linked-plan > span,
-.task-code,
 .goal-body small,
 .goal-progress > span,
 .label-text,
@@ -783,7 +781,7 @@ th {
 :root {
   --surface: #fff;
   --surface-subtle: #f7f9fc;
-  --control-border: #cbd7e6;
+  --control-border: #c8d4e4;
   --space-section: 28px;
 }
 html { scroll-padding-top: 96px; }
@@ -827,9 +825,9 @@ td strong, .table-title { font-size: var(--font-body); font-weight: var(--weight
 .row-actions button { min-height: 32px; padding: 4px 6px; margin-left: -6px; border-radius: var(--radius-tag); }
 .row-actions button:hover { background: var(--primary-soft); text-decoration: none; }
 .badge { display: inline-flex; align-items: center; min-height: 24px; padding: 2px 7px; border-radius: var(--radius-tag); line-height: 1.5; white-space: nowrap; }
-.badge-green { color: #116b52; background: #edf7f2; }
-.badge-amber { color: #86500b; background: #fff5e8; }
-.badge-blue { color: #304ac7; background: #eff2ff; }
+.badge-green { color: #116b52; background: #edf5ef; }
+.badge-amber { color: #86500b; background: #fff8e9; }
+.badge-blue { color: #304ac7; background: #eef2ff; }
 .badge-red { color: #a92c36; background: #fff0f1; }
 .tabs { margin-bottom: 20px; gap: 12px; }
 .tabs button { min-height: 44px; padding: 10px 8px; }

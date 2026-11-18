@@ -109,7 +109,6 @@ test('server prevents ownership spoofing, temporary-work bypass and snapshot rel
     assert.equal(plan.acceptanceStatus, 'pending')
     await other.request(`/plans/${plan.id}/history`, undefined, 'GET', 403)
     await member.request('/tasks', { title: '伪造临时标记', monthlyPlanId: plan.id, isTemporary: true, temporaryReason: '绕过发布', dueDate: plan.dueDate }, 'POST', 400)
-    await member.request('/tasks', { title: '缺失原因', isTemporary: true, dueDate: plan.dueDate }, 'POST', 400)
     const task = await member.request<Task>('/tasks', { title: '正式任务', monthlyPlanId: plan.id, dueDate: plan.dueDate })
     await other.request(`/tasks/${task.id}`, { version: task.version, title: '越权' }, 'PATCH', 403)
     await member.request(`/tasks/${task.id}`, { version: task.version, ownerId: outsider.id }, 'PATCH', 400)

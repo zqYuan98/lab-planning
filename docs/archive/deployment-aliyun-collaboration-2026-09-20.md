@@ -64,4 +64,4 @@
 - 数据副本演练：`output/aliyun-collaboration-20260920/migration-rehearsal-recovered.json`
 - Linux 测试：`output/aliyun-collaboration-20260920/local-linux-verification.json`
 
-功能使用与启用范围见 [协作操作说明](dingtalk-collaboration-operations.md)。钉钉各端入口、原生权限、互动卡片模板、真实 Stream 事件及异机备份仍按实际企业配置分别验收；部署成功不代表这些外部能力已经启用。
+功能使用与启用范围见 [协作操作说明](../dingtalk-collaboration-operations.md)。钉钉各端入口、原生权限、互动卡片模板、真实 Stream 事件及异机备份仍按实际企业配置分别验收；部署成功不代表这些外部能力已经启用。

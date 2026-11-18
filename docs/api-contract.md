@@ -67,7 +67,7 @@ Types and input contracts are in `shared/collaboration.ts`, `shared/collaboratio
 - GET/PUT `/native/settings`, POST `/native/identities/:userId/verify`, GET `/native/operations`: permission-scoped status and manager configuration. Capability enablement requires configured server parameters and recorded real tenant verification; defaults remain disabled.
 - POST `/native/links/:id/reconcile`, `/recreate`, `/delete` (manager) queues controlled native work; explicit recreation is restricted to verified external-missing objects. POST `/native/intents` and `/native/intents/:id/confirm` preview then confirm one bound action using a short-lived single-use token.
 
-Official Stream callbacks use the configured SDK connection and durable inbox rather than an unauthenticated public business mutation endpoint. External network work occurs outside Store transactions. Unknown native acceptance blocks same-obligation retries and channel fallbacks. See [operations](dingtalk-collaboration-operations.md) and [native protocol/tenant requirements](validation-2026-09-20-dingtalk-native.md).
+Official Stream callbacks use the configured SDK connection and durable inbox rather than an unauthenticated public business mutation endpoint. External network work occurs outside Store transactions. Unknown native acceptance blocks same-obligation retries and channel fallbacks. See [operations](dingtalk-collaboration-operations.md) and [native protocol/tenant requirements](archive/validation-2026-09-20-dingtalk-native.md).
 
 server/store.ts exports Store: constructor(path:string), get<T>(collection,id):T|undefined, list<T>(collection):T[], insert<T extends Entity>(collection,input:Omit<T,keyof Entity>&Partial<Entity>):T, update<T extends Entity>(collection,id,expectedVersion:number,patch:Partial<T>):T, transaction<T>(fn:()=>T):T, close(). New entity ID/time/version are assigned by store; revision starts 1. Store throws with status 404/409. Store collections: users (internal passwordHash extra, sanitize outputs), sessions, projects, annualGoals, plans, tasks, weeklyRecords, events, publications, reports, settings, scheduleRuns. No network I/O inside transaction.
 
@@ -164,7 +164,7 @@ Feedback notifications use a `feedback` target and remain strictly in-app: enque
 
 ## Unified tasks, delivery, authorization and responsibility (2026-09-22, phase two)
 
-Contracts: `shared/task-view.ts`, `shared/work-progress.ts`, `shared/my-actions.ts`, `shared/object-access.ts`, `shared/deliveries.ts`, and `shared/support.ts`. The following paths are relative to `/api`. These are implemented local contracts; deployment and browser acceptance are tracked separately in [phase-two validation](validation-2026-09-22-delivery-management.md).
+Contracts: `shared/task-view.ts`, `shared/work-progress.ts`, `shared/my-actions.ts`, `shared/object-access.ts`, `shared/deliveries.ts`, and `shared/support.ts`. The following paths are relative to `/api`. These are implemented local contracts; deployment and browser acceptance are tracked separately in [phase-two validation](archive/validation-2026-09-22-delivery-management.md).
 
 ### Unified task reads and editable projections
 

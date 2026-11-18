@@ -33,4 +33,4 @@
 - `output/weekly-review/mobile-plan-approval-top.png`
 - `output/weekly-review/mobile-plan-return-controls.png`
 
-使用说明见[周计划审核与留痕删除](weekly-plan-review-and-deletion.md)，接口与备份语义见[API 契约](api-contract.md)。
+使用说明见[周计划审核与留痕删除](../weekly-plan-review-and-deletion.md)，接口与备份语义见[API 契约](../api-contract.md)。

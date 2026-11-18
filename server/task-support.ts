@@ -81,7 +81,7 @@ export class TaskSupportService {
     return command(this.store, actor, `blocker.assign:${id}`, input, this.clock(), mutationId => {
       const before = this.episode(id), task = this.parent(before.parentTaskId, true); cas(before.version, input.version)
       if (before.managementClosedAt) throw new HttpError(409, '支持事项已管理关闭')
-      const coordinatorId = this.person(input.coordinatorId), responseDueAt = this.due(input.responseDueAt), note = requiredText(input.reason, '指派原因'), now = this.clock()
+      const coordinatorId = this.person(input.coordinatorId), responseDueAt = this.due(input.responseDueAt), note = requiredText(input.reason, '指派说明', false), now = this.clock()
       const episode = this.store.update<BlockerEpisode>('blockerEpisodes', id, before.version, { coordinatorId, responseDueAt, coordinationState: 'awaiting_response', responseNote: '', reviewAt: null })
       const action = this.store.insert<BlockerAction>('blockerActions', { id: collaborationId('blocker-action', mutationId), episodeId: id, taskId: task.id, ownerId: before.ownerId,
         actorId: actor.id, action: 'assign', note, reviewAt: null, occurredAt: now.toISOString(), coordinatorId, responseDueAt })

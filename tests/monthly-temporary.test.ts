@@ -34,7 +34,7 @@ test('members can propose only their own temporary monthly goals with a reason a
   for (const extra of [{ isTemporary: false }, { isTemporary: undefined }, { ownerId: f.peer.id }]) {
     assert.throws(() => f.domain.createPlan(f.member, { ...f.input, ...extra }), { status: 403 })
   }
-  for (const extra of [{ isTemporary: 'true' }, { temporaryReason: '' }, { temporaryReason: undefined }, { dueDate: '2026-10-01' }]) {
+  for (const extra of [{ isTemporary: 'true' }, { dueDate: '2026-10-01' }]) {
     assert.throws(() => f.domain.createPlan(f.member, { ...f.input, ...extra }), { status: 400 })
   }
   const plan = f.domain.createPlan(f.member, { ...f.input, status: 'published', acceptanceStatus: 'accepted', publishedVersion: 9 })
@@ -47,7 +47,6 @@ test('members can propose only their own temporary monthly goals with a reason a
   assert.throws(() => f.domain.updatePlan(f.peer, plan.id, { version: plan.version, title: '篡改' }), { status: 403 })
   assert.throws(() => f.domain.updatePlan(f.member, plan.id, { version: plan.version, ownerId: f.peer.id }), { status: 403 })
   assert.throws(() => f.domain.updatePlan(f.member, plan.id, { version: plan.version, isTemporary: false }), { status: 400 })
-  assert.throws(() => f.domain.updatePlan(f.member, plan.id, { version: plan.version, temporaryReason: ' ' }), { status: 400 })
   assert.throws(() => f.domain.createPlan(f.member, { ...f.input, month: '2026-10', dueDate: '2026-10-31', sourcePlanId: plan.id }), { status: 403 })
   const standard = f.domain.createPlan(f.manager, { ...f.input, ownerId: f.member.id, isTemporary: false })
   assert.throws(() => f.domain.updatePlan(f.member, standard.id, { version: standard.version, isTemporary: true }), { status: 403 })

@@ -46,9 +46,9 @@
 
 确认提交前会重新读取原表；变化或读取失败时保留预览并停止提交。批次版本、人员权限及同月重复情况也在写入前重查；一次写入按事务执行。全部事项已关联或有明确排除理由时，可以确认关联与排除结果而不创建新目标。
 
-部署需在服务端配置已验证的 `DINGTALK_DOCUMENT_OPERATOR_ID`（unionId），以及按需指定文件夹 ID/名称；默认文件夹为“人工智能实验室管理”。应用需要目录和工作表读权限，操作人也须有资源访问权。详见[文档连接与权限验证](validation-2026-11-06-dingtalk-document-permission.md)。连接状态“已配置”只表示配置齐全，不等于实际读取已验证。
+部署需在服务端配置已验证的 `DINGTALK_DOCUMENT_OPERATOR_ID`（unionId），以及按需指定文件夹 ID/名称；默认文件夹为“人工智能实验室管理”。应用需要目录和工作表读权限，操作人也须有资源访问权。详见[文档连接与权限验证](archive/validation-2026-11-06-dingtalk-document-permission.md)。连接状态“已配置”只表示配置齐全，不等于实际读取已验证。
 
-本次实现、测试和页面验收证据见[钉钉月度目标导入验收记录](validation-2026-11-06-dingtalk-monthly-import.md)。
+本次实现、测试和页面验收证据见[钉钉月度目标导入验收记录](archive/validation-2026-11-06-dingtalk-monthly-import.md)。
 
 ## 重试、重复和纠正
 

@@ -137,7 +137,7 @@ export function workRegisterNeedsCompletionReview(task: Pick<Task, 'status' | 'i
 }
 
 export const workRegisterPlanStatusLabels: Record<MonthlyPlan['status'], string> = {
-  draft: '草稿', returned: '退回修改', submitted: '待审核', approved: '审核通过，待发布', published: '已发布', merged: '已合并',
+  draft: '草稿', returned: '退回修改', submitted: '待审核', approved: '待发布', published: '已发布', merged: '已合并',
 }
 
 export function buildWorkRegister(

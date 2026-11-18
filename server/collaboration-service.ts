@@ -104,7 +104,7 @@ export class CollaborationService {
       const now = this.clock(), task = this.task(actor, taskId), old = this.store.get<TaskTracking>('taskTrackings', taskId)
       ensureVersion(task.version, input.taskVersion); ensureVersion(old?.version ?? 0, input.version)
       if (!['active', 'paused', 'closed'].includes(String(input.state))) throw new HttpError(400, '督办状态无效')
-      const state = input.state as TaskTracking['state'], reason = requiredText(input.reason, '状态调整原因', state !== 'active' || !!old)
+      const state = input.state as TaskTracking['state'], reason = requiredText(input.reason, '状态调整原因', state !== 'active')
       const recipients = input.managerRecipientIds === undefined ? old?.managerRecipientIds ?? [] : validManagerIds(this.store, input.managerRecipientIds)
       let row: TaskTracking
       if (!old || old.state === 'closed' && state === 'active') {

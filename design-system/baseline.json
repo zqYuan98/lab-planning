@@ -1,5 +1,5 @@
 {
-  "requiredReasons": 27,
+  "requiredReasons": 22,
   "colorLiterals": 1353,
   "gradients": 0,
   "boxShadows": 82,
@@ -8,5 +8,5 @@
   "inlineStyles": 11,
   "cssFiles": 27,
   "pageNarration": 35,
-  "distinctColors": 928
+  "distinctColors": 454
 }

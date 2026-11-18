@@ -133,7 +133,7 @@ export class WorkService extends DomainBase {
       const ownerId = this.owner(actor, input.ownerId)
       const monthlyPlanId = input.monthlyPlanId ? text(input.monthlyPlanId, '月计划') : null
       const isTemporary = input.isTemporary === undefined ? false : bool(input.isTemporary, '临时工作')
-      const temporaryReason = text(input.temporaryReason, '临时工作原因', isTemporary)
+      const temporaryReason = text(input.temporaryReason, '临时工作原因', false) || (isTemporary ? '临时安排' : '')
       if (!monthlyPlanId && !isTemporary) throw new HttpError(400, '正式个人任务必须关联月计划')
       if (monthlyPlanId && isTemporary) throw new HttpError(400, '已关联月计划的任务不能标记为临时工作')
       const plan = monthlyPlanId ? this.usablePlan(monthlyPlanId, ownerId) : undefined

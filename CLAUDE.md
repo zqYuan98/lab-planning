@@ -11,6 +11,7 @@ npm ci
 npm run dev          # 前端 5173，API 4310
 npm test             # node:test，全部用例
 npm run lint:design  # 设计刻度与文案检查
+npm run lint:docs    # 文档相对链接检查
 npm run build        # tsc + vite build
 ```
 
@@ -34,7 +35,7 @@ npm run build        # tsc + vite build
 ## 流程
 
 - **只在否定或代替别人的工作时要求填原因**：退回、删除、作废、豁免、代录、替他人调整承诺。对方需要知道为什么。
-- **往前推进的操作和改自己的东西不要求原因**：发布、确认、承接、合并、调整关联、编辑自己的任务。谁在什么时候把什么改成什么，审计记录已经有了；可以留一个选填的说明。
+- **往前推进的操作和改自己的东西不要求原因**：发布、确认、承接、合并、调整关联、授权、指派、新增临时事项、编辑自己的任务。谁在什么时候把什么改成什么，审计记录已经有了；可以留一个选填的说明。
 - **同一个人不走两步**：管理者提交的月度目标直接进入待发布，不再“提交给自己再由自己审核”。新增流程时先看有没有“同一个人连续点两次”的环节。
 - 新增一个必填的原因字段前，先回答“谁会读它”。`npm run lint:design` 里的 `requiredReasons` 计数只许减少。
 
@@ -47,7 +48,8 @@ npm run build        # tsc + vite build
 
 ## 文档
 
-- 发布记录写进 `docs/CHANGELOG.md`，一次发布一条，五行以内。不再为每次发布新建 `deployment-*.md` / `validation-*.md`，README 不再追加发布段落。
+- 发布记录写进 `docs/CHANGELOG.md`，一次发布一条，五行以内。不再为每次发布新建 `deployment-*.md` / `validation-*.md`，README 不再追加发布段落。2026-11-18 之前的 58 份记录在 `docs/archive/`，只读。
+- 搬动或删除文档后运行 `npm run lint:docs`。
 - 文档只写仍然成立的事实。被取代的方案在同一个提交里删掉或标注“已被 X 取代”。
 - 不在仓库里写真实姓名、账号、服务器地址。
 
@@ -56,7 +58,7 @@ npm run build        # tsc + vite build
 提交前逐条确认，说明里如实写哪些做了、哪些没做：
 
 - [ ] `npm test` 通过
-- [ ] `npm run lint:design` 通过；基线下降时运行 `node scripts/design-lint.mjs --update` 收紧
+- [ ] `npm run lint:design`、`npm run lint:docs` 通过；基线下降时运行 `node scripts/design-lint.mjs --update` 收紧
 - [ ] `npm run build` 通过
 - [ ] 界面改动有前后截图和一次真实任务走查
 - [ ] 被取代的代码、样式、文档已删除

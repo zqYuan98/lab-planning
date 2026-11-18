@@ -100,7 +100,7 @@ export default function WorkTaskPanel({ taskId, data, refresh, notify, onClose, 
     <fieldset className="form-fields" disabled={saveState !== 'idle'}>
     {error && <p className="error" role="alert">{error}</p>}
     {!view || !task ? !error && <p role="status">正在读取工作详情…</p> : <div className="collaboration-task-panel">
-      <p>编号 {task.id} · {view.ownerName || nameOf(data, task.ownerId)} · 任务截止 {task.dueDate || '未设置'} · {view.tracking ? { active: '督办中', paused: '督办已暂停', closed: '督办已结束' }[view.tracking.state] : '未纳入督办'}</p>
+      <p>{view.ownerName || nameOf(data, task.ownerId)} · 任务截止 {task.dueDate || '未设置'} · {view.tracking ? { active: '督办中', paused: '督办已暂停', closed: '督办已结束' }[view.tracking.state] : '未纳入督办'}</p>
       {view.monthlyPlan&&<p>当前月目标：{view.monthlyPlan.month} · {view.monthlyPlan.title}</p>}
       <p>来源：{task.workSource==='leader'?'领导交办':task.workSource==='coordination'?'协同事项':task.workSource==='self'?'自主安排':'待核对'}</p>
       {task.cancellation&&<p className="note">作废于 {dateTime(task.cancellation.cancelledAt)} · 原因：{task.cancellation.reason}</p>}
@@ -133,7 +133,7 @@ export default function WorkTaskPanel({ taskId, data, refresh, notify, onClose, 
       {tab === 'followups' && <>
         {manager && view.enabled && <details open><summary>督办状态与管理接收人</summary><Form key={`tracking-${view.tracking?.version || 0}`} submitLabel="保存督办设置" onSubmit={async e => { const f = new FormData(e.currentTarget); await submit(`/tasks/${task.id}/tracking`, { version: view.tracking?.version || 0, taskVersion: task.version, state: f.get('state'), reason: f.get('reason'), reviewAt: utc(f.get('reviewAt')), managerRecipientIds: f.getAll('managerRecipientIds') }, 'PUT') }}>
           <Field label="督办状态"><select name="state" defaultValue={view.tracking?.state || 'active'}><option value="active">纳入 / 恢复督办</option><option value="paused">暂停督办</option><option value="closed">结束督办</option></select></Field>
-          <Field label="调整原因"><textarea required={!!view.tracking} name="reason" /></Field><Field label="暂停后的复查时间（北京时间）"><input name="reviewAt" type="datetime-local" /></Field>
+          <Field label="调整原因" hint="暂停或结束督办时填写。"><textarea name="reason" /></Field><Field label="暂停后的复查时间（北京时间）"><input name="reviewAt" type="datetime-local" /></Field>
           <ManagerRecipients initialIds={view.tracking?.managerRecipientIds || []} scope={`${data.user.id}:${data.operationEpoch}:${data.accessScopeVersion}:${task.id}`} />
           <p className="form-hint">当前接收人：{view.effectiveManagerIds.map(id => nameOf(data, id)).join('、') || '尚未配置'}。恢复督办以当前时间重新计算无进展提醒，原截止日期保留。</p>
         </Form></details>}

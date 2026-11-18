@@ -88,4 +88,4 @@ P1 服务契约为 `CollaborationService(store, clock?)`：`taskView/previewTrac
 
 ## 完成记录
 
-本计划勾选表示代码、自动化与隔离浏览器开发验收已完成；涉及真实钉钉客户端、企业权限/模板与异机备份的外部验收仍按对应条目的边界保留。整体验证见 [开发验证记录](../../validation-2026-09-20-dingtalk-collaboration.md)。本轮未部署生产。
+本计划勾选表示代码、自动化与隔离浏览器开发验收已完成；涉及真实钉钉客户端、企业权限/模板与异机备份的外部验收仍按对应条目的边界保留。整体验证见 [开发验证记录](../../archive/validation-2026-09-20-dingtalk-collaboration.md)。本轮未部署生产。

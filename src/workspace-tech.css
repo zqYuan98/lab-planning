@@ -2,14 +2,14 @@
 :root {
   --tech-primary: #1769ee;
   --tech-primary-hover: #0f58ce;
-  --tech-primary-soft: #edf5ff;
+  --tech-primary-soft: #eef2ff;
   --tech-primary-border: #c9defb;
   --tech-focus: #2f78e8;
-  --tech-canvas: #f3f7fc;
-  --tech-surface: #ffffff;
-  --tech-surface-subtle: #f5f8fc;
-  --tech-line: #dfe8f2;
-  --tech-control: #c5d3e3;
+  --tech-canvas: #f7f9fc;
+  --tech-surface: #fff;
+  --tech-surface-subtle: #f7f9fc;
+  --tech-line: #e1e6ef;
+  --tech-control: #c8d4e4;
   --tech-ink: #0d2342;
   --tech-body: #2b4565;
   --tech-muted: #5b6f88;
@@ -46,7 +46,7 @@ body:has(.workspace-shell) {
   --text-primary: var(--tech-ink);
   --text-body: var(--tech-body);
   --text-secondary: var(--tech-muted);
-  --text-placeholder: #5d7088;
+  --text-placeholder: #5b6f88;
   --ink: var(--tech-ink);
   --muted: var(--tech-muted);
   background: var(--tech-canvas);
@@ -85,7 +85,7 @@ body:has(.workspace-shell) {
 
 .workspace-brand-row .brand,
 .workspace-brand-row .brand-name {
-  color: #f0f7ff;
+  color: #f1f4fc;
 }
 
 .workspace-brand-row .brand-name small {
@@ -93,7 +93,7 @@ body:has(.workspace-shell) {
 }
 
 .workspace-navigation {
-  scrollbar-color: #35506d transparent;
+  scrollbar-color: #385372 transparent;
 }
 
 .workspace-navigation .arco-menu,
@@ -119,7 +119,7 @@ body:has(.workspace-shell) {
 }
 
 .workspace-navigation .arco-menu-item:hover {
-  color: #f0f7ff;
+  color: #f1f4fc;
   background: var(--tech-nav-raised);
 }
 
@@ -182,7 +182,7 @@ body:has(.workspace-shell) {
 }
 
 .workspace-navigation .workspace-unread-count {
-  color: #d9f7ff;
+  color: #d9f6ff;
   background: #235574;
 }
 
@@ -190,7 +190,7 @@ body:has(.workspace-shell) {
 .workspace-header {
   background: var(--tech-surface);
   border-bottom-color: var(--tech-line);
-  box-shadow: 0 1px 0 #dfe8f2, 0 8px 24px #244f7905;
+  box-shadow: 0 1px 0 #e1e6ef, 0 8px 24px #244f7905;
 }
 
 .workspace-header .workspace-primary-action {
@@ -297,7 +297,7 @@ body:has(.workspace-shell) .navigation-context {
 
 .workspace-shell .ow-metric.is-active {
   border-color: var(--tech-primary-border);
-  background: #f7fbff;
+  background: #f7f9fc;
   box-shadow: inset 0 0 0 1px var(--tech-primary-border);
 }
 

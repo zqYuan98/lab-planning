@@ -955,7 +955,6 @@ function PlanEditor({
             </select>
           </Field>
         </div>
-        <Field label="关联年度目标" hint="选填，仅可关联同年度目标；跨年承接时自动清空。"><AnnualGoalPicker key={goalYear} year={goalYear} value={annualGoalId} onChange={setAnnualGoalId} scope={periodScope(data)} /></Field>
         <Field label={temporary ? '本月阶段成果名称' : '本月成果名称'}>
           <input
             name="title"
@@ -965,9 +964,6 @@ function PlanEditor({
             placeholder="例如：完成模型评测平台首版交付"
           />
         </Field>
-        {temporary && <Field label="临时目标原因" hint="说明新增事项的背景；长期事项可同时描述整体目标及本月推进范围。">
-          <textarea name="temporaryReason" defaultValue={plan?.temporaryReason} rows={3} required maxLength={LIMITS.text} placeholder="例如：新增专项研究，预计持续三个月，本月完成方案验证" />
-        </Field>}
         <div className="form-grid">
           <Field label="所属项目">
             <select name="projectId" defaultValue={plan?.projectId || ''}>
@@ -1061,14 +1057,20 @@ function PlanEditor({
               ))}
           </div>
         </div>
-        {plan?.status === 'published' && (
-          <Field
-            label="调整说明（选填）"
-            hint="系统会保留修改前后的承诺，形成新的发布版本。"
-          >
-            <textarea name="reason" rows={2} />
-          </Field>
-        )}
+        <details className="form-more"><summary>关联与补充说明（选填）</summary>
+          <Field label="关联年度目标" hint="选填，仅可关联同年度目标；跨年承接时自动清空。"><AnnualGoalPicker key={goalYear} year={goalYear} value={annualGoalId} onChange={setAnnualGoalId} scope={periodScope(data)} /></Field>
+          {temporary && <Field label="来源或背景（选填）">
+            <textarea name="temporaryReason" defaultValue={plan?.temporaryReason} rows={2} maxLength={LIMITS.text} placeholder="例如：新增专项研究，预计持续三个月，本月完成方案验证" />
+          </Field>}
+          {plan?.status === 'published' && (
+            <Field
+              label="调整说明（选填）"
+              hint="系统会保留修改前后的承诺，形成新的发布版本。"
+            >
+              <textarea name="reason" rows={2} />
+            </Field>
+          )}
+        </details>
       </Form>
     </Modal>
   )

@@ -140,7 +140,7 @@ export class TaskDeliveryService {
     return command<DeliveryMutationResult>(this.store, actor, `delivery.reassign:${seriesId}`, input, this.clock(), mutationId => {
       const before = this.series(seriesId), delivery = this.submission(before.headSubmissionId), task = ownedTask(this.store, actor, before.taskId, true)
       cas(before.version, input.seriesVersion)
-      const reviewerId = this.reviewer(input.reviewerId, delivery.ownerId), reason = requiredText(input.reason, '重新指派原因'), now = this.clock()
+      const reviewerId = this.reviewer(input.reviewerId, delivery.ownerId), reason = requiredText(input.reason, '重新指派说明', false), now = this.clock()
       const series = this.store.update<DeliverySeries>('deliverySeries', seriesId, before.version, { reviewerId })
       audit(this.store, actor, 'deliverySeries', seriesId, 'reassign', before, series, reason)
       inbox(this.store, actor, mutationId, [reviewerId, before.reviewerId, delivery.ownerId], 'delivery_reassigned', `${task.title}：验收责任人已调整`, reason, { type: 'task', id: task.id }, now)

@@ -26,7 +26,7 @@
 - 正式容器为 `running / healthy`，启动日志正常；首页返回 200，认证状态为已初始化，匿名访问 `/api/bootstrap` 返回 401。
 - 线上 HTML、JavaScript 和 CSS 与新镜像中的构建文件逐字节一致：`index-DoV-W3Rr.js` 和 `index-tfsQR0c7.css`。
 - 真实浏览器在 1440px、390px 打开正式登录页，无页面横向溢出，无 JavaScript 运行异常；标题计算颜色为 `#181818`，说明文字为 `#3d3d3d`。未登录的 `/api/auth/me` 返回预期的 401。
-- 登录后的完整操作和 8 个页面的多尺寸检查见 [UI 验证记录](ui-refinement-validation.md)，使用隔离数据完成；本次正式环境浏览器检查仅访问登录页。
+- 登录后的完整操作和 8 个页面的多尺寸检查见 [UI 验证记录](../ui-refinement-validation.md)，使用隔离数据完成；本次正式环境浏览器检查仅访问登录页。
 
 服务器 `ops/` 保留构建、测试、切换脚本和校验结果，文件名含 `e3d89cb`。本地上线截图位于 `output/playwright/production-ui-e3d89cb-1440.png` 和 `production-ui-e3d89cb-390.png`。
 

@@ -39,7 +39,7 @@ test('unbroken personal coverage includes owned unaccepted goals through approva
   assert.equal(register.rows.length, 6)
   assert.equal(register.counts.unscheduled, 6)
   assert.ok(register.rows.every(row => row.kind === 'plan' && row.task === undefined))
-  assert.equal(register.rows.find(row => row.title === 'approved')?.displayStatus, '审核通过，待发布')
+  assert.equal(register.rows.find(row => row.title === 'approved')?.displayStatus, '待发布')
   assert.equal(register.rows.find(row => row.title === 'submitted')?.displayStatus, '待审核')
   assert.ok(!register.rows.some(row => row.title === peerGoal.title || row.title === accepted.title || row.title === 'merged'))
   assert.equal(f.store.list<Task>('tasks').length, 1, 'projection must not create business tasks')
