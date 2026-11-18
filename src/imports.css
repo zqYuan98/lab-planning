@@ -1113,6 +1113,17 @@
     align-items: flex-start;
   }
 }
+.import-upload-icon {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 48px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--color-surface-subtle);
+  color: var(--color-text);
+}
 @media (max-width: 560px) {
   .import-history-detail dl > div {
     grid-template-columns: minmax(0, 1fr);
@@ -1165,17 +1176,6 @@
   .import-upload-icon {
     display: none;
   }
-}
-.import-upload-icon {
-  flex-shrink: 0;
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 48px;
-  border: 0;
-  border-radius: var(--radius-control);
-  background: var(--color-surface-subtle);
-  color: var(--color-text);
 }
 .import-upload h2 {
   margin: 0;
