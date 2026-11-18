@@ -64,6 +64,44 @@ const tones: Record<string, string> = {
   published: 'green',
   merged: 'neutral',
 }
+function MonthlyRowActions({ plan, flow, manager, archived, busy, onOpen }: {
+  plan: MonthlyPlan
+  flow: ReturnType<typeof monthlyWorkflow>
+  manager: boolean
+  archived: boolean
+  busy: boolean
+  onOpen: (type: string) => void
+}) {
+  const actions: { type: string; label: string }[] = []
+  if (flow.canSubmit) actions.push({ type: 'submit', label: manager ? '确认目标' : '提交审核' })
+  if (flow.canReview) actions.push({ type: 'review', label: '审核目标' })
+  if (flow.canPublish) actions.push({ type: 'publish-one', label: '发布此目标' })
+  if (flow.canResult) actions.push({ type: 'result', label: manager ? '成果验收' : '提交成果' })
+  if (flow.canCreateOwnTask) actions.push({ type: 'task', label: '关联个人任务' })
+  if (flow.canEdit) actions.push({ type: 'edit', label: '编辑' })
+  if (flow.canResult && manager && !archived && plan.acceptanceStatus !== 'accepted') {
+    actions.push({ type: 'carry', label: '跨期处理' })
+  }
+  actions.push({ type: 'history', label: '历史' })
+  if (flow.canDelete) actions.push({ type: 'delete', label: '删除目标' })
+
+  function button({ type, label }: typeof actions[number]) {
+    return <button key={type} type="button" className={type === 'delete' ? 'danger' : undefined}
+      disabled={type === 'submit' && busy} onClick={event => {
+        event.currentTarget.closest('details')?.removeAttribute('open')
+        onOpen(type)
+      }}>{label}</button>
+  }
+  const [primary, ...others] = actions
+  return <div className="row-actions monthly-plan-actions">
+    {button(primary)}
+    {others.length > 0 && <details className="row-more">
+      <summary aria-label={`更多操作，${plan.title}`}>更多</summary>
+      <div className="monthly-secondary-actions">{others.map(button)}</div>
+    </details>}
+  </div>
+}
+
 type MonthlyProps = PageProps & { navigate?: Navigate }
 interface MonthlyControls { value: MonthlyWorkspace | null; setQuery: (query: string) => void; reload: () => Promise<void> }
 export default function Monthly(props: MonthlyProps) {
@@ -418,48 +456,14 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
                           </Badge>
                         </td>
                         <td>
-                          <div className="row-actions monthly-plan-actions">
-                            {canEdit(plan) && (
-                                <button onClick={() => open('edit', plan)}>
-                                  编辑
-                                </button>
-                              )}
-                            {workflow(plan).canSubmit && (
-                                <button
-                                  disabled={action.busy}
-                                  onClick={() => void open('submit', plan)}
-                                >
-                                  {manager ? '确认目标' : '提交审核'}
-                                </button>
-                              )}
-                            {workflow(plan).canReview && (
-                              <button onClick={() => open('review', plan)}>
-                                审核目标
-                              </button>
-                            )}
-                            {canPublish(plan) && <button onClick={() => void open('publish-one', plan)}>发布此目标</button>}
-                            {workflow(plan).canResult && (
-                                <button onClick={() => open('result', plan)}>
-                                  {manager ? '成果验收' : '提交成果'}
-                                </button>
-                              )}
-                            {!plan.visibility && isActiveMonthlyPlan(plan) && plan.status === 'published' &&
-                              plan.acceptanceStatus !== 'accepted' &&
-                              (!plan.projectId ||
-                                !archivedProjectIds.has(plan.projectId)) &&
-                              manager && (
-                                <button onClick={() => open('carry', plan)}>
-                                  跨期处理
-                                </button>
-                              )}
-                            {canCreateOwnTask(plan) && <button onClick={() => open('task', plan)}>关联个人任务</button>}
-                            {workflow(plan).canDelete && <button className="danger" onClick={() => void open('delete', plan)}>删除目标</button>}
-                            <button
-                              onClick={() => void open('history', plan)}
-                            >
-                              历史
-                            </button>
-                          </div>
+                          <MonthlyRowActions
+                            plan={plan}
+                            flow={workflow(plan)}
+                            manager={manager}
+                            archived={!!plan.projectId && archivedProjectIds.has(plan.projectId)}
+                            busy={action.busy}
+                            onOpen={type => void open(type, plan)}
+                          />
                         </td>
                       </tr>
                     ))}

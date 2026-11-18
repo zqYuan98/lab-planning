@@ -6,7 +6,9 @@
 .monthly-publish-controls { max-width: 390px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
 .monthly-publish-controls p { margin: 0; font-size: var(--font-small); line-height: 1.55; color: var(--palette-slate); }
 .monthly-plan-actions { gap: 8px; min-width: 170px; }
-.monthly-plan-actions > button { min-height: 36px; padding: 7px 10px; }
+.monthly-plan-actions button, .monthly-plan-actions summary { min-height: 44px; padding: 7px 10px; }
+.monthly-plan-actions summary { display: flex; align-items: center; }
+.monthly-secondary-actions { display: grid; justify-items: start; }
 .monthly-review-deletion { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--palette-divider); }
 .monthly-review-deletion p, .monthly-deletion-blockers p { color: var(--palette-slate); line-height: 1.65; }
 .monthly-deletion-blockers { margin: 16px 0; padding: 16px; border: 1px solid var(--palette-red-border); border-radius: var(--radius-control); background: var(--palette-amber-soft); }
@@ -22,8 +24,7 @@
     min-height: 44px;
     min-width: 44px;
   }
-  .monthly-publish-controls .button,
-  .monthly-plan-actions > button { min-height: 44px; min-width: 44px; }
+  .monthly-publish-controls .button { min-height: 44px; min-width: 44px; }
   .monthly-deletion-dialog .button, .monthly-review-deletion .button { min-height: 44px; }
   .modal:has(.monthly-deletion-dialog) .icon-button { min-height: 44px; min-width: 44px; }
 }
