@@ -905,7 +905,7 @@
   align-items: center;
   gap: 10px;
   padding: 16px 24px 18px;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--color-panel-border);
 }
 .shell-light .registration-empty svg { flex:none; color:var(--color-action); }
 .shell-light .auth-form h2 {

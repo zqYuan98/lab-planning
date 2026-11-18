@@ -31,7 +31,7 @@
   --color-muted: #3d3d3d;
   --color-placeholder: #595959;
   --color-disabled: #929292;
-  --color-border: #e5e7eb;
+  --color-panel-border: #e5e7eb;
   --color-surface: #fff;
   --color-surface-subtle: #f7f9fc;
   --color-input-border: #c8d4e4;
@@ -83,7 +83,7 @@ body:has(.workspace-shell) {
   --primary-8: 16, 68, 156;
   --primary-9: 14, 51, 115;
   --primary-10: 9, 33, 77;
-  --color-border: var(--color-workspace-border);
+  --color-panel-border: var(--color-workspace-border);
   --color-input-border: var(--color-workspace-control);
   --color-heading: var(--color-workspace-heading);
   --color-text: var(--color-workspace-text);
