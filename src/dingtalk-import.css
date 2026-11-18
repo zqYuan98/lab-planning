@@ -11,39 +11,39 @@
 .dingtalk-import-heading h2 { display: flex; align-items: center; gap: 9px; margin: 0; font-size: var(--font-title-s); font-weight: var(--weight-strong); }
 .dingtalk-import-connection {
   margin: 6px 0 0;
-  color: var(--text-secondary);
+  color: var(--color-muted);
   font-size: var(--font-caption);
   line-height: 1.7;
   padding: 12px 0;
   overflow-wrap: anywhere;
 }
-.dingtalk-import-heading p, .dingtalk-review-meta { margin: 6px 0 0; color: var(--text-secondary); font-size: var(--font-caption); line-height: 1.7; }
+.dingtalk-import-heading p, .dingtalk-review-meta { margin: 6px 0 0; color: var(--color-muted); font-size: var(--font-caption); line-height: 1.7; }
 .dingtalk-import-status, .dingtalk-review-retry { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.dingtalk-import-connection strong { color: var(--text-body); font-weight: var(--weight-medium); }
+.dingtalk-import-connection strong { color: var(--color-text); font-weight: var(--weight-medium); }
 .dingtalk-import-connection > span { display: block; }
 .dingtalk-import-query { display: flex; align-items: flex-start; gap: 12px; }
 .dingtalk-import-query > .field { width: 240px; max-width: 100%; }
 .dingtalk-import-query > button { margin-top: 25px; }
-.dingtalk-import-manual { margin-top: 12px; color: var(--text-secondary); font-size: var(--font-caption); }
+.dingtalk-import-manual { margin-top: 12px; color: var(--color-muted); font-size: var(--font-caption); }
 .dingtalk-import-manual summary { cursor: pointer; }
 .dingtalk-import-manual .field { margin-top: 12px; max-width: 650px; }
 .dingtalk-import .error, .dingtalk-review .error { margin-top: 12px; overflow-wrap: anywhere; }
-.dingtalk-import-discovery { margin-top: 18px; border-top: 1px solid var(--import-line); padding-top: 16px; }
+.dingtalk-import-discovery { margin-top: 18px; border-top: 1px solid var(--color-section-border); padding-top: 16px; }
 .dingtalk-source-options { padding: 0; border: 0; min-width: 0; }
 .dingtalk-source-options legend { font-size: var(--font-small); font-weight: var(--weight-strong); margin-bottom: 10px; }
-.dingtalk-source-option { display: flex; align-items: flex-start; gap: 11px; padding: 14px; border: 1px solid var(--import-line); border-radius: var(--radius-control); margin-bottom: 8px; cursor: pointer; }
+.dingtalk-source-option { display: flex; align-items: flex-start; gap: 11px; padding: 14px; border: 1px solid var(--color-section-border); border-radius: var(--radius-control); margin-bottom: 8px; cursor: pointer; }
 .dingtalk-source-option.is-selected { border-color: #a8b8ed; background: #f1f4fc; }
 .dingtalk-source-option input { flex: 0 0 auto; margin-top: 4px; }
 .dingtalk-source-option > span { min-width: 0; }
 .dingtalk-source-option strong { display: block; font-size: var(--font-small); font-weight: var(--weight-strong); overflow-wrap: anywhere; }
-.dingtalk-source-option small { display: block; margin-top: 5px; font-size: var(--font-caption); color: var(--text-secondary); line-height: 1.6; overflow-wrap: anywhere; }
+.dingtalk-source-option small { display: block; margin-top: 5px; font-size: var(--font-caption); color: var(--color-muted); line-height: 1.6; overflow-wrap: anywhere; }
 .dingtalk-import-fetch { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
-.dingtalk-import-fetch p, .dingtalk-import-empty { color: var(--text-secondary); font-size: var(--font-caption); line-height: 1.7; }
+.dingtalk-import-fetch p, .dingtalk-import-empty { color: var(--color-muted); font-size: var(--font-caption); line-height: 1.7; }
 .dingtalk-import-fetch button { flex-shrink: 0; }
-.dingtalk-review { margin: 18px 0; padding: 18px; border: 1px solid var(--import-line); border-radius: var(--radius-control); background: var(--import-soft); }
+.dingtalk-review { margin: 18px 0; padding: 18px; border: 1px solid var(--color-section-border); border-radius: var(--radius-control); background: var(--color-section-subtle); }
 .dingtalk-review-counts { display: flex; flex-wrap: wrap; gap: 7px; margin: 14px 0; }
 .dingtalk-review-rows { display: grid; gap: 8px; margin-top: 12px; }
-.dingtalk-review-row { border: 1px solid var(--import-line); border-radius: var(--radius-control); background: #fff; padding: 12px; min-width: 0; }
+.dingtalk-review-row { border: 1px solid var(--color-section-border); border-radius: var(--radius-control); background: #fff; padding: 12px; min-width: 0; }
 .dingtalk-review-row > summary {
   cursor: pointer;
   line-height: 1.8;
@@ -55,23 +55,23 @@
 .dingtalk-review-removed {
   font-size: var(--font-caption);
   line-height: 1.7;
-  color: var(--text-secondary);
+  color: var(--color-muted);
   margin-top: 14px;
 }
-.dingtalk-review-row > p { font-size: var(--font-caption); line-height: 1.7; color: var(--text-secondary); }
+.dingtalk-review-row > p { font-size: var(--font-caption); line-height: 1.7; color: var(--color-muted); }
 .dingtalk-review-source { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 12px; margin-top: 12px; }
 .dingtalk-review-source > div { min-width: 0; }
 .dingtalk-review-source strong { font-size: var(--font-caption); font-weight: var(--weight-strong); }
-.dingtalk-review-source pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: var(--font-caption); line-height: 1.8; background: var(--import-soft); padding: 10px; border-radius: var(--radius-control); max-height: 300px; overflow-y: auto; }
+.dingtalk-review-source pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: var(--font-caption); line-height: 1.8; background: var(--color-section-subtle); padding: 10px; border-radius: var(--radius-control); max-height: 300px; overflow-y: auto; }
 .dingtalk-review-plan-links, .dingtalk-review-removed ul { list-style: none; padding: 0; margin: 12px 0; }
 .dingtalk-review-plan-links li, .dingtalk-review-removed li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-top: 7px; font-size: var(--font-caption); overflow-wrap: anywhere; }
 .dingtalk-review-plan-links button, .dingtalk-review-removed button { flex-shrink: 0; }
-.dingtalk-row-decision { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; border-top: 1px solid var(--import-line); margin-top: 14px; padding-top: 14px; }
+.dingtalk-row-decision { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; border-top: 1px solid var(--color-section-border); margin-top: 14px; padding-top: 14px; }
 .dingtalk-row-decision .field:has(textarea) { grid-column: 1 / -1; }
 .dingtalk-row-decision > button { justify-self: start; grid-column: 1 / -1; }
-.dingtalk-decision-help { align-self: center; margin: 0; color: var(--text-secondary); font-size: var(--font-small); line-height: 1.8; }
+.dingtalk-decision-help { align-self: center; margin: 0; color: var(--color-muted); font-size: var(--font-small); line-height: 1.8; }
 .dingtalk-decision-footer { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
-.dingtalk-decision-footer p { margin: 0; color: var(--text-secondary); font-size: var(--font-small); line-height: 1.8; }
+.dingtalk-decision-footer p { margin: 0; color: var(--color-muted); font-size: var(--font-small); line-height: 1.8; }
 .dingtalk-decision-footer button { flex-shrink: 0; min-height: 40px; }
 .dingtalk-row-decision :is(input, select, textarea) { min-height: 40px; font-size: var(--font-body); }
 .dingtalk-review-removed summary { cursor: pointer; }

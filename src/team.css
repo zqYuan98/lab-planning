@@ -8,9 +8,9 @@
   flex-wrap: wrap;
   gap: 4px;
   padding: 4px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
-  background: var(--white);
+  background: var(--color-surface);
 }
 .team-status-filter button {
   display: inline-flex;
@@ -22,15 +22,15 @@
   border: 0;
   border-radius: var(--radius-tag);
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--color-muted);
   cursor: pointer;
 }
 .team-status-filter button:hover {
-  background: var(--paper);
+  background: var(--color-canvas);
 }
 .team-status-filter button.is-selected {
-  background: var(--primary-soft);
-  color: var(--primary);
+  background: var(--color-action-subtle);
+  color: var(--color-action);
   font-weight: var(--weight-strong);
 }
 .team-status-filter button span {
@@ -51,7 +51,7 @@
 }
 .team-account-hint {
   margin: 8px 0 20px;
-  color: var(--text-secondary);
+  color: var(--color-muted);
   font-size: var(--font-small);
   line-height: 1.6;
 }
@@ -60,7 +60,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--color-border);
   margin-top: 4px;
   padding-top: 20px;
   width: 100%;
@@ -68,24 +68,21 @@
 }
 .team-delete-entry p {
   margin: 4px 0 0;
-  color: var(--text-secondary);
+  color: var(--color-muted);
   font-size: var(--font-small);
   line-height: 1.6;
 }
 .team-delete-entry .button {
   flex-shrink: 0;
 }
-.account-delete-dialog {
-  --account-danger: #ad344b;
-}
 .account-delete-person {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 16px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
-  background: var(--paper);
+  background: var(--color-canvas);
   margin-bottom: 20px;
 }
 .account-delete-person > div {
@@ -98,7 +95,7 @@
 .account-delete-person p {
   overflow-wrap: anywhere;
   margin: 4px 0 0;
-  color: var(--text-secondary);
+  color: var(--color-muted);
   font-size: var(--font-small);
 }
 .account-delete-person .avatar {
@@ -121,13 +118,13 @@
 }
 .account-delete-guidance p {
   margin: 5px 0 0;
-  color: var(--text-secondary);
+  color: var(--color-muted);
 }
 .account-delete-blockers {
   list-style: none;
   padding: 0;
   margin: 18px 0 0;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--color-border);
 }
 .account-delete-blockers li {
   display: flex;
@@ -135,18 +132,18 @@
   justify-content: space-between;
   gap: 16px;
   padding: 10px 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--color-border);
 }
 .account-delete-description {
   margin: 0 0 20px;
-  color: var(--text-secondary);
+  color: var(--color-muted);
   line-height: 1.7;
 }
 .account-delete-actions {
   flex-wrap: wrap;
 }
 .account-delete-dialog .button.danger {
-  background: var(--account-danger);
+  background: var(--color-account-danger);
   color: #fff;
 }
 .account-delete-dialog .button.danger:hover:not(:disabled) {
@@ -171,7 +168,7 @@
   flex-wrap: nowrap;
 }
 .workspace-shell :is(.registration-panel .table-scroll, .table-scroll:has(.team-members-table)):focus-visible {
-  outline: 2px solid var(--tech-focus);
+  outline: 2px solid var(--color-focus);
   outline-offset: -2px;
 }
 @media (max-width: 600px) {

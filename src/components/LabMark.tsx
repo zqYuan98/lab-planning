@@ -11,9 +11,9 @@ export default function LabMark() {
       <path d="M36 5 63 21V53L36 69 9 53V21Z" />
       <path d="M36 20 49 28V46L36 54 23 46V28Z" opacity=".85" />
       {points.map(([x, y], i) => <path key={i} d={`M${x} ${y}L36 37`} opacity=".8" />)}
-      {points.map(([cx, cy], i) => <circle key={i} cx={cx} cy={cy} r="3" fill="var(--brand-node-fill, #071b34)" />)}
-      {inner.map(([cx, cy], i) => <circle key={i} cx={cx} cy={cy} r="2.3" fill="var(--brand-node-fill, #071b34)" />)}
-      <circle cx="36" cy="37" r="3.6" fill="var(--brand-node-fill, #071b34)" />
+      {points.map(([cx, cy], i) => <circle key={i} cx={cx} cy={cy} r="3" fill="var(--color-logo-detail, #071b34)" />)}
+      {inner.map(([cx, cy], i) => <circle key={i} cx={cx} cy={cy} r="2.3" fill="var(--color-logo-detail, #071b34)" />)}
+      <circle cx="36" cy="37" r="3.6" fill="var(--color-logo-detail, #071b34)" />
     </g>
   </svg>
 }

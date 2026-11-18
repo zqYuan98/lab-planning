@@ -1,6 +1,5 @@
 /*
- * 设计刻度的唯一来源。字号、字重、圆角只能取这里的值；
- * scripts/design-lint.mjs 会拦住其他写法。新增刻度需要先改 design-system/lab-workspace/MASTER.md。
+ Shared design tokens. Arco consumes its own property names on body and the navigation portals.
  */
 :root {
   /* 字号：7 级。正文 14，说明 13，12 只用于标签、表头和时间戳。 */
@@ -22,4 +21,312 @@
   --radius-control: 8px;
   --radius-panel: 12px;
   --radius-pill: 999px;
+  --color-action: #3b5bff;
+  --color-action-hover: #2f4de5;
+  --color-action-subtle: #eef2ff;
+  --color-on-action: #fff;
+  --color-canvas: #f7f9fc;
+  --color-heading: #181818;
+  --color-text: #27272a;
+  --color-muted: #3d3d3d;
+  --color-placeholder: #595959;
+  --color-disabled: #929292;
+  --color-border: #e5e7eb;
+  --color-surface: #fff;
+  --color-surface-subtle: #f7f9fc;
+  --color-input-border: #c8d4e4;
+  --color-brand: #1769ee;
+  --color-brand-hover: #0f58ce;
+  --color-brand-subtle: #eef2ff;
+  --color-brand-border: #c9defb;
+  --color-focus: #2f78e8;
+  --color-workspace-border: #e1e6ef;
+  --color-workspace-control: #c8d4e4;
+  --color-workspace-heading: #0d2342;
+  --color-workspace-text: #2b4565;
+  --color-workspace-muted: #5b6f88;
+  --color-nav: #071d3a;
+  --color-nav-raised: #102e50;
+  --color-nav-divider: #1d3b5e;
+  --color-nav-text: #e5effc;
+  --color-nav-muted: #9bb1cc;
+  --color-nav-accent: #75dcff;
+  --color-priority-high: #c23a46;
+  --color-priority-medium: #a8660c;
+  --color-priority-low: #64748b;
+  --color-priority-none: #c0cad6;
+}
+
+body {
+  --color-text-1: var(--color-heading);
+  --color-text-2: var(--color-text);
+  --color-text-3: var(--color-muted);
+  --color-text-4: var(--color-disabled);
+  --primary-1: 238, 242, 255;
+  --primary-2: 221, 229, 255;
+  --primary-5: 94, 120, 255;
+  --primary-6: 59, 91, 255;
+  --primary-7: 47, 77, 229;
+}
+
+body:has(.workspace-shell) {
+  --color-action: var(--color-brand);
+  --color-action-hover: var(--color-brand-hover);
+  --color-action-subtle: var(--color-brand-subtle);
+  --primary-1: 234, 243, 255;
+  --primary-2: 210, 229, 253;
+  --primary-3: 173, 207, 251;
+  --primary-4: 120, 174, 246;
+  --primary-5: 58, 133, 240;
+  --primary-6: 23, 105, 232;
+  --primary-7: 16, 87, 198;
+  --primary-8: 16, 68, 156;
+  --primary-9: 14, 51, 115;
+  --primary-10: 9, 33, 77;
+  --color-border: var(--color-workspace-border);
+  --color-input-border: var(--color-workspace-control);
+  --color-heading: var(--color-workspace-heading);
+  --color-text: var(--color-workspace-text);
+  --color-muted: var(--color-workspace-muted);
+  --color-metadata: #667b94;
+  --color-placeholder: #7a8ca2;
+}
+
+.workspace-shell .workspace-sider,
+.workspace-mobile-drawer .arco-drawer-content,
+.workspace-mobile-drawer,
+.workspace-mobile-drawer .arco-drawer,
+.workspace-mobile-drawer .arco-drawer-inner,
+.workspace-mobile-drawer .arco-drawer-scroll,
+.workspace-mobile-drawer .workspace-drawer-inner {
+  --color-menu-light-bg: var(--color-nav);
+  --color-fill-2: var(--color-nav-raised);
+  --color-text-1: var(--color-nav-text);
+  --color-text-2: var(--color-nav-text);
+  --color-text-3: var(--color-nav-muted);
+}
+
+.workspace-shell .ow-page {
+  --color-section-border: var(--color-workspace-border);
+  --color-section-text: var(--color-workspace-text);
+  --color-section-heading: var(--color-workspace-heading);
+  --color-section-control: var(--color-workspace-control);
+  --color-section-subtle: var(--color-surface-subtle);
+  --color-section-muted: var(--color-workspace-muted);
+  --color-section-accent-subtle: var(--color-brand-subtle);
+  --color-section-accent: var(--color-brand);
+}
+
+.workspace-shell .ow-metric[data-tone='blue'] {
+  --color-metric: var(--color-brand);
+  --color-metric-surface: var(--color-brand-subtle);
+}
+
+.workspace-shell .wr-page {
+  --color-section-heading: var(--color-workspace-heading);
+  --color-section-muted: var(--color-workspace-muted);
+  --color-section-border: var(--color-workspace-border);
+  --color-section-accent: var(--color-brand);
+}
+
+.brand-icon {
+  --color-logo-detail: #071b34;
+}
+
+.shell-light.app-loading .brand-icon,
+.login-brand .brand-icon {
+  --color-logo-detail: #f7f9fc;
+}
+
+.task-priority-high {
+  --color-task-accent: var(--color-priority-high);
+}
+
+.task-priority-medium {
+  --color-task-accent: var(--color-priority-medium);
+}
+
+.task-priority-low {
+  --color-task-accent: var(--color-priority-low);
+}
+
+.task-priority-none {
+  --color-task-accent: var(--color-priority-none);
+}
+
+.workspace-shell :is(.wr-summary > *, .ov-stat)[data-tone='blue'] {
+  --color-metric: #285ebd;
+  --color-metric-surface: #eef2ff;
+  --color-metric-border: #d2e0fc;
+}
+
+.workspace-shell :is(.wr-summary > *, .ov-stat)[data-tone='red'] {
+  --color-metric: #b23748;
+  --color-metric-surface: #fff0f1;
+  --color-metric-border: #f5d6da;
+}
+
+.workspace-shell :is(.wr-summary > *, .ov-stat)[data-tone='amber'] {
+  --color-metric: #986213;
+  --color-metric-surface: #fff8e9;
+  --color-metric-border: #efdfc0;
+}
+
+.workspace-shell :is(.wr-summary > *, .ov-stat)[data-tone='purple'] {
+  --color-metric: #7948ad;
+  --color-metric-surface: #f6f0ff;
+  --color-metric-border: #e6d9f9;
+}
+
+.workspace-shell .ov-stat[data-tone='green'] {
+  --color-metric: #19775b;
+  --color-metric-surface: #edf5ef;
+  --color-metric-border: #cfeadd;
+}
+
+.imports-page {
+  --color-section-border: #e8ecf3;
+  --color-section-subtle: #f7f9fc;
+}
+
+.ow-page {
+  --color-section-border: #e8ecf3;
+  --color-section-text: #273449;
+  --color-section-heading: #1d2939;
+  --color-section-control: #d7dee8;
+  --color-section-subtle: #f7f9fc;
+  --color-section-muted: #667085;
+  --color-section-accent-subtle: #eef2ff;
+  --color-status-done: #16805b;
+  --color-section-accent: #3b5bff;
+  --color-status-blocked: #c13f3f;
+  --color-status-planned: #737f91;
+}
+
+.ow-metric {
+  --color-metric: #53647c;
+  --color-metric-surface: #f7f9fc;
+}
+
+.ow-metric[data-tone="blue"] {
+  --color-metric: #3d60d3;
+  --color-metric-surface: #eef2ff;
+}
+
+.ow-metric[data-tone="green"] {
+  --color-metric: #19775b;
+  --color-metric-surface: #edf5ef;
+}
+
+.ow-metric[data-tone="amber"] {
+  --color-metric: #94621b;
+  --color-metric-surface: #fff8e9;
+}
+
+.ow-metric[data-tone="red"] {
+  --color-metric: #b4453d;
+  --color-metric-surface: #fff0f1;
+}
+
+.workspace-shell .workspace-main > .ow-page {
+  --color-section-border: #e1e6ef;
+  --color-section-text: #2b4565;
+  --color-section-heading: #0d2342;
+  --color-section-control: #dbe5f1;
+  --color-section-subtle: #f7f9fc;
+  --color-section-muted: #536985;
+  --color-section-accent-subtle: #eef2ff;
+  --color-status-done: #15906a;
+  --color-section-accent: #1769e8;
+  --color-status-blocked: #df4c5a;
+  --color-status-planned: #667b94;
+}
+
+.workspace-shell .workspace-main > .ow-page .ow-metric {
+  --color-metric: #1670e9;
+  --color-metric-border: #d9e7fb;
+  --color-metric-surface: #f1f4fc;
+}
+
+.workspace-shell .workspace-main > .ow-page .ow-metric:nth-child(1) {
+  --color-metric: #1670e9;
+  --color-metric-border: #d9e7fb;
+  --color-metric-surface: #ecf6ff;
+}
+
+.workspace-shell .workspace-main > .ow-page .ow-metric:nth-child(2) {
+  --color-metric: #3b67e8;
+  --color-metric-border: #dfe6ff;
+  --color-metric-surface: #eef2ff;
+}
+
+.workspace-shell .workspace-main > .ow-page .ow-metric:nth-child(3) {
+  --color-metric: #0b86a8;
+  --color-metric-border: #d2ebf0;
+  --color-metric-surface: #ecfafb;
+}
+
+.workspace-shell .workspace-main > .ow-page .ow-metric:nth-child(4) {
+  --color-metric: #13896b;
+  --color-metric-border: #d3ebe3;
+  --color-metric-surface: #e9f8f4;
+}
+
+.workspace-shell .workspace-main > .ow-page .ow-metric:nth-child(5) {
+  --color-metric: #df4c5a;
+  --color-metric-border: #f6dbe2;
+  --color-metric-surface: #fff0f1;
+}
+
+.workspace-shell .workspace-main > .ow-page .ow-metric:nth-child(6) {
+  --color-metric: #c37a10;
+  --color-metric-border: #f2e8cd;
+  --color-metric-surface: #fff8e9;
+}
+
+.reports-page {
+  --color-section-heading: #21483c;
+  --color-section-surface: #fffef9;
+  --color-section-border: #dce2d8;
+  --color-section-muted: #727e74;
+}
+
+.account-delete-dialog {
+  --color-account-danger: #ad344b;
+}
+
+.wr-page {
+  --color-section-heading: #0d2342;
+  --color-section-text: #314d6e;
+  --color-section-muted: #5b6f88;
+  --color-section-border: #e1e6ef;
+  --color-section-accent: #1769e8;
+}
+
+.workspace-shell .wr-page .wr-summary > * {
+  --color-metric: #1769e8;
+  --color-metric-text: #0f5fcf;
+  --color-metric-surface: #eef2ff;
+  --color-metric-border: #d9e7fb;
+}
+
+.workspace-shell .wr-page .wr-summary > [data-tone='red'] {
+  --color-metric: #ed4d60;
+  --color-metric-text: #b4233a;
+  --color-metric-surface: #fff0f1;
+  --color-metric-border: #f5d6da;
+}
+
+.workspace-shell .wr-page .wr-summary > [data-tone='amber'] {
+  --color-metric: #e5a11c;
+  --color-metric-text: #845500;
+  --color-metric-surface: #fff8e9;
+  --color-metric-border: #f2e1ba;
+}
+
+.workspace-shell .wr-page .wr-summary > [data-tone='purple'] {
+  --color-metric: #8659e8;
+  --color-metric-text: #6941b7;
+  --color-metric-surface: #f6f0ff;
+  --color-metric-border: #e6d9f9;
 }

@@ -11,11 +11,11 @@
   overflow-wrap: anywhere;
 }
 .workspace-shell .table-scroll:has(.projects-table):focus-visible {
-  outline: 2px solid var(--tech-focus);
+  outline: 2px solid var(--color-focus);
   outline-offset: -2px;
 }
 .workspace-shell .goal-body p {
-  color: var(--tech-body);
+  color: var(--color-workspace-text);
 }
 .workspace-shell .goals-toolbar .inline-field {
   white-space: nowrap;
@@ -24,7 +24,7 @@
   width: 115px;
 }
 .workspace-shell .goal-body .label-text {
-  color: var(--tech-body);
+  color: var(--color-workspace-text);
   font-size: var(--font-small);
   font-weight: var(--weight-strong);
 }

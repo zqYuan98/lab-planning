@@ -1,9 +1,9 @@
 .period-reviews{max-width:1480px;margin:0 auto}
 .period-review-label {
-  color: var(--text-secondary,#586579);
+  color: var(--color-muted,#586579);
   line-height: 1.7;
   overflow-wrap: anywhere;
-}.period-review-mode{color:var(--text-secondary,#586579);line-height:1.7}.period-review-layout{display:grid;grid-template-columns:230px minmax(0,1fr);gap:24px}.period-review-history h2{font-size:var(--font-title-s)}.period-review-history-item{display:flex;flex-direction:column;align-items:flex-start;gap:7px;width:100%;text-align:left;border:1px solid #e1e6ef;border-radius:var(--radius-control);padding:14px;background:white;margin-bottom:10px;cursor:pointer}.period-review-history-item.selected{border-color:#276c75;background:#ecfafb}.period-review-history-item span,.period-review-history-item small{color:#667085}.period-review-controls,.period-review-detail{border:1px solid #e1e6ef;border-radius:var(--radius-control);padding:20px;background:white}.period-review-controls summary{cursor:pointer;font-weight:var(--weight-strong)}.period-review-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.period-review-actions{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:20px 0}.period-review-actions form{margin:0}
+}.period-review-mode{color:var(--color-muted,#586579);line-height:1.7}.period-review-layout{display:grid;grid-template-columns:230px minmax(0,1fr);gap:24px}.period-review-history h2{font-size:var(--font-title-s)}.period-review-history-item{display:flex;flex-direction:column;align-items:flex-start;gap:7px;width:100%;text-align:left;border:1px solid #e1e6ef;border-radius:var(--radius-control);padding:14px;background:white;margin-bottom:10px;cursor:pointer}.period-review-history-item.selected{border-color:#276c75;background:#ecfafb}.period-review-history-item span,.period-review-history-item small{color:#667085}.period-review-controls,.period-review-detail{border:1px solid #e1e6ef;border-radius:var(--radius-control);padding:20px;background:white}.period-review-controls summary{cursor:pointer;font-weight:var(--weight-strong)}.period-review-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.period-review-actions{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:20px 0}.period-review-actions form{margin:0}
 .period-review-metrics {
   display: grid;
   gap: 16px;
