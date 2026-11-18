@@ -1,4 +1,4 @@
-.weekly-submission-panel { margin: 0 0 28px; padding: 24px; border: 1px solid var(--color-panel-border, #e2e7e5); border-radius: var(--radius-control); background: var(--color-surface, #fff); }
+.weekly-submission-panel { margin: 0 0 28px; padding: 24px; border: 1px solid var(--color-panel-border); border-radius: var(--radius-control); background: var(--color-surface); }
 .submission-heading {
   display: flex;
   gap: 12px;
@@ -45,13 +45,13 @@
   margin: 18px 0;
   padding: 12px 16px;
   border-radius: var(--radius-tag);
-  background: #f7f9fc;
+  background: var(--palette-canvas);
   font-size: var(--font-small);
 }
 .submission-work-calendar { margin: -6px 0 18px; font-size: var(--font-small); }
 .work-week-calendar p { margin: 6px 0; line-height: 1.6; overflow-wrap: anywhere; }
 .submission-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
-.submission-card { padding: 20px; border: 1px solid var(--color-panel-border, #e2e7e5); border-radius: var(--radius-control); }
+.submission-card { padding: 20px; border: 1px solid var(--color-panel-border); border-radius: var(--radius-control); }
 .submission-card h3 { margin: 0; font-size: var(--font-title-s); }
 .submission-card p {
   color: var(--color-muted);
@@ -68,10 +68,10 @@
 }
 .submission-card > small { display: block; margin: 6px 0; }
 .submission-actions .button { min-height: 36px; font-size: var(--font-caption); padding: 8px 12px; }
-.submission-notice { padding: 12px 14px; background: #fff8e9; border-radius: var(--radius-tag); font-size: var(--font-small); line-height: 1.6; }
+.submission-notice { padding: 12px 14px; background: var(--palette-amber-soft); border-radius: var(--radius-tag); font-size: var(--font-small); line-height: 1.6; }
 .submission-cell { display: flex; align-items: flex-start; flex-direction: column; gap: 6px; }
 .submission-preview { max-height: 320px; overflow: auto; margin: 14px 0; }
-.submission-preview article { padding: 14px; border-bottom: 1px solid var(--color-panel-border, #e2e7e5); }
+.submission-preview article { padding: 14px; border-bottom: 1px solid var(--color-panel-border); }
 .submission-preview .badge { margin-left: 8px; }
 .submission-preview p { white-space: pre-wrap; }
 .submission-explanation { font-size: var(--font-small); color: var(--color-muted); line-height: 1.6; }
@@ -88,14 +88,14 @@
 .submission-return-reason { margin: 0; color: var(--color-heading); white-space: pre-wrap; overflow-wrap: anywhere; }
 .submission-plan-link, .submission-review-history p { font-size: var(--font-small); color: var(--color-muted); }
 .submission-review-history { margin: 10px 0; }
-.submission-frozen-preview { max-height: 400px; border: 1px solid var(--color-panel-border, #e2e7e5); border-radius: var(--radius-tag); }
+.submission-frozen-preview { max-height: 400px; border: 1px solid var(--color-panel-border); border-radius: var(--radius-tag); }
 .submission-frozen-preview article:last-child { border-bottom: 0; }
-.submission-deadline-settings > section { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--color-panel-border, #e2e7e5); }
+.submission-deadline-settings > section { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--color-panel-border); }
 .submission-deadline-settings h3 { margin: 0 0 12px; font-size: var(--font-title-s); }
 .submission-deadline-settings .submission-notice { overflow-wrap: anywhere; }
 .submission-deadline-settings .submission-notice p { margin: 6px 0; }
 .submission-frozen-preview p { overflow-wrap: anywhere; }
-.weekly-card-footer .weekly-delete-action { display: inline-flex; align-items: center; gap: 5px; color: #a13932; }
+.weekly-card-footer .weekly-delete-action { display: inline-flex; align-items: center; gap: 5px; color: var(--palette-red-ink); }
 .weekly-deletion-result { align-items: center; flex-wrap: wrap; }
 .weekly-deletion-result p { margin: 6px 0 0; }
 @media (max-width: 800px) { .submission-frozen-preview { max-height: 45vh; } .weekly-deletion-result > div { width: 100%; } }

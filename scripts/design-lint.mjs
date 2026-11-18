@@ -65,7 +65,14 @@ export function inspect(base = root) {
       if (hit) errors.push(`${name}:${lineOf(text, hit.index)} 不再使用${label}`)
     }
     if (!isTokens) {
-      for (const match of text.matchAll(/#[0-9a-fA-F]{3,8}\b/g)) { colors.add(match[0].toLowerCase()); counts.colorLiterals++ }
+      // Scan declaration values so classes and properties such as .white or white-space aren't colors.
+      for (const declaration of text.matchAll(/[;{]\s*[\w-]+\s*:\s*([^;{}]+)/g)) {
+        const value = declaration[1].replace(/url\([^)]*\)|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/gi, '')
+        for (const match of value.matchAll(/#[\da-f]{3,8}\b|\b(?:rgba?|hsla?|oklch|oklab|lab|lch)\(\s*[-+.\d][^)]*\)|(?<![\w-])(?:white|black)(?![\w-])/gi)) {
+          colors.add(match[0].toLowerCase())
+          counts.colorLiterals++
+        }
+      }
       for (const match of text.matchAll(/^\s*--([a-z0-9]+)-[a-z0-9-]+\s*:/gm)) families.add(match[1])
     }
     counts.gradients += (text.match(/gradient\(/g) || []).length

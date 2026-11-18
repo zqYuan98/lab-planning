@@ -1,15 +1,15 @@
-.monthly-workflow-panel { margin: 16px 0; padding: 18px 20px; border: 1px solid #cddbea; border-left: 4px solid #255d9d; border-radius: var(--radius-control); background: #f7f9fc; }
-.monthly-workflow-panel h3 { margin: 0 0 8px; color: #183c68; font-size: var(--font-title-s); }
-.monthly-workflow-panel p { margin: 0 0 14px; line-height: 1.65; color: #425a78; }
+.monthly-workflow-panel { margin: 16px 0; padding: 18px 20px; border: 1px solid var(--palette-steel); border-left: 4px solid var(--palette-body); border-radius: var(--radius-control); background: var(--palette-canvas); }
+.monthly-workflow-panel h3 { margin: 0 0 8px; color: var(--palette-navy-divider); font-size: var(--font-title-s); }
+.monthly-workflow-panel p { margin: 0 0 14px; line-height: 1.65; color: var(--palette-body); }
 .monthly-workflow-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .monthly-workflow-actions .button, .monthly-publish-controls .button { min-height: 42px; padding: 10px 16px; font-size: var(--font-body); }
 .monthly-publish-controls { max-width: 390px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
-.monthly-publish-controls p { margin: 0; font-size: var(--font-small); line-height: 1.55; color: #53647c; }
+.monthly-publish-controls p { margin: 0; font-size: var(--font-small); line-height: 1.55; color: var(--palette-slate); }
 .monthly-plan-actions { gap: 8px; min-width: 170px; }
 .monthly-plan-actions > button { min-height: 36px; padding: 7px 10px; }
-.monthly-review-deletion { margin-top: 20px; padding-top: 16px; border-top: 1px solid #dbe5f1; }
-.monthly-review-deletion p, .monthly-deletion-blockers p { color: #53647c; line-height: 1.65; }
-.monthly-deletion-blockers { margin: 16px 0; padding: 16px; border: 1px solid #e6cbbb; border-radius: var(--radius-control); background: #fffaf0; }
+.monthly-review-deletion { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--palette-divider); }
+.monthly-review-deletion p, .monthly-deletion-blockers p { color: var(--palette-slate); line-height: 1.65; }
+.monthly-deletion-blockers { margin: 16px 0; padding: 16px; border: 1px solid var(--palette-red-border); border-radius: var(--radius-control); background: var(--palette-amber-soft); }
 .monthly-deletion-blockers li { margin-top: 8px; line-height: 1.6; }
 .monthly-deletion-dialog .button, .monthly-review-deletion .button { min-height: 42px; padding: 10px 16px; }
 .monthly-deletion-notice p { overflow-wrap: anywhere; }

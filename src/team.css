@@ -47,7 +47,7 @@
   min-height: 36px;
 }
 .team-account-actions .team-delete-button {
-  color: #ad344b;
+  color: var(--palette-red-ink);
 }
 .team-account-hint {
   margin: 8px 0 20px;
@@ -144,10 +144,10 @@
 }
 .account-delete-dialog .button.danger {
   background: var(--color-account-danger);
-  color: #fff;
+  color: var(--palette-white);
 }
 .account-delete-dialog .button.danger:hover:not(:disabled) {
-  background: #92283c;
+  background: var(--palette-red-ink);
 }
 .workspace-shell .team-members-table {
   min-width: 900px;

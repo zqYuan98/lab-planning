@@ -11,7 +11,7 @@
   font-size: var(--font-small);
 }
 .workspace-shell .notifications-page .notification-deliveries .notification-delivery-error {
-  color: #8a591d;
+  color: var(--palette-amber-ink);
 }
 .workspace-shell .notifications-page .notification-deliveries small {
   color: var(--color-metadata);

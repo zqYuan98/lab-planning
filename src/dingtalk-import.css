@@ -32,7 +32,7 @@
 .dingtalk-source-options { padding: 0; border: 0; min-width: 0; }
 .dingtalk-source-options legend { font-size: var(--font-small); font-weight: var(--weight-strong); margin-bottom: 10px; }
 .dingtalk-source-option { display: flex; align-items: flex-start; gap: 11px; padding: 14px; border: 1px solid var(--color-section-border); border-radius: var(--radius-control); margin-bottom: 8px; cursor: pointer; }
-.dingtalk-source-option.is-selected { border-color: #a8b8ed; background: #f1f4fc; }
+.dingtalk-source-option.is-selected { border-color: var(--palette-slate-soft); background: var(--palette-fog); }
 .dingtalk-source-option input { flex: 0 0 auto; margin-top: 4px; }
 .dingtalk-source-option > span { min-width: 0; }
 .dingtalk-source-option strong { display: block; font-size: var(--font-small); font-weight: var(--weight-strong); overflow-wrap: anywhere; }
@@ -43,7 +43,7 @@
 .dingtalk-review { margin: 18px 0; padding: 18px; border: 1px solid var(--color-section-border); border-radius: var(--radius-control); background: var(--color-section-subtle); }
 .dingtalk-review-counts { display: flex; flex-wrap: wrap; gap: 7px; margin: 14px 0; }
 .dingtalk-review-rows { display: grid; gap: 8px; margin-top: 12px; }
-.dingtalk-review-row { border: 1px solid var(--color-section-border); border-radius: var(--radius-control); background: #fff; padding: 12px; min-width: 0; }
+.dingtalk-review-row { border: 1px solid var(--color-section-border); border-radius: var(--radius-control); background: var(--palette-white); padding: 12px; min-width: 0; }
 .dingtalk-review-row > summary {
   cursor: pointer;
   line-height: 1.8;

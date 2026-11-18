@@ -12,6 +12,18 @@ test('source styles stay on the token scale and under the recorded baseline', ()
   assert.deepEqual(compare(counts, JSON.parse(readFileSync(new URL('../design-system/baseline.json', import.meta.url), 'utf8'))), [])
 })
 
+test('literal color checks distinguish paint values from tokens, URLs and selectors', () => {
+  const base = mkdtempSync(join(tmpdir(), 'design-colors-'))
+  mkdirSync(join(base, 'src'))
+  writeFileSync(join(base, 'src/tokens.css'), ':root { --palette-ink: #181818; }')
+  writeFileSync(join(base, 'src/page.css'), `
+    .white { white-space: normal; color: white; background: rgba(10, 20, 30, .2); }
+    .black { color: var(--palette-ink); box-shadow: 0 0 1px rgba(var(--ink-rgb), .15); }
+    .image { background: url("black.svg#abc"); border-color: hsl(210 30% 50%); }
+  `)
+  assert.equal(inspect(base).counts.colorLiterals, 3)
+})
+
 test('the checker rejects off-scale values, decoration and slogan copy, and reports growth', () => {
   const base = mkdtempSync(join(tmpdir(), 'design-lint-'))
   mkdirSync(join(base, 'src'))

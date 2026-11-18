@@ -42,7 +42,7 @@
 .ov-metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  background: white;
+  background: var(--palette-white);
   border: 1px solid var(--color-panel-border);
   border-radius: var(--radius-panel);
   margin-bottom: 28px;
@@ -65,7 +65,7 @@
   border-left: 1px solid var(--color-panel-border);
 }
 .ov-stat:hover {
-  background: #f7f9fc;
+  background: var(--palette-canvas);
 }
 .ov-stat:focus-visible {
   outline: 2px solid var(--color-action);
@@ -98,7 +98,7 @@
   color: var(--color-muted);
 }
 .ov-stat.has-blocker > strong {
-  color: #b42318;
+  color: var(--palette-red);
 }
 .ov-stat-detail {
   font-size: var(--font-small);
@@ -121,7 +121,7 @@
   min-width: 0;
 }
 .ov-section {
-  background: white;
+  background: var(--palette-white);
   border: 1px solid var(--color-panel-border);
   border-radius: var(--radius-panel);
   overflow: hidden;
@@ -168,7 +168,7 @@
   grid-template-columns: minmax(0, 1fr) 104px;
   gap: 16px;
   padding: 9px 48px 9px 20px;
-  background: #f7f9fc;
+  background: var(--palette-canvas);
   border-bottom: 1px solid var(--color-panel-border);
   font-size: var(--font-small);
   color: var(--color-muted);
@@ -181,8 +181,8 @@
   width: 100%;
   text-align: left;
   border: 0;
-  border-bottom: 1px solid #edf0ee;
-  background: white;
+  border-bottom: 1px solid var(--palette-green-soft);
+  background: var(--palette-white);
   padding: 16px 20px;
   color: var(--color-heading);
 }
@@ -192,7 +192,7 @@
 .ov-work-item:hover,
 .ov-reminder:hover,
 .ov-week-row:hover {
-  background: #f7f9fc;
+  background: var(--palette-canvas);
 }
 .ov-work-item:hover strong {
   color: var(--color-action);
@@ -220,11 +220,11 @@
   line-height: 1.6;
 }
 .ov-state.is-pending {
-  color: #925d13;
+  color: var(--palette-amber-ink);
 }
 .ov-state.is-blocked,
 .ov-reminder .is-blocked {
-  color: #b42318;
+  color: var(--palette-red);
 }
 .ov-work-item > svg,
 .ov-reminder > svg {
@@ -267,8 +267,8 @@
   gap: 16px;
   padding: 15px 20px;
   border: 0;
-  border-bottom: 1px solid #edf0ee;
-  background: white;
+  border-bottom: 1px solid var(--palette-green-soft);
+  background: var(--palette-white);
   text-align: left;
 }
 .ov-reminder:last-child {
@@ -303,8 +303,8 @@
   min-height: 58px;
   padding: 12px 20px;
   border: 0;
-  border-bottom: 1px solid #edf0ee;
-  background: white;
+  border-bottom: 1px solid var(--palette-green-soft);
+  background: var(--palette-white);
   text-align: left;
   font-size: var(--font-small);
   color: var(--color-text);
@@ -314,7 +314,7 @@
   border-bottom: 0;
 }
 .ov-week-row.is-current {
-  background: #f1f4fc;
+  background: var(--palette-fog);
   box-shadow: inset 2px 0 var(--color-action);
 }
 .ov-week-number {
