@@ -4,7 +4,7 @@ import { once } from 'node:events'
 import type { AddressInfo } from 'node:net'
 import { createApp } from '../server/app.ts'
 import { Store } from '../server/store.ts'
-import type { Bootstrap, Task, WeeklyRecord } from '../shared/types.ts'
+import type { Task, WeeklyRecord } from '../shared/types.ts'
 import { entryLocation, navigationUrl } from '../src/notification-navigation.ts'
 
 test('authenticated personal capture can schedule the same task without granting peer access', async () => {

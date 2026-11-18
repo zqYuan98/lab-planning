@@ -1,6 +1,6 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { Router } from 'express'
-import type { AuditEvent, Entity, MonthlyPlan, Project, Report, Task, User } from '../shared/types.ts'
+import type { AuditEvent, MonthlyPlan, Project, Report, Task, User } from '../shared/types.ts'
 import type { RegisterPage, WorkspaceItem, WorkspacePage, WorkspaceResource, WorkspaceShellData } from '../shared/workspace-query.ts'
 import { buildWorkRegister, workRegisterToday, workRegisterViewLabels, type WorkRegisterView } from '../shared/work-register.ts'
 import { HttpError, type Store } from './store.ts'

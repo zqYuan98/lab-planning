@@ -1,7 +1,7 @@
 import test, { type TestContext } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Notification, NotificationDelivery } from '../shared/notifications.ts'
-import type { Task, User, WeeklyRecord } from '../shared/types.ts'
+import type { Task, User } from '../shared/types.ts'
 import { Store } from '../server/store.ts'
 import { Domain } from '../server/domain.ts'
 import { createApp } from '../server/app.ts'

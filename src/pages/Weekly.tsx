@@ -7,7 +7,7 @@ import type { WeeklyWorkspace } from '../../shared/period-workspace'
 import type { WorkWeekCalendar } from '../../shared/china-work-calendar'
 import { useWorkspaceQuery } from '../workspace-query'
 import { captureMutationContext } from '../mutation-response'
-import { mergePeriod, periodScope, PeriodPager, PeriodEditorDirectory, usePeriodCandidates } from '../period-workspace'
+import { periodScope, PeriodPager, PeriodEditorDirectory, usePeriodCandidates } from '../period-workspace'
 import DirectoryAccountPicker from '../components/DirectoryAccountPicker'
 import {
   ArrowLeft,
@@ -46,7 +46,6 @@ import {
   Modal,
   PageHeader,
   addDays,
-  currentMonth,
   monday,
   nameOf,
   useAction,
@@ -164,8 +163,6 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
   const [creationTask, setCreationTask] = useState<Task | undefined>(
     intent?.action === 'create' ? initialTask : undefined,
   )
-  const [progressStatus, setProgressStatus] = useState<WeeklyRecord['status']>('planned')
-  const [completeTask, setCompleteTask] = useState(false)
   useEffect(() => {
     const detail = period?.value?.detail
     if (!detail || handledIntent.current) return
@@ -178,18 +175,6 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
       else requestAnimationFrame(() => document.getElementById(`weekly-record-${detail.record!.id}`)?.scrollIntoView({ block: 'center' }))
     }
   }, [period?.value?.detail])
-  const [progressSubmitted, setProgressSubmitted] = useState(false)
-  const progressStatusRef = useRef<HTMLSelectElement>(null)
-  const progressSubmittedRef = useRef<HTMLInputElement>(null)
-  useEffect(() => {
-    if (modal !== 'edit' || !selected) return
-    // Form restores a saved draft directly into its controls after mounting.
-    const frame = requestAnimationFrame(() => {
-      setProgressStatus((progressStatusRef.current?.value || selected.status) as WeeklyRecord['status'])
-      setProgressSubmitted(progressSubmittedRef.current?.checked ?? selected.submitted)
-    })
-    return () => cancelAnimationFrame(frame)
-  }, [modal, selected?.id, selected?.version])
   function openCreate(temporary: boolean, task?: Task) {
     detailSequence.current++
     setCreationTask(task)
@@ -225,7 +210,6 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
   }
   const close = () => {
     detailSequence.current++
-    setCompleteTask(false)
     setModal('')
     setSelected(null)
     setCreationTask(undefined)

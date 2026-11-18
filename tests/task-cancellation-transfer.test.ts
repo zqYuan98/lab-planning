@@ -8,7 +8,7 @@ import { publishCollaborationEvents } from '../server/collaboration-notification
 import { runCollaborationDigests } from '../server/collaboration-digests.ts'
 import { exportBusinessData, previewRestore, restoreBusinessData } from '../server/data-transfer.ts'
 import { enqueueNotification, pendingNotificationTargets, targetAccessible } from '../server/notifications.ts'
-import type { AuditEvent, Report, Task, User, WeeklyRecord } from '../shared/types.ts'
+import type { AuditEvent, Report, Task, User } from '../shared/types.ts'
 import type { BlockerEpisode, DeadlineChangeRequest, FollowupRequest, ProgressEvent, TaskTracking } from '../shared/collaboration.ts'
 import type { Notification } from '../shared/notifications.ts'
 

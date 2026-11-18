@@ -9,7 +9,7 @@ import { exportBusinessData } from '../server/data-transfer.ts'
 import { ExistingPlanWriter } from '../server/existing-plan-writer.ts'
 import { ImportService, type HistoricalRecord } from '../server/import-service.ts'
 import { createApp } from '../server/app.ts'
-import type { AuditEvent, MonthlyPlan, Task, User, WeeklyRecord } from '../shared/types.ts'
+import type { AuditEvent, MonthlyPlan, Task, User } from '../shared/types.ts'
 import type { ImportBatch } from '../shared/import-types.ts'
 
 function fixture(t: TestContext) {

@@ -11,8 +11,7 @@ import { applyFollowupMutation, reconcileFollowupDashboard, type FollowupDashboa
 import { SavedRefresh, type SavedRefreshState } from '../saved-refresh'
 import { assignmentAttempt, notificationNavigation, type SubmissionAttempt } from '../notification-navigation'
 import type { Navigate } from '../navigation'
-import { Badge, Empty, Field, Form, Modal, PageHeader, dateTime, nameOf, type PageProps } from '../ui'
-import WorkTaskPanel from '../components/WorkTaskPanel'
+import { Badge, Empty, Field, Form, Modal, PageHeader, dateTime, type PageProps } from '../ui'
 import TaskProgressSummary from '../components/TaskProgressSummary'
 import { PriorityBadge, WorkTypeBadge, ContextHelp } from '../components/TaskSignals'
 import { taskPriority, workKind } from '../task-presentation'
@@ -26,7 +25,7 @@ interface BatchPreview { previewToken: string; dueAt: string; recipients: { reci
 export default function WorkFollowups(props: PageProps & { navigate: Navigate }) {
   const { data, intent, notify, navigate } = props
   const [view, setView] = useState<Dashboard | null>(null), [error, setError] = useState(''), [selected, setSelected] = useState<string[]>([])
-  const [taskId, setTaskId] = useState<string | null>(null), [filter, setFilter] = useState('all'), [query, setQuery] = useState('')
+  const [filter, setFilter] = useState('all'), [query, setQuery] = useState('')
   const [paging, setPaging] = useState(firstDirectoryPage)
   const querySearch = useDebouncedSearch(query)
   const parameters = new URLSearchParams({ filter, q: querySearch, limit: '30' })
@@ -51,7 +50,6 @@ export default function WorkFollowups(props: PageProps & { navigate: Navigate })
       currentView.current = value; setView(value)
       const ids = new Set(value.tasks.map(row => row.task.id))
       setSelected(old => old.filter(id => ids.has(id)))
-      setTaskId(old => old && ids.has(old) ? old : null)
       if (result.stale) throw new StaleReadError()
     },
     error: failure => {
@@ -95,7 +93,7 @@ export default function WorkFollowups(props: PageProps & { navigate: Navigate })
     }, () => {
       dashboardRead.current!.reset(); savedRefresh.current!.reset(mounted.current); currentView.current = null; confirmedMutations.current = {}
       previewSequence.current++; digestSequence.current++
-      if (mounted.current) { setView(null); setDigest(null); setPreview(null); setPayload(null); setSelected([]); setTaskId(null); setBatch(false); setError(''); setLoading(false) }
+      if (mounted.current) { setView(null); setDigest(null); setPreview(null); setPayload(null); setSelected([]); setBatch(false); setError(''); setLoading(false) }
     })
     return () => { mounted.current = false; unsubscribe(); dashboardRead.current!.reset(); savedRefresh.current!.reset(false); previewSequence.current++; digestSequence.current++ }
   }, [load, reloadFirst, data.user.id, data.user.role, data.operationEpoch, data.accessScopeVersion])

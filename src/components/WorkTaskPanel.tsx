@@ -25,9 +25,6 @@ import { queryAffected } from '../query-invalidation'
 
 const statusNames: Record<string, string> = { todo: '未开始', doing: '进行中', blocked: '受阻', done: '成员自报完成' }
 const requestNames: Record<string, string> = { open: '待处理', responded: '已回应', cancelled: '已关闭', superseded: '已被新安排替代', approved: '已批准', returned: '已退回' }
-const fieldNames: Record<string, string> = { status: '执行状态', completionNote: '完成说明', evidenceUrl: '成果链接', blockerReason: '任务阻塞原因', blocker: '本周阻塞原因', blockerImpact: '阻塞影响', supportNeeded: '需要支持', nextAction: '下一步', actualOutcome: '本周成果', currentProgress: '当前实际进展' }
-const fieldLabel = (field: string) => `${field.startsWith('weeklyRecord.') ? '本周·' : '任务·'}${fieldNames[field.split('.').at(-1)!] || '进展内容'}`
-const fieldValue = (field: string, value: string) => field.endsWith('.status') ? ({ ...statusNames, planned: '未开始', not_done: '本周未完成' })[value] || value : value || '未填写'
 const localTime = (value: string) => new Date(new Date(value).getTime() + 8 * 3600000).toISOString().slice(0, 16)
 const utc = (value: FormDataEntryValue | null) => value ? new Date(`${value}:00+08:00`).toISOString() : undefined
 

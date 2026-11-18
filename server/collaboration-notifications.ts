@@ -1,4 +1,4 @@
-import type { BusinessNotificationEvent, BusinessNotificationKind, FollowupRequest } from '../shared/collaboration.ts'
+import type { BusinessNotificationEvent, BusinessNotificationKind } from '../shared/collaboration.ts'
 import type { CollaborationEventConsumption, DigestItem, NotificationDigest } from '../shared/collaboration-notifications.ts'
 import type { AuditEvent, Entity, MonthlyPlan, Report, Task, User } from '../shared/types.ts'
 import type { Notification, NotificationDelivery, NotificationTarget } from '../shared/notifications.ts'

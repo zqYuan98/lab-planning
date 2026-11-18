@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { Bootstrap, MonthlyPlan, Task, User } from '../shared/types'
-import type { PeriodCandidates, PeriodReferences } from '../shared/period-workspace'
+import type { PeriodReferences } from '../shared/period-workspace'
 import type { WorkspacePage } from '../shared/workspace-query'
 import type { DirectoryAccount } from '../shared/directory-workspace'
 import { api } from './api'

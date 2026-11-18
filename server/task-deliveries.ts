@@ -1,6 +1,6 @@
 import type { DeliveryDecision, DeliveryMutationResult, DeliverySeries, DeliverySeriesView, DeliverySubmissionView, TaskDeliveriesView, TaskDelivery } from '../shared/deliveries.ts'
 import type { DeadlineChangeRequest } from '../shared/collaboration.ts'
-import type { Task, User } from '../shared/types.ts'
+import type { User } from '../shared/types.ts'
 import { isActiveTask } from '../shared/task-state.ts'
 import { HttpError, type Store } from './store.ts'
 import { collaborationId, requiredText } from './collaboration-store.ts'

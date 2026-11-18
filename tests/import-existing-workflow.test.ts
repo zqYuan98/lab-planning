@@ -5,7 +5,7 @@ import { Store } from '../server/store.ts'
 import { Domain } from '../server/domain.ts'
 import { ImportService } from '../server/import-service.ts'
 import { updateAiSettings } from '../server/ai-service.ts'
-import type { ImportBatch, ImportRow } from '../shared/import-types.ts'
+import type { ImportBatch } from '../shared/import-types.ts'
 import type { AuditEvent, Entity, MonthlyPlan, Publication, Task, User, WeeklyRecord } from '../shared/types.ts'
 
 interface ImportedSource { batchId: string; sourceId: string; rowId: string; sourceStatus: string }

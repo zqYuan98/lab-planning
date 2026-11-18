@@ -1,6 +1,6 @@
 import test, { type TestContext } from 'node:test'
 import assert from 'node:assert/strict'
-import type { Entity, User } from '../shared/types.ts'
+import type { User } from '../shared/types.ts'
 import type { Feedback, FeedbackActionInput, FeedbackAttachmentInput, FeedbackDetailResponse } from '../shared/feedback.ts'
 import type { Notification } from '../shared/notifications.ts'
 import { FeedbackService, safeFeedbackContext } from '../server/feedback-service.ts'

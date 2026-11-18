@@ -7,7 +7,7 @@ import { TestDomain as Domain } from './fixtures/legacy-domain.ts'
 import { createApp } from '../server/app.ts'
 import { isActiveTask } from '../shared/task-state.ts'
 import { buildWorkspace, summarizeWorkRows } from '../src/overview-workspace-data.ts'
-import type { AuditEvent, Bootstrap, Entity, Task, User, WeeklyRecord } from '../shared/types.ts'
+import type { AuditEvent, Entity, Task, User, WeeklyRecord } from '../shared/types.ts'
 
 function fixture(t: TestContext) {
   const store = new Store(':memory:'), domain = new Domain(store)

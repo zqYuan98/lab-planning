@@ -16,7 +16,6 @@ import { workOriginProjector } from './work-origin.ts'
 import { isManager, isMember } from './authorization.ts'
 
 type Query = Record<string, unknown>
-const emptyReferences = (): PeriodReferences => ({ users: [], projects: [], plans: [], tasks: [], weeklyRecords: [] })
 const compactPlan = (plan: MonthlyPlan): MonthlyPlan => ({ ...plan, expectedOutcome: plan.expectedOutcome.slice(0, 240), acceptanceCriteria: plan.acceptanceCriteria.slice(0, 240), actualOutcome: '', acceptanceNote: '', reviewComment: '', temporaryReason: plan.temporaryReason?.slice(0, 160) })
 const compactRecord = (record: WeeklyRecord): WeeklyRecord => ({ ...record, commitment: record.commitment, actualOutcome: record.actualOutcome.slice(0, 240), blocker: record.blocker.slice(0, 160), nextAction: record.nextAction.slice(0, 160), evidenceUrl: '', blockerImpact: record.blockerImpact?.slice(0, 160), supportNeeded: record.supportNeeded?.slice(0, 160) })
 const compactTask = (task: Task): Task => ({ ...task, description: task.description.slice(0, 240), temporaryReason: task.temporaryReason.slice(0, 160), currentProgress: task.currentProgress?.slice(0, 160), completionNote: '', blockerReason: '', blockerImpact: '', supportNeeded: '', nextAction: '', requestedOutcome: '', estimatedEffort: '', decisionNeeded: '' })

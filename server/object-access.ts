@@ -3,7 +3,6 @@ import type { Bootstrap, Entity, MonthlyPlan, Project, Task, User, WeeklyRecord 
 import type { AuthorizedProjectSummary, AuthorizedTaskView, AuthorizedWorkResponse, ObjectCapability, ObjectGrant, ObjectType, ScopedReport, ScopeFact } from '../shared/object-access.ts'
 import type { DeliveryDecision, DeliverySeries } from '../shared/deliveries.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
-import { safeUser } from './auth.ts'
 import { businessActor, currentActor, isManager, isMember, isObserver } from './authorization.ts'
 import { HttpError, type Store } from './store.ts'
 

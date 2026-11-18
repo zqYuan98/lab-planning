@@ -21,7 +21,6 @@ import { taskPriority, workKind } from '../task-presentation'
 import {
   Plus,
   Send,
-  History,
   Search,
   GitBranch,
   CheckCircle2,

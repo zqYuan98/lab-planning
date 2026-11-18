@@ -10,7 +10,7 @@ import { updateAiSettings } from '../server/ai-service.ts'
 import { createApp } from '../server/app.ts'
 import { applyMigrations, STORAGE_VERSION } from '../server/storage-migrations.ts'
 import type { ImportBatch } from '../shared/import-types.ts'
-import type { MonthlyPlan, User, WeeklyRecord } from '../shared/types.ts'
+import type { MonthlyPlan, WeeklyRecord } from '../shared/types.ts'
 
 function fixture() {
   const store = new Store(':memory:'), domain = new Domain(store), service = new ImportService(store)

@@ -1,5 +1,5 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto'
-import type { Entity, Task, User, WeeklyRecord } from '../shared/types.ts'
+import type { Entity, User, WeeklyRecord } from '../shared/types.ts'
 import type { FollowupRequest, ProgressContent } from '../shared/collaboration.ts'
 import type { ActionIntent, NativeActionInput, NativeIntentView, ExternalObjectLink } from '../shared/native-actions.ts'
 import { Store, HttpError } from './store.ts'

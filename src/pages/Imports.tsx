@@ -8,7 +8,7 @@ import ImportSourceReview from '../components/ImportSourceReview'
 import DingTalkMonthlyImport from '../components/DingTalkMonthlyImport'
 import DingTalkImportReview from '../components/DingTalkImportReview'
 import ImportWorkflowProgress from '../components/ImportWorkflowProgress'
-import { canRequestImportReview, currentImportSourceRelations, importAnalysisRequest, importCommitBlockers, importDisplayCounts, importReconciliationText, importReviewCounts, importRowDisposition, importRowOutcomeLabel, importWorkFields, newImportCandidate, restoredImportOptions, type ImportReviewSection, type ImportSourceReviewState } from '../import-review'
+import { canRequestImportReview, currentImportSourceRelations, importAnalysisRequest, importCommitBlockers, importDisplayCounts, importReconciliationText, importRowDisposition, importRowOutcomeLabel, importWorkFields, newImportCandidate, restoredImportOptions, type ImportReviewSection, type ImportSourceReviewState } from '../import-review'
 import {
   Archive,
   ArrowRight,
@@ -273,7 +273,6 @@ export default function Imports({
   const availablePlans = data.plans.filter((plan) => plan.status !== 'merged' && plan.visibility !== 'historical' && plan.visibility !== 'reference' && (manager || !plan.projectId || !data.projects.some(project => project.id === plan.projectId && project.status !== 'active')))
   const selected = batch?.rows.filter((row) => row.selected) || []
   const selectedIssues = selected.filter((row) => row.issues.length)
-  const reviewCounts = importReviewCounts(batch?.rows || [])
   const immutable = batch?.status === 'committed'
   const dingtalkSource = !!batch?.dingtalk
   const dingtalkReviewReady = !dingtalkSource || (dingtalkReviewState?.id === batch?.id && dingtalkReviewState?.version === batch?.version && dingtalkReviewState.ready)

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { AuditEvent, MonthlyPlan, Task, User, WeeklyRecord } from '../shared/types.ts'
+import type { MonthlyPlan, Task, User, WeeklyRecord } from '../shared/types.ts'
 import { taskSections, type EditableObject, type TaskHistoryItem, type TaskHistoryPage, type TaskView } from '../shared/task-view.ts'
 import { isActiveTask } from '../shared/task-state.ts'
 import { isActiveWeeklyRecord } from '../shared/weekly-record-state.ts'

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { Report, User } from '../shared/types.ts'
-import type { ReportAgentBlock, ReportAgentCell, ReportAgentJob, ReportAgentIssue, ReportTemplate } from '../shared/report-agent.ts'
+import type { ReportAgentCell, ReportAgentJob, ReportAgentIssue, ReportTemplate } from '../shared/report-agent.ts'
 import { HttpError, Store } from './store.ts'
 import { canUseAccount } from '../shared/auth-policy.ts'
 import { requireReportManager } from './reports.ts'

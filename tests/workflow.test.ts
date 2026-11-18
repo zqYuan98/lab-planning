@@ -4,7 +4,7 @@ import { once } from 'node:events'
 import type { AddressInfo } from 'node:net'
 import { createApp } from '../server/app.ts'
 import { Store } from '../server/store.ts'
-import type { Bootstrap, MonthlyPlan, Project, Report, Task, User, WeeklyRecord } from '../shared/types.ts'
+import type { MonthlyPlan, Project, Report, Task, User, WeeklyRecord } from '../shared/types.ts'
 
 test('real HTTP workflow from manager goal to published month, weekly evidence and immutable report', async () => {
   const store = new Store(':memory:')
