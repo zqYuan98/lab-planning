@@ -114,12 +114,12 @@
 
 18 项线上/本地源码及依赖锁哈希均匹配；不是对整个发布目录的逐字核验。本轮没有将模拟测试宣称为真实钉钉收件或新会话免登验收。
 
-- [服务器只读快照](../output/dingtalk-self-check-20260919/server-audit.json)
-- [成员就绪和补充核验](../output/dingtalk-self-check-20260919/server-supplement.json)
-- [公网浏览器检查](../output/dingtalk-self-check-20260919/browser-check.json)
-- [源码一致性与验证结论](../output/dingtalk-self-check-20260919/validation.json)
-- [300 项测试输出](../output/dingtalk-self-check-20260919/tests.log)
-- [手动提醒确认缺陷复现](../output/dingtalk-self-check-20260919/manual-reminder-reproduction.json)
-- [草稿导入误发缺陷复现](../output/dingtalk-self-check-20260919/draft-import-notification-reproduction.json)
+- 服务器只读快照
+- 成员就绪和补充核验
+- 公网浏览器检查
+- 源码一致性与验证结论
+- 300 项测试输出
+- 手动提醒确认缺陷复现
+- 草稿导入误发缺陷复现
 
 官方能力参考：[H5 AppLink](https://open.dingtalk.com/document/orgapp/open-h5-micro-application)、[工作通知](https://open.dingtalk.com/document/orgapp/asynchronous-sending-of-enterprise-session-messages)、[免登授权码](https://open.dingtalk.com/tools/explorer/jsapi?id=11723)。已实现范围以源码和现场证据为准，不把官方可用能力当作本系统已接入。

@@ -4,7 +4,7 @@ import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
 import { join, dirname, resolve, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const skip = new Set(['node_modules', '.git', 'dist', 'data', 'output'])
+const skip = new Set(['node_modules', '.git', 'dist', 'data', 'output', '.tools', '.playwright-cli', 'test-results'])
 function walk(dir, out = []) {
   for (const name of readdirSync(dir)) {
     if (skip.has(name)) continue
@@ -22,9 +22,9 @@ for (const file of walk(root)) {
     if (/^[a-z]+:/i.test(target) || target.startsWith('/')) continue
     const path = decodeURIComponent(target.replace(/:\d+(?::\d+)?$/, ''))
     const absolute = resolve(dirname(file), path)
-    // output/ 是不入库的本地验收产物，历史文档里对它的引用不算失效。
-    if (relative(root, absolute).startsWith('output')) continue
-    if (!existsSync(absolute)) broken.push(`${relative(root, file)} → ${target}`)
+    // Local verification artifacts are unavailable to readers of a fresh checkout.
+    const localArtifact = relative(root, absolute).split(/[\\/]/)[0] === 'output'
+    if (localArtifact || !existsSync(absolute)) broken.push(`${relative(root, file)} → ${target}`)
   }
 }
 for (const line of broken) console.error(line)
