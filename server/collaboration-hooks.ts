@@ -162,7 +162,7 @@ function processAudits(store: Store, context: MutationContext): ProgressEvent | 
   const newNote = !!meaningfulText(note) && meaningfulText(prior?.note) !== meaningfulText(note)
   if (!changes.length && !newNote && !noChange) return null
   if (noChange && changes.some(change => !change.field.endsWith('.nextAction'))) throw new HttpError(400, '暂无变化不能同时修改执行状态或成果，请选择更新进展')
-  if (noChange && (!meaningfulText(context.input.noChangeReason) || !meaningfulText(context.input.nextAction))) throw new HttpError(400, '暂无变化需要填写原因和下一步')
+  if (noChange && !meaningfulText(context.input.nextAction)) throw new HttpError(400, '暂无变化需要填写下一步')
   if (collaborationEnabledFor(store, task.ownerId) && context.actor.id !== task.ownerId && !meaningfulText(context.input.proxyReason)) throw new HttpError(400, '管理者代录进展需要填写代理原因')
   const formalProgress = officialChanges.length > 0 || newNote || noChange
   const meaningfulOwnerProgress = context.actor.id === task.ownerId && !noChange && (officialChanges.length > 0 || newNote)

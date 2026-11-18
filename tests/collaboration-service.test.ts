@@ -124,6 +124,15 @@ test('pending-plan progress still validates no-change claims and manager proxy r
   assert.equal(saved.progressEvent?.proxyReason, '根据成员现场反馈记录')
 })
 
+test('a member can record no change with the next action alone', t => {
+  const f = fixture(); t.after(() => f.store.close())
+  const input = { requestId: 'no-change-with-next-action', version: f.task.version, noteType: 'no_change', nextAction: '明天确认评审安排' }
+  assert.throws(() => f.service.recordProgress(f.member, f.task.id, { ...input, nextAction: '' }), { status: 400 })
+  const result = f.service.recordProgress(f.member, f.task.id, input)
+  assert.equal(result.progressEvent?.noChangeReason, '')
+  assert.equal(result.progressEvent?.meaningfulOwnerProgress, false)
+})
+
 test('one task has one open followup, and stale requests cannot close a changed request', () => {
   const f = fixture()
   try {
@@ -174,9 +183,9 @@ test('deadline approval guards old PATCH, preserves old deadline until approval 
     f.service.updateSettings(f.manager, { requestId: 'enable-deadline-001', version: readCollaborationSettings(f.store).version, deadlineApprovalEnabled: true })
     const tracking = f.store.get<TaskTracking>('taskTrackings', f.task.id)!
     assert.throws(() => f.work.updateTask(f.member, f.task.id, { reason: '测试场景确认承诺调整', version: f.task.version, dueDate: '2099-01-25' }), { status: 409 })
-    const request = f.service.requestDeadline(f.member, f.task.id, { requestId: 'request-deadline-001', version: f.task.version, dueDateVersion: tracking.dueDateVersion, requestedDueDate: '2099-01-25', reason: '新增兼容验证' })
+    const request = f.service.requestDeadline(f.member, f.task.id, { requestId: 'request-deadline-001', version: f.task.version, dueDateVersion: tracking.dueDateVersion, requestedDueDate: '2099-01-25' })
     assert.equal(f.store.get<Task>('tasks', f.task.id)?.dueDate, '2099-01-20')
-    const result = f.service.decideDeadline(f.manager, request.id, { requestId: 'decide-deadline-001', version: request.version, dueDateVersion: tracking.dueDateVersion, decision: 'approved', note: '同意延期验证' })
+    const result = f.service.decideDeadline(f.manager, request.id, { requestId: 'decide-deadline-001', version: request.version, dueDateVersion: tracking.dueDateVersion, decision: 'approved' })
     assert.equal(result.task.dueDate, '2099-01-25')
     assert.equal(result.request.status, 'approved')
     assert.equal(result.tracking.dueDateVersion, tracking.dueDateVersion + 1)

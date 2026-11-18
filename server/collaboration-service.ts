@@ -133,7 +133,7 @@ export class CollaborationService {
     ensureVersion(task.version, taskVersion)
     const noteType = content.noteType ?? 'progress'
     if (!['progress', 'no_change'].includes(noteType)) throw new HttpError(400, '进展类型无效')
-    if (noteType === 'no_change' && (!meaningfulText(content.noChangeReason) || !meaningfulText(content.nextAction))) throw new HttpError(400, '暂无变化需要填写原因和下一步')
+    if (noteType === 'no_change' && !meaningfulText(content.nextAction)) throw new HttpError(400, '暂无变化需要填写下一步')
     const record = content.weeklyRecordId ? this.store.get<WeeklyRecord>('weeklyRecords', content.weeklyRecordId) : undefined
     if (content.weeklyRecordId && (!record || !isActiveWeeklyRecord(record) || record.taskId !== task.id || record.ownerId !== task.ownerId || !record.submitted)) throw new HttpError(409, '周安排已变化或尚未正式生效')
     if (record) ensureVersion(record.version, content.weeklyRecordVersion)
@@ -147,7 +147,7 @@ export class CollaborationService {
       const weeklyRecord = record && content.weekly ? work.updateWeeklyRecord(actor, record.id, { version: record.version, ...content.weekly, blockerImpact: content.blockerImpact, supportNeeded: content.supportNeeded, proxyReason: content.proxyReason }) : record ?? null
       return { task: updatedTask, weeklyRecord }
     })
-    if (!result.event) throw new HttpError(400, '请填写新的实质进展；暂无变化时请明确选择并填写原因和下一步')
+    if (!result.event) throw new HttpError(400, '请填写新的实质进展；暂无变化时请选择相应状态并填写下一步')
     return { ...result.value, tracking: this.store.get<TaskTracking>('taskTrackings', task.id) ?? null, progressEvent: result.event, followup: null, response: null }
   }
   recordProgress(actor: User, taskId: string, input: Input): ProgressResult {
@@ -253,7 +253,7 @@ export class CollaborationService {
       const requestedDueDate = date(input.requestedDueDate, '申请截止日期')
       if (requestedDueDate <= task.dueDate) throw new HttpError(400, '延期日期须晚于原截止日期')
       const row = this.store.insert<DeadlineChangeRequest>('deadlineChangeRequests', { id: collaborationId('deadline', mutationId), taskId, ownerId: task.ownerId, requestedBy: actor.id, generation: tracking.generation,
-        dueDateVersion: tracking.dueDateVersion, originalDueDate: task.dueDate, requestedDueDate, reason: requiredText(input.reason, '延期原因'), status: 'open', decidedBy: null, decidedAt: null, decisionNote: '' })
+        dueDateVersion: tracking.dueDateVersion, originalDueDate: task.dueDate, requestedDueDate, reason: requiredText(input.reason, '延期说明', false), status: 'open', decidedBy: null, decidedAt: null, decisionNote: '' })
       this.audit(actor, 'deadlineChangeRequest', row.id, 'create', null, row)
       taskBusinessEvent(this.store, task, actor, mutationId, 'deadline_requested', now, { title: task.title, deadlineRequestId: row.id, dueDate: task.dueDate, requestedDueDate, reason: row.reason }, { generation: tracking.generation, sourceVersion: row.version })
       return row
@@ -272,7 +272,7 @@ export class CollaborationService {
       const decision = input.decision as 'approved' | 'returned', note = requiredText(input.note, '审核意见', decision === 'returned')
       let updatedTask = task
       if (decision === 'approved') {
-        updatedTask = withCollaborationMutation(this.store, { actor, mutationId, now, input: {}, source: 'task' }, () => new WorkService(this.store).updateTask(actor, task.id, { version: task.version, dueDate: before.requestedDueDate, reason: before.reason })).value
+        updatedTask = withCollaborationMutation(this.store, { actor, mutationId, now, input: {}, source: 'task' }, () => new WorkService(this.store).updateTask(actor, task.id, { version: task.version, dueDate: before.requestedDueDate, reason: before.reason || '批准执行人提出的延期申请' })).value
       }
       const current = this.store.get<DeadlineChangeRequest>('deadlineChangeRequests', id)!
       const row = this.store.update<DeadlineChangeRequest>('deadlineChangeRequests', id, current.version, { status: decision, decidedBy: actor.id, decidedAt: now.toISOString(), decisionNote: note })

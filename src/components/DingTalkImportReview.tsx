@@ -28,11 +28,11 @@ function RowDecision({ row, disabled, onSave }: {
   const [action, setAction] = useState<DingTalkRowResolution['action'] | ''>(row.resolution?.action || '')
   const [planId, setPlanId] = useState(row.resolution?.planId || (row.plans.length === 1 ? row.plans[0].id : ''))
   const [reason, setReason] = useState(row.resolution?.reason || '')
-  const canSave = !!action && !!reason.trim() && (action !== 'new' || row.status === 'ambiguous') && (action !== 'link' || row.plans.some(plan => plan.id === planId))
+  const canSave = !!action && (action !== 'exclude' || !!reason.trim()) && (action !== 'new' || row.status === 'ambiguous') && (action !== 'link' || row.plans.some(plan => plan.id === planId))
   const actionHelp = action === 'link' ? '关联已有目标会保留原目标内容，不再新建同一目标。'
     : action === 'new' ? '确认为独立的新事项后，才会在最后导入时创建新草稿。'
       : action === 'exclude' ? '本次不导入这条来源，原有目标和钉钉原表不会删除。'
-        : '先选择关联已有、确为新增或本次排除，再填写判断依据。'
+        : '请选择此条来源的处理方式。'
 
   return <form className="dingtalk-row-decision" onSubmit={event => {
     event.preventDefault()
@@ -49,9 +49,9 @@ function RowDecision({ row, disabled, onSave }: {
       <option value="">请选择已有目标</option>
       {row.plans.map(plan => <option value={plan.id} key={plan.id}>{plan.month} · {plan.title} · {plan.ownerName || '负责人待核对'}</option>)}
     </select></Field>}
-    <Field label="处理依据"><textarea required disabled={disabled} rows={2} maxLength={1000} value={reason} onChange={event => setReason(event.target.value)} placeholder="说明关联、确认新增或排除的依据，便于再次获取时核对。" /></Field>
+    <Field label={action === 'exclude' ? '排除原因' : '核对说明（选填）'}><textarea required={action === 'exclude'} disabled={disabled} rows={2} maxLength={1000} value={reason} onChange={event => setReason(event.target.value)} placeholder="可记录本次核对依据；排除时请说明原因。" /></Field>
     <div className="dingtalk-decision-footer">
-      <p>{!canSave ? '请选择处理方式，并填写处理依据。' : '这一步只保存核对结果，不会导入或发布目标。'}</p>
+      <p>{!canSave ? (action === 'exclude' ? '请填写排除原因。' : action === 'link' ? '请选择要关联的目标。' : '请选择处理方式。') : '这一步只保存核对结果，不会导入或发布目标。'}</p>
       <button type="submit" className="button primary" disabled={disabled || !canSave}>{action === 'link' ? '保存关联选择' : action === 'new' ? '保存新增选择' : action === 'exclude' ? '保存排除选择' : '保存此项选择'}</button>
     </div>
   </form>
@@ -153,7 +153,7 @@ export default function DingTalkImportReview({ batch, disabled, editing, run, on
               <span>{plan.month} · {plan.title} · {plan.ownerName || '负责人待核对'}</span>
               {navigate && <button type="button" className="import-edit-button" onClick={() => navigate('monthly', { id: plan.id, month: plan.month })}>打开原目标<ArrowRight size={12} /></button>}
             </li>)}</ul>}
-            {row.resolution && <p className={confirmedReview ? 'import-valid' : 'form-hint'}>{confirmedReview ? '已记录' : '此前记录'}：{actionLabels[row.resolution.action]} · {row.resolution.reason}</p>}
+            {row.resolution && <p className={confirmedReview ? 'import-valid' : 'form-hint'}>{confirmedReview ? '已记录' : '此前记录'}：{actionLabels[row.resolution.action]}{row.resolution.reason && ` · ${row.resolution.reason}`}</p>}
             {needsReview && !row.requiresResolution && <p className="import-notice">当前勾选与来源处理结论不一致。请重新保存处理方式：新增事项须勾选，关联或排除事项不应勾选。</p>}
             {!immutable && (needsReview || !!row.resolution) && <details><summary>{row.resolution ? '调整处理选择' : '处理这条来源'}</summary><RowDecision row={row} disabled={locked} onSave={resolution => resolve(row.rowId, resolution)} /></details>}
           </details>

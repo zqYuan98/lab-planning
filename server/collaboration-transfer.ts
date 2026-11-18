@@ -27,7 +27,7 @@ export const collaborationSchemas = {
     resolvedAt: time.nullable(), resolvedBy: id.nullable(), reason: line, impact: line, supportNeeded: line, reviewAt: time.nullable(), closureReason: line, managementClosedAt: time.nullable().optional(), managementNote: line.optional(), coordinatorId: id.nullable().optional(), responseDueAt: time.nullable().optional(), coordinationState: z.enum(['unassigned', 'awaiting_response', 'in_progress', 'responded', 'management_closed']).optional(), responseNote: line.optional(), openedAtKnown: z.boolean().optional() }).strict(),
   blockerActions: z.object({ ...entity, ...taskOwner, episodeId: id, actorId: id, action: z.enum(['record', 'defer', 'close', 'assign', 'respond', 'resolve']), note: line.min(1), reviewAt: time.nullable(), occurredAt: time, coordinatorId: id.nullable().optional(), responseDueAt: time.nullable().optional() }).strict(),
   deadlineChangeRequests: z.object({ ...entity, ...taskOwner, requestedBy: id, generation: integer, dueDateVersion: integer, originalDueDate: z.union([day, z.literal('')]), requestedDueDate: day,
-    reason: line.min(1), status: z.enum(['open', 'approved', 'returned', 'cancelled', 'superseded']), decidedBy: id.nullable(), decidedAt: time.nullable(), decisionNote: line }).strict(),
+    reason: line, status: z.enum(['open', 'approved', 'returned', 'cancelled', 'superseded']), decidedBy: id.nullable(), decidedAt: time.nullable(), decisionNote: line }).strict(),
 }
 export const collaborationCollectionsShape = Object.fromEntries(collaborationCollectionNames.map(name => [name, z.array(collaborationSchemas[name]).max(50000)])) as { [K in keyof typeof collaborationSchemas]: z.ZodArray<typeof collaborationSchemas[K]> }
 export const emptyCollaborationCollectionsShape = Object.fromEntries(collaborationCollectionNames.map(name => [name, z.array(z.never()).max(0).optional()]))
@@ -72,7 +72,7 @@ export function collaborationTransferIssues(rows: BusinessCollections, available
   }
   for (const event of rows.progressEvents) {
     if (event.meaningfulOwnerProgress && (event.actorId !== event.ownerId || event.noteType === 'no_change')) issue(`progressEvents/${event.id}：本人有效进展标记不一致`)
-    if (event.noteType === 'no_change' && (!event.noChangeReason.trim() || !event.nextAction.trim())) issue(`progressEvents/${event.id}：暂无变化缺少原因或下一步`)
+    if (event.noteType === 'no_change' && !event.nextAction.trim()) issue(`progressEvents/${event.id}：暂无变化缺少下一步`)
     if (['progress', 'followup'].includes(event.source) && event.actorId !== event.ownerId && !event.proxyReason.trim()) issue(`progressEvents/${event.id}：代录缺少原因`)
   }
   for (const response of rows.followupResponses) {

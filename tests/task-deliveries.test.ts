@@ -81,7 +81,7 @@ test('historical correction requires current effective decision and does not cha
 test('accepted replacement is explicit and designated reviewer reassignment preserves submission snapshot', t => {
   const f = fixture(); t.after(() => f.store.close())
   const one = f.service.submit(f.member, f.task.id, f.input())
-  const accepted = f.service.decide(f.manager, one.delivery.id, { requestId: 'accept-version-one', seriesVersion: one.series.version, action: 'review', conclusion: 'accepted', note: '符合全部验收条件' })
+  const accepted = f.service.decide(f.manager, one.delivery.id, { requestId: 'accept-version-one', seriesVersion: one.series.version, action: 'review', conclusion: 'accepted' })
   const replacement = { ...f.input('replace-version-one'), seriesId: one.series.id, seriesVersion: accepted.series.version, previousRevision: 1, previousSubmissionId: one.delivery.id }
   assert.throws(() => f.service.submit(f.member, f.task.id, replacement), { status: 400 })
   const two = f.service.submit(f.member, f.task.id, { ...replacement, replaceAccepted: true })

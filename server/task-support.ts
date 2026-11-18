@@ -131,7 +131,7 @@ export class TaskSupportService {
     return command(this.store, actor, `decision.${action}:${id}`, input, this.clock(), mutationId => {
       const before = this.request(id), task = ownedTask(this.store, actor, before.taskId, true); cas(before.version, input.version)
       if (action === 'reopen' ? before.status === 'open' : before.status !== 'open') throw new HttpError(409, action === 'reopen' ? '决策事项已经开启' : '决策事项已经结束', 'VERSION_CONFLICT')
-      const now = this.clock(), reason = requiredText(input.reason, action === 'decide' ? '决策说明' : '操作原因', action !== 'decide')
+      const now = this.clock(), reason = requiredText(input.reason, action === 'decide' ? '决策说明' : '操作原因', action === 'cancel' || action === 'reopen')
       let patch: Partial<DecisionRequest>
       if (action === 'decide') {
         if (actor.id !== before.decisionOwnerId || !decisionOwnerAvailable(this.store, before)) throw new HttpError(403, '只有当前有效指定决策责任人可以决定')

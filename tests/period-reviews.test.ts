@@ -90,7 +90,7 @@ test('preview is bound to complete source content and rejects changes, additions
 
 test('manual evidence keeps claimed and recorded times and never becomes a formal submission', t => {
   const f = fixture(); t.after(() => f.store.close())
-  const evidence = f.service.addEvidence(f.manager, { operationEpoch: getOperationEpoch(f.store), requestId: 'manual-evidence-001', taskId: f.task.id, claimedAt: at(9), statement: '人工声称已邮件发出', evidence: ['归档邮件编号'], reason: '历史系统漏记' })
+  const evidence = f.service.addEvidence(f.manager, { operationEpoch: getOperationEpoch(f.store), requestId: 'manual-evidence-001', taskId: f.task.id, claimedAt: at(9), statement: '人工声称已邮件发出', evidence: ['归档邮件编号'] })
   assert.equal(evidence.claimedAt, at(9)); assert.equal(evidence.recordedAt, at(30, 15))
   assert.equal(f.preview().entries[0].evidence.length, 0)
   const content = buildPeriodReview(f.store, { period: '2026-09', cutoffAt: at(16), generatedAt: at(30, 15), laterEvidenceThrough: at(30, 15) })

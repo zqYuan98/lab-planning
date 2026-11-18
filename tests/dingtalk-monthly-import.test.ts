@@ -163,7 +163,7 @@ test('old screenshot or manual same-title plan requires an explicit difference d
 test('linking a source row to an existing plan creates only a durable source association', async t => {
   const f = fixture(t), plan = existingPlan(f)
   let batch = await fetchBatch(f)
-  batch = f.service.resolve(f.actor, batch.id, { version: batch.version, rowId: batch.rows[0].id, action: 'link', planId: plan.id, reason: '确认是此前截图导入的同一事项' }).batch
+  batch = f.service.resolve(f.actor, batch.id, { version: batch.version, rowId: batch.rows[0].id, action: 'link', planId: plan.id }).batch
   batch = reviewBatch(f, batch)
   const saved = await f.service.commit(f.actor, batch.id, { version: batch.version })
   assert.equal(saved.committedCount, 0)
@@ -380,6 +380,7 @@ test('a link decision becomes stale when its target is deleted and requires expl
 test('removing every source item by explicit exclusion records the decision without creating work', async t => {
   const f = fixture(t)
   let batch = await fetchBatch(f)
+  assert.throws(() => f.service.resolve(f.actor, batch.id, { version: batch.version, rowId: batch.rows[0].id, action: 'exclude' }), /排除原因/)
   batch = f.service.resolve(f.actor, batch.id, { version: batch.version, rowId: batch.rows[0].id, action: 'exclude', reason: '经核对本期不纳入系统目标' }).batch
   batch = reviewBatch(f, batch)
   const saved = await f.service.commit(f.actor, batch.id, { version: batch.version })

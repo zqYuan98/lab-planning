@@ -123,7 +123,7 @@ export class TaskDeliveryService {
         if (!['accepted', 'returned'].includes(String(input.conclusion))) throw new HttpError(400, '请选择通过或退回')
         conclusion = input.conclusion as 'accepted' | 'returned'
       }
-      const note = requiredText(input.note, action === 'correct' ? '更正原因与结论' : conclusion === 'accepted' ? '验收结论' : '处理原因'), now = this.clock()
+      const note = requiredText(input.note, action === 'correct' ? '更正原因与结论' : conclusion === 'accepted' ? '验收结论' : '处理原因', action !== 'review' || conclusion !== 'accepted'), now = this.clock()
       const decision = this.store.insert<DeliveryDecision>('deliveryDecisions', { id: collaborationId('delivery-decision', mutationId), seriesId: before.id, deliveryId,
         action: action as DeliveryDecision['action'], conclusion, note, decidedBy: actor.id, decidedAt: now.toISOString(), supersedesDecisionId: action === 'correct' ? previous!.id : null })
       // Historical corrections still participate in the series lock, without changing its current head or state.

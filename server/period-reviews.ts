@@ -92,7 +92,7 @@ export class PeriodReviewService {
       const ownerId = input.ownerId ? requiredText(input.ownerId, '声称责任人') : null
       if (ownerId && !this.store.get('users', ownerId)) throw new HttpError(400, '声称责任人不存在')
       return this.store.insert<HistoricalEvidence>('historicalEvidence', { taskId, ownerId, claimedAt, recordedAt, actorId: actor.id,
-        statement: requiredText(input.statement, '佐证说明'), evidence: input.evidence.map(item => requiredText(item, '证据')), reason: requiredText(input.reason, '补证原因') })
+        statement: requiredText(input.statement, '佐证说明'), evidence: input.evidence.map(item => requiredText(item, '证据')), reason: requiredText(input.reason, '补证说明', !!ownerId && ownerId !== actor.id) })
     }) as HistoricalEvidence
   }
   read(actor: User, id: string): PeriodReviewSnapshot {

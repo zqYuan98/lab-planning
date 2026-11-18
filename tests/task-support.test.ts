@@ -120,7 +120,7 @@ test('decision responsibility invalidation requires explicit reassignment and ob
   const request = f.service.createDecision(f.manager, f.decision())
   f.store.update<User>('users', f.secondManager.id, f.secondManager.version, { active: false })
   assert.equal(f.service.decisionView(f.manager, request.id).ownerAvailable, false)
-  const reassigned = f.service.reassignDecision(f.manager, request.id, { requestId: 'decision-reassign-001', version: request.version, decisionOwnerId: f.manager.id, reason: '原处理人已停用' })
+  const reassigned = f.service.reassignDecision(f.manager, request.id, { requestId: 'decision-reassign-001', version: request.version, decisionOwnerId: f.manager.id })
   assert.equal(reassigned.decisionOwnerId, f.manager.id)
   f.store.update<User>('users', f.member.id, f.member.version, { role: 'observer' })
   assert.throws(() => f.service.enrollBlocker(f.member, f.task.id, { requestId: 'observer-enroll-001', taskVersion: f.task.version }), { status: 403 })

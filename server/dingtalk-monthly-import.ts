@@ -135,7 +135,8 @@ export class DingTalkMonthlyImportService {
       const action = String(input.action)
       if (!['new', 'link', 'exclude'].includes(action)) throw new HttpError(400, '来源处理方式无效')
       const reason = typeof input.reason === 'string' ? input.reason.trim() : ''
-      if (!reason || reason.length > 1000) throw new HttpError(400, '请填写不超过1000字的核对说明')
+      if (action === 'exclude' && !reason) throw new HttpError(400, '请填写排除原因')
+      if (reason.length > 1000) throw new HttpError(400, '核对说明最多1000字')
       if (action === 'new' && ['changed', 'imported'].includes(item.status)) throw new HttpError(409, '已导入来源的变更请在原目标中处理，不能重复新增')
       const planId = action === 'link' ? String(input.planId ?? '') : undefined
       if (action === 'link' && !item.plans.some(plan => plan.id === planId)) throw new HttpError(400, '请选择此次差异列出的同月目标')
@@ -145,7 +146,7 @@ export class DingTalkMonthlyImportService {
       const resolutionId = digest([id, row.id]), old = this.store.get<Resolution>('dingtalkImportResolutions', resolutionId)
       if (old) this.store.update<Resolution>('dingtalkImportResolutions', resolutionId, old.version, fields)
       else this.store.insert<Resolution>('dingtalkImportResolutions', { id: resolutionId, ...fields })
-      const updated = this.imports.edit(context.actor, id, { version: batch.version, rows: batch.rows.map(value => value.id !== row.id ? value : { ...value, selected: action === 'new', exclusionReason: action === 'new' ? '' : reason, exclusionKind: 'task' }) })
+      const updated = this.imports.edit(context.actor, id, { version: batch.version, rows: batch.rows.map(value => value.id !== row.id ? value : { ...value, selected: action === 'new', exclusionReason: action === 'new' ? '' : reason || '已关联已有月度目标', exclusionKind: 'task' }) })
       return { batch: updated, review: this.review(actor, id) }
     })
   }

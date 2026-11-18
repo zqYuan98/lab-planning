@@ -16,7 +16,8 @@ const entity = { id, version: integer, createdAt: time, updatedAt: time }
 export const deliverySchemas = {
   deliverySeries: z.object({ ...entity, taskId: id, title: z.string().trim().min(1).max(300), reviewerId: id.nullable(), headSubmissionId: id, status: z.enum(['pending_review', 'accepted', 'returned', 'withdrawn']) }).strict(),
   taskDeliveries: z.object({ ...entity, seriesId: id, taskId: id, revision: integer, supersedesId: id.nullable(), taskVersion: integer, ownerId: id, submittedBy: id, proxyReason: line, submittedAt: time, actualOutcome: requiredLine, evidenceRefs: z.array(evidence).max(30), acceptanceCriteriaSnapshot: requiredLine, reviewerIdSnapshot: id.nullable(), dueDateSnapshot: day, deadlineBasisRefs: z.array(id).max(1000) }).strict(),
-  deliveryDecisions: z.object({ ...entity, seriesId: id, deliveryId: id, conclusion: z.enum(['accepted', 'returned', 'withdrawn']), action: z.enum(['review', 'withdraw', 'correct']), note: requiredLine, decidedBy: id, decidedAt: time, supersedesDecisionId: id.nullable() }).strict(),
+  deliveryDecisions: z.object({ ...entity, seriesId: id, deliveryId: id, conclusion: z.enum(['accepted', 'returned', 'withdrawn']), action: z.enum(['review', 'withdraw', 'correct']), note: line, decidedBy: id, decidedAt: time, supersedesDecisionId: id.nullable() }).strict()
+    .refine(row => !!row.note.trim() || row.note === '' && row.action === 'review' && row.conclusion === 'accepted', '退回、撤回或更正必须说明原因'),
   decisionRequests: z.object({ ...entity, taskId: id, blockerEpisodeId: id.nullable(), question: requiredLine, options: z.array(z.string().max(3000).refine(value => !!value.trim(), '决策选项不可为空白')).max(20), decisionOwnerId: id, responseDueAt: time, status: z.enum(['open', 'decided', 'cancelled']), result: line, decidedAt: time.nullable(), decidedBy: id.nullable(), generation: integer, requestedBy: id, reason: line }).strict(),
 }
 export const deliveryCollectionsShape = Object.fromEntries(deliveryCollectionNames.map(name => [name, z.array(deliverySchemas[name]).max(50000)])) as { [K in keyof typeof deliverySchemas]: z.ZodArray<typeof deliverySchemas[K]> }
@@ -69,7 +70,7 @@ export function deliveryTransferIssues(rows: BusinessCollections, available: Rec
   }
   for (const decision of decisions.values()) {
     const delivery = deliveries.get(decision.deliveryId), prior = decision.supersedesDecisionId ? decisions.get(decision.supersedesDecisionId) : null
-    if (delivery && decision.seriesId !== delivery.seriesId || !decision.note.trim()) issue(`deliveryDecisions/${decision.id}：成果引用或决定说明无效`)
+    if (delivery && decision.seriesId !== delivery.seriesId || (decision.action !== 'review' || decision.conclusion !== 'accepted') && !decision.note.trim()) issue(`deliveryDecisions/${decision.id}：成果引用或决定说明无效`)
     if (decision.action === 'withdraw' ? decision.conclusion !== 'withdrawn' : decision.conclusion === 'withdrawn') issue(`deliveryDecisions/${decision.id}：决定动作与结论不一致`)
     if (decision.action === 'correct' ? !prior || prior.deliveryId !== decision.deliveryId : !!prior) issue(`deliveryDecisions/${decision.id}：更正链不一致`)
     if (delivery && decision.action !== 'withdraw' && decision.decidedBy === delivery.ownerId) issue(`deliveryDecisions/${decision.id}：不能验收本人交付`)
