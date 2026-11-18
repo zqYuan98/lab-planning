@@ -66,4 +66,6 @@ npm run build        # tsc + vite build
 
 ## 复盘
 
+未完成的整改项在 `docs/rectification-checklist.md`，做完一项更新一项，新问题加在末尾。
+
 同一类问题出现第二次时，用 `.claude/skills/retro` 做复盘：找出能自动拦截的检查，落成脚本或测试；拦不住的写进本文件。只写结论，不写经过。
