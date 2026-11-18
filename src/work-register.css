@@ -44,12 +44,6 @@
   min-width: 0;
 }
 .workspace-shell .wr-page .wr-signal-filters select { width: auto; min-height: 38px; padding: 6px 34px 6px 12px; border: 1px solid var(--palette-divider); border-radius: var(--radius-control); color: var(--palette-body); background-color: var(--palette-white); font-size: var(--font-small); font-weight: var(--weight-medium); }
-.wr-signal-filters > .task-legend {
-  margin-left: auto;
-}
-.wr-signal-filters:has(details[open]) > .task-legend {
-  flex-basis: 100%;
-}
 .workspace-shell .wr-page .wr-filter-clear { display: inline-flex; align-items: center; gap: 5px; min-height: 36px; padding: 0 10px; border: 0; border-radius: var(--radius-control); color: var(--palette-body); background: var(--palette-fog); font-size: var(--font-caption); }
 .workspace-shell .wr-page :is(.wr-summary button, .wr-view-tabs button, .wr-filter-clear, .wr-edit-button):focus-visible { outline: 2px solid var(--palette-brand); outline-offset: 2px; }
 .workspace-shell .wr-page .wr-list-caption { display: flex; justify-content: space-between; gap: 15px; padding: 16px 20px 12px; border: 0; color: var(--palette-slate); background: var(--palette-white); font-size: var(--font-caption); }
@@ -179,7 +173,6 @@
   .workspace-shell .wr-page .wr-signal-filters > svg { display: none; }
   .workspace-shell .wr-page .wr-signal-filters select { min-height: 44px; padding-left: 10px; font-size: var(--font-caption); }
   .workspace-shell .wr-page .wr-filter-clear { min-height: 44px; }
-  .wr-signal-filters > .task-legend { margin-left: 0; }
   .workspace-shell .wr-page .wr-list-caption { flex-direction: column; gap: 5px; padding: 13px 14px 10px; font-size: var(--font-caption); }
   .wr-list-caption > span:last-child { font-size: var(--font-caption); }
   .workspace-shell .wr-page .wr-list { padding: 0 9px 9px; }

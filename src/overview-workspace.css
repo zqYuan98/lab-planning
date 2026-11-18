@@ -2271,28 +2271,6 @@ button.ow-count:hover,
   line-height: 1.55;
 }
 
-.workspace-shell .workspace-main > .ow-page > .task-legend {
-  display: flex;
-  justify-content: flex-end;
-  min-height: 30px;
-  margin: -10px 2px 10px;
-  color: var(--palette-slate);
-}
-
-.workspace-shell .workspace-main > .ow-page > .task-legend summary {
-  color: var(--palette-body);
-  font-size: var(--font-caption);
-  font-weight: var(--weight-strong);
-}
-
-.workspace-shell .workspace-main > .ow-page > .task-legend .context-help-content {
-  border-color: var(--palette-divider);
-  border-radius: var(--radius-panel);
-  background: var(--palette-white);
-  box-shadow: 0 9px 24px rgba(var(--palette-navy-divider-rgb), 0.08);
-  color: var(--palette-slate);
-}
-
 .workspace-shell .workspace-main > .ow-page .ow-workspace {
   border: 1px solid var(--palette-divider);
   border-radius: var(--radius-panel);
