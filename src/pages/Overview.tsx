@@ -5,9 +5,6 @@ import PersonalOverview from "./PersonalOverview";
 import DepartmentOverview from "./DepartmentOverview";
 
 export default function Overview(props: PageProps & { navigate: Navigate }) {
-  return <><MyActions {...props}/>{props.data.user.role === "manager" ? (
-    <DepartmentOverview {...props} />
-  ) : (
-    <PersonalOverview {...props} />
-  )}</>;
+  const Page = props.data.user.role === "manager" ? DepartmentOverview : PersonalOverview;
+  return <Page {...props}><MyActions {...props} /></Page>;
 }

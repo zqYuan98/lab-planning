@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { openTask } from '../navigation'
 import { Activity, AlertCircle, CalendarDays, ChevronRight, Target } from 'lucide-react'
 import { ContextHelp, PriorityBadge, TaskLegend, WorkTypeBadge } from '../components/TaskSignals'
@@ -37,11 +38,12 @@ function changeLabel(value: number | null, period: string) {
 export default function Overview({
   data,
   navigate,
-}: PageProps & { navigate: Navigate }) {
+  children,
+}: PageProps & { navigate: Navigate; children?: ReactNode }) {
   const manager = data.user.role === 'manager'
   const query = useWorkspaceQuery<PersonalOverviewResponse>('/workspace/overview/personal', `${data.user.id}:${data.operationEpoch}:${data.accessScopeVersion}`)
   const view = query.value!
-  if (!query.value) return <section className="overview-page"><h1>我的工作台</h1><p role={query.error ? 'alert' : 'status'}>{query.error || '正在读取工作概览…'}</p>{query.error && <button onClick={() => void query.reload().catch(() => {})}>重试</button>}</section>
+  if (!query.value) return <section className="overview-page"><h1>我的工作台</h1>{children}<p role={query.error ? 'alert' : 'status'}>{query.error || '正在读取工作概览…'}</p>{query.error && <button onClick={() => void query.reload().catch(() => {})}>重试</button>}</section>
   const currentWeek = view.weeks.find((week) => week.isCurrent)?.index ?? 1
   const planAction = () =>
     navigate('monthly', {
@@ -125,7 +127,6 @@ export default function Overview({
 
   return (
     <div className="overview-page">
-      {query.error && <p role="alert">{query.error}<button onClick={() => void query.reload().catch(() => {})}>重试</button></p>}
       <header className="ov-page-heading">
         <div>
           <h1>{manager ? '部门概览' : '我的工作台'}</h1>
@@ -144,6 +145,8 @@ export default function Overview({
           </span>
         </div>
       </header>
+      {children}
+      {query.error && <p role="alert">{query.error}<button onClick={() => void query.reload().catch(() => {})}>重试</button></p>}
 
       <section className="ov-metrics" aria-label="当前可见范围的工作指标">
         <button

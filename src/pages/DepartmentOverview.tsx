@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { openTask } from '../navigation';
 import { useState } from "react";
 import type { DepartmentOverviewResponse, OverviewDrill, OverviewRow } from "../../shared/overview-workspace";
@@ -70,8 +71,9 @@ const viewIcons = {
 export default function DepartmentOverview({
   data,
   navigate,
+  children,
   notify,
-}: PageProps & { navigate: Navigate }) {
+}: PageProps & { navigate: Navigate; children?: ReactNode }) {
   const [config, setConfig] = useState(defaultPreferences);
   const [settings, setSettings] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -295,8 +297,6 @@ export default function DepartmentOverview({
   ];
   return (
     <div className="ow-page" data-density={config.density || "comfortable"}>
-      {query.loading && <p role="status">正在读取概览…</p>}
-      {query.error && <p role="alert">{query.error}<button onClick={() => { void reloadFirst().catch(() => {}) }}>重新加载</button></p>}
       <header className="ow-heading">
         <div className="ow-heading-title">
           <span className="ow-heading-icon" aria-hidden="true">
@@ -400,6 +400,9 @@ export default function DepartmentOverview({
           </div>
         </div>
       </header>
+      {children}
+      {query.loading && <p role="status">正在读取概览…</p>}
+      {query.error && <p role="alert">{query.error}<button onClick={() => { void reloadFirst().catch(() => {}) }}>重新加载</button></p>}
       <section className="ow-scope-bar" aria-label="概览统计范围">
         {config.period !== 'all' && <label className="checkbox-label">
           <input type="checkbox" checked={!!config.includeCarryover} onChange={event => change({ includeCarryover: event.target.checked })} />
