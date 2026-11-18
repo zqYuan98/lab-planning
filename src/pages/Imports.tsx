@@ -1,13 +1,14 @@
-import { LIMITS } from '../../shared/entity-rules'
 import { useEffect, useRef, useState } from 'react'
 import WorkflowGuide from '../components/WorkflowGuide'
-import AnnualGoalPicker from '../components/AnnualGoalPicker'
+import ImportRowFields, { monthlyResultLabels, weeklyResultLabels } from '../components/ImportRowFields'
+import ImportUploadStep, { type UploadResult } from '../components/ImportUploadStep'
+import ImportParseStep, { type ParseOptions } from '../components/ImportParseStep'
 import ImportDeleteDialog, { type ImportDeleteTarget } from '../components/ImportDeleteDialog'
 import ImportSourceReview from '../components/ImportSourceReview'
 import DingTalkMonthlyImport from '../components/DingTalkMonthlyImport'
 import DingTalkImportReview from '../components/DingTalkImportReview'
 import ImportWorkflowProgress from '../components/ImportWorkflowProgress'
-import { canRequestImportReview, currentImportSourceRelations, importAnalysisRequest, importCommitBlockers, importDisplayCounts, importReconciliationText, importReviewCounts, importRowDisposition, importRowOutcomeLabel, importWorkFields, newImportCandidate, restoredImportOptions, selectImportTask, type ImportReviewSection, type ImportSourceReviewState, type ImportWorkFields } from '../import-review'
+import { canRequestImportReview, currentImportSourceRelations, importAnalysisRequest, importCommitBlockers, importDisplayCounts, importReconciliationText, importReviewCounts, importRowDisposition, importRowOutcomeLabel, importWorkFields, newImportCandidate, restoredImportOptions, type ImportReviewSection, type ImportSourceReviewState } from '../import-review'
 import {
   Archive,
   ArrowRight,
@@ -15,12 +16,10 @@ import {
   ChevronDown,
   Download,
   FileInput,
-  FileText,
   KeyRound,
   LoaderCircle,
   RefreshCw,
   Settings2,
-  Sparkles,
   Trash2,
   Upload,
 } from 'lucide-react'
@@ -82,19 +81,6 @@ const modes = [
     description: '保留原貌，供检索与导出',
   },
 ] as const
-const monthlyResultLabels = {
-  pending: '尚无成果记录',
-  submitted: '成果已记录，验收待确认',
-  accepted: '已验收（管理员确认）',
-  not_completed: '未完成',
-}
-const weeklyResultLabels = {
-  planned: '未开始 / 原状态未明确',
-  doing: '进行中',
-  blocked: '受阻',
-  done: '已完成',
-  not_done: '未完成',
-}
 function savedBatchLabel(mode: ImportBatch['mode']) {
   return mode === 'existing'
     ? '已有计划已导入生效'
@@ -199,6 +185,7 @@ export default function Imports({
 }: PageProps & { navigate?: Navigate }) {
   const manager = shell.user.role === 'manager'
   const [batches, setBatches] = useState<ImportBatchSummary[]>([])
+  const [selectingRows, setSelectingRows] = useState(false)
   const [pendingOnly, setPendingOnly] = useState(false)
   const [batch, setBatch] = useState<ImportBatch | null>(null)
   const [dingtalkReviewState, setDingtalkReviewState] = useState<ImportSourceReviewState | null>(null)
@@ -206,18 +193,10 @@ export default function Imports({
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [pollError, setPollError] = useState('')
-  const [pasted, setPasted] = useState('')
-  const [showPaste, setShowPaste] = useState(false)
   const [draggingFiles, setDraggingFiles] = useState(false)
-  const [uploadResults, setUploadResults] = useState<
-    { name: string; status: 'waiting' | 'uploading' | 'saved' | 'failed'; error?: string }[]
-  >([])
-  const [sheetNames, setSheetNames] = useState<string[]>([])
-  const [parseKind, setParseKind] = useState<ImportKind>('monthly')
-  const [period, setPeriod] = useState('')
-  const [instruction, setInstruction] = useState('')
+  const [uploadResults, setUploadResults] = useState<UploadResult[]>([])
+  const [parseOptions, setParseOptions] = useState<ParseOptions>({ sheetNames: [], kind: 'monthly', instruction: '', period: '' })
   const [editing, setEditing] = useState<ImportRow | null>(null)
-  const detachedWorkSource = useRef<{ rowId: string; fields: ImportWorkFields } | null>(null)
   const [exclusion, setExclusion] = useState<{ ids: string[]; reason: string; kind: 'task' | 'duplicate' | 'not_task' } | null>(null)
   const [editingHistory, setEditingHistory] = useState<HistoricalRecord | null>(
     null,
@@ -258,8 +237,6 @@ export default function Imports({
     restored: number
     skipped: number
   } | null>(null)
-  const fileInput = useRef<HTMLInputElement>(null)
-  const pasteInput = useRef<HTMLTextAreaElement>(null)
   const dragDepth = useRef(0)
   const lock = useRef(false)
   const activeBatchId = useRef<string | null>(null)
@@ -309,7 +286,6 @@ export default function Imports({
     editing?.kind === 'weekly' && editingTaskLocked
       ? data.tasks.find((task) => task.id === editing.taskId)
       : undefined
-  const editingTemporary = editingTask?.isTemporary ?? !!editing?.isTemporary
   const parsing = batch?.analysis?.status === 'running'
   const batchBusy = !!busy || parsing
   const commitBlockers = batch ? importCommitBlockers(batch, manager, dingtalkReviewReady) : []
@@ -329,6 +305,7 @@ export default function Imports({
   })
 
   function acceptBatch(next: ImportBatch, resetSheets = false) {
+    if (activeBatchId.current !== next.id) setSelectingRows(false)
     activeBatchId.current = next.id
     setBatch(next)
     try {
@@ -342,10 +319,7 @@ export default function Imports({
     ])
     if (resetSheets) {
       const options = restoredImportOptions(next)
-      setSheetNames(options.sheetNames)
-      setInstruction(options.instruction)
-      setParseKind(options.kind)
-      setPeriod(options.period)
+      setParseOptions(options)
       setBulk(emptyBulk)
     }
   }
@@ -501,13 +475,12 @@ export default function Imports({
 
   async function parseSource(resumeFailed = false) {
     if (!batch) return
-    const options = resumeFailed ? restoredImportOptions(batch) : { sheetNames, instruction, period, kind: parseKind }
+    const options = resumeFailed ? restoredImportOptions(batch) : parseOptions
     await run(resumeFailed ? '正在续跑上次解析' : '正在启动智能识别', async () => {
       const next = await api<ImportBatch>(`/imports/${batch.id}/analyze`, json(importAnalysisRequest(batch, options, resumeFailed)))
       acceptBatch(next)
       if (resumeFailed) {
-        setSheetNames(options.sheetNames); setInstruction(options.instruction)
-        setPeriod(options.period); setParseKind(options.kind)
+        setParseOptions(options)
       }
       notify(next.analysis?.status === 'running'
         ? '后台识别已开始，可以离开页面后继续查看。'
@@ -593,7 +566,6 @@ export default function Imports({
 
   function closeEditor() {
     setEditing(null)
-    detachedWorkSource.current = null
     setEditingHistory(null)
     setCorrectionReason('')
   }
@@ -624,7 +596,7 @@ export default function Imports({
         activeBatchId.current = null
         setBatch(null)
         setPollError('')
-        setSheetNames([])
+        setParseOptions(previous => ({ ...previous, sheetNames: [] }))
         setBulk(emptyBulk)
         closeEditor()
       }
@@ -724,122 +696,12 @@ export default function Imports({
           workspaceRef.current?.focus({ preventScroll: true })
         })
       }} />}
-      <section
-        className={`import-upload panel${draggingFiles ? ' is-dragging' : ''}`}
-        tabIndex={0}
-        aria-label="文件拖放与粘贴导入区域"
-        aria-describedby="import-upload-help"
-        aria-busy={!!busy}
-        onPaste={(event) => {
-          if (!hasTransferredFiles(event.clipboardData)) return
-          event.preventDefault()
-          const { files, issues } = filesFromTransfer(event.clipboardData)
-          void upload(files, issues)
-        }}
-      >
-        <div className="import-upload-copy">
-          <span className="import-upload-icon">
-            <FileInput size={28} strokeWidth={1.6} />
-          </span>
-          <div>
-            <h2>从现有资料开始</h2>
-            <p id="import-upload-help">将文件或图片拖到此页，或点击此区域后按 Ctrl / ⌘ + V 粘贴截图。</p>
-            <small>
-              支持 XLSX、CSV、TSV、TXT、PNG、JPG、WebP。钉钉表格可先导出为
-              Excel。支持多文件，每个文件单独建立批次，单个文件最大 10 MB。
-            </small>
-          </div>
-        </div>
-        <div className="import-upload-actions">
-          <input
-            ref={fileInput}
-            className="import-file-input"
-            type="file"
-            multiple
-            accept=".xlsx,.csv,.tsv,.txt,.png,.jpg,.jpeg,.webp"
-            aria-label="选择导入文件"
-            disabled={!!busy}
-            onChange={(event) => {
-              const files = Array.from(event.target.files || [])
-              event.target.value = ''
-              if (files.length) void upload(files)
-            }}
-          />
-          <button
-            className="button primary"
-            disabled={!!busy}
-            onClick={() => fileInput.current?.click()}
-          >
-            <Upload size={16} />
-            上传文件
-          </button>
-          <button
-            className="button secondary"
-            disabled={!!busy}
-            onClick={() => {
-              setShowPaste((value) => !value)
-              if (!showPaste) window.setTimeout(() => pasteInput.current?.focus(), 0)
-            }}
-          >
-            <FileText size={16} />
-            粘贴内容
-          </button>
-        </div>
-        {draggingFiles && (
-          <div className="import-drop-status" role="status">
-            <Upload size={18} />
-            {busy ? '当前操作进行中，请稍后重新拖入文件' : '松开即可保存文件或图片，支持一次拖入多个文件'}
-          </div>
-        )}
-        {uploadResults.length > 0 && (
-          <ul className="import-upload-results" aria-label="文件处理结果" aria-live="polite">
-            {uploadResults.map((result, index) => (
-              <li key={index} className={result.status === 'failed' ? 'has-error' : ''}>
-                <span>{result.name}</span>
-                <small>
-                  {result.status === 'waiting' ? '等待保存' : result.status === 'uploading' ? '正在保存…' : result.status === 'saved' ? '已保存为导入批次' : result.error}
-                </small>
-              </li>
-            ))}
-          </ul>
-        )}
-        {showPaste && (
-          <div className="import-paste">
-            <Field label="粘贴表格或工作记录">
-              <textarea
-                ref={pasteInput}
-                rows={6}
-                disabled={!!busy}
-                value={pasted}
-                onChange={(event) => setPasted(event.target.value)}
-                placeholder="直接粘贴 Excel 单元格、钉钉工作记录或旧计划文字；粘贴截图或文件会直接保存为导入批次…"
-              />
-            </Field>
-            <button
-              className="button primary"
-              disabled={!!busy || !pasted.trim()}
-              onClick={() =>
-                void run('正在保存文字资料', async () => {
-                  const next = await api<ImportBatch>(
-                    '/imports',
-                    json({
-                      fileName: '粘贴内容.txt',
-                      text: pasted,
-                      mode: 'existing',
-                    }),
-                  )
-                  acceptBatch(next, true)
-                  setPasted('')
-                  setShowPaste(false)
-                  notify('文字资料已保存')
-                })
-              }
-            >
-              保存并准备解析
-            </button>
-          </div>
-        )}
-      </section>
+      <ImportUploadStep busy={!!busy} draggingFiles={draggingFiles} uploadResults={uploadResults}
+        upload={upload} run={run} saveText={async text => {
+          const next = await api<ImportBatch>('/imports', json({ fileName: '粘贴内容.txt', text, mode: 'existing' }))
+          acceptBatch(next, true)
+          notify('文字资料已保存')
+        }} />
       <div className="import-workspace">
         <aside className="import-batches panel" aria-label="已保存导入批次">
           <div className="import-section-title">
@@ -1039,121 +901,8 @@ export default function Imports({
                 </div>
               )}
               {!immutable && !dingtalkSource && (
-                <details
-                  className="import-parser"
-                  open={batch.status === 'uploaded'}
-                >
-                  <summary>
-                    <span>
-                      <Sparkles size={16} />
-                      {batch.rows.length ? '重新解析资料' : '选择内容并解析'}
-                    </span>
-                    <ChevronDown size={16} />
-                  </summary>
-                  <div className="import-parser-body">
-                    <fieldset
-                      className="import-parser-fields"
-                      disabled={batchBusy}
-                    >
-                      {!!batch.sourceSheets.length && (
-                        <fieldset className="import-sheet-picker">
-                          <legend>选择需要解析的工作表</legend>
-                          {batch.sourceSheets.map((sheet) => (
-                            <label key={sheet.name}>
-                              <input
-                                type="checkbox"
-                                checked={sheetNames.includes(sheet.name)}
-                                disabled={!!busy}
-                                onChange={(event) =>
-                                  setSheetNames((previous) =>
-                                    event.target.checked
-                                      ? [...previous, sheet.name]
-                                      : previous.filter(
-                                          (name) => name !== sheet.name,
-                                        ),
-                                  )
-                                }
-                              />
-                              <span>
-                                {sheet.name}
-                                <small>{sheet.rowCount} 行</small>
-                              </span>
-                            </label>
-                          ))}
-                        </fieldset>
-                      )}
-                      <div className="import-form-grid">
-                        <Field label="主要内容类型">
-                          <select
-                            value={parseKind}
-                            onChange={(event) => {
-                              setParseKind(event.target.value as ImportKind)
-                              setPeriod('')
-                            }}
-                          >
-                            <option value="monthly">月度目标 / 历史月报</option>
-                            <option value="weekly">每周工作 / 历史周报</option>
-                          </select>
-                        </Field>
-                        <Field
-                          label="补充所属周期（可选）"
-                          hint="只在原始资料未说明周期时提供。"
-                        >
-                          <input
-                            type={parseKind === 'monthly' ? 'month' : 'date'}
-                            value={period}
-                            onChange={(event) => setPeriod(event.target.value)}
-                          />
-                        </Field>
-                      </div>
-                      <Field label="补充解析说明（可选）">
-                        <textarea
-                          rows={2}
-                          value={instruction}
-                          onChange={(event) =>
-                            setInstruction(event.target.value)
-                          }
-                          placeholder="例如：只整理研发组；张三和王五是负责人；“本月产出”对应实际成果。"
-                          maxLength={4000}
-                        />
-                      </Field>
-                      <p className="import-reparse-note">重新识别会重新调用 AI。发现遗漏后，请重新识别或直接补录候选；已有校对和完整性确认需要重做。</p>
-                      <div className="import-parser-footer">
-                        <p>
-                          {batch.kind === 'image'
-                            ? '图片将发送到已配置的图片模型，请使用支持图片输入的模型。'
-                            : '所选内容将发送到已配置的 AI 服务，解析结果保存后可逐条校对。'}
-                          {batch.rows.length > 0 &&
-                            ' 重新解析会替换当前批次的校对结果。'}
-                        </p>
-                        <button
-                          className="button primary"
-                          disabled={
-                            batchBusy ||
-                            !configured ||
-                            (batch.sourceSheets.length > 0 &&
-                              !sheetNames.length)
-                          }
-                          onClick={() => void parseSource()}
-                        >
-                          <Sparkles size={16} />
-                          {batch.rows.length ? '重新识别（重新调用 AI）' : '智能识别'}
-                        </button>
-                        {batch.analysis?.status === 'failed' && batch.analysisOptions && <button
-                          className="button secondary" disabled={batchBusy || !configured}
-                          onClick={() => void parseSource(true)}
-                        >继续上次解析（保留已完成分段）</button>}
-                      </div>
-                      {!configured && (
-                        <p className="import-notice">
-                          {manager
-                            ? '请先在下方“AI 模型设置”中配置服务。'
-                            : '请联系管理员配置 AI 解析服务。'}
-                        </p>
-                      )}
-                    </fieldset>
-                  </div>
-                </details>
+                <ImportParseStep batch={batch} options={parseOptions} onChange={setParseOptions}
+                  batchBusy={batchBusy} configured={configured} manager={manager} parseSource={parseSource} />
               )}
               {dingtalkSource && <div ref={sourceSection} tabIndex={-1} className="import-review-anchor"><DingTalkImportReview key={`dingtalk:${batch.id}`} batch={batch} disabled={batchBusy} editing={!!editing || !!exclusion}
                 run={run} onResolved={acceptBatch} notify={notify} navigate={navigate}
@@ -1200,9 +949,8 @@ export default function Imports({
                     </div>
                   )}
                   {!immutable && !!batch.rows.length && (
-                    <div className="import-bulk">
+                    <details className="import-bulk"><summary>批量设置</summary>
                       <div className="import-section-title">
-                        <h3>批量设置</h3>
                         <span>应用到勾选的 {selected.length} 条记录</span>
                       </div>
                       <div className="import-bulk-plan">
@@ -1393,7 +1141,7 @@ export default function Imports({
                           应用并保存
                         </button>
                       </div>
-                    </div>
+                    </details>
                   )}
                   <div className="import-rows-heading import-review-anchor" ref={rowsSection} tabIndex={-1}>
                     <h3>
@@ -1405,6 +1153,8 @@ export default function Imports({
                         ? savedBatchCounts(batch)
                         : `${importReconciliationText(batch.rows, sourceRelations)} · ${selectedIssues.length} 项有待补项`}
                     </span>
+                    {!immutable && <button type="button" className="button secondary" aria-pressed={selectingRows}
+                      onClick={() => setSelectingRows(current => !current)}>{selectingRows ? '收起勾选框' : '勾选纳入记录'}</button>}
                     {!immutable && !dingtalkSource && <button className="button secondary" disabled={batchBusy}
                       onClick={() => setEditing(newImportCandidate(batch, crypto.randomUUID()))}
                     >补录遗漏事项</button>}
@@ -1415,7 +1165,7 @@ export default function Imports({
                         <thead>
                           <tr>
                             <th className="import-check">
-                              {!immutable && (
+                              {!immutable && selectingRows && (
                                 <input
                                   type="checkbox"
                                   aria-label="选择全部解析记录"
@@ -1452,7 +1202,7 @@ export default function Imports({
                                   ) : (
                                     '—'
                                   )
-                                ) : (
+                                ) : !selectingRows ? (row.selected ? '纳入' : '排除') : (
                                   <input
                                     type="checkbox"
                                     aria-label={`选择记录：${row.title || row.id}`}
@@ -2515,11 +2265,11 @@ export default function Imports({
           wide
           onClose={closeEditor}
         >
-          <p className="modal-intro">
+          <details><summary>校对说明</summary><p>
             {editingHistory
               ? '本次修改用于纠正已归档的历史资料，原始文字保持不变，纠正原因留档。关联的工作计划如需修改，请到相应计划页面处理。'
               : editingNew ? '对照原始资料补录遗漏的独立事项，填写真实来源。保存候选后仍需完整性核对，才会写入计划。' : '校对后保存到当前批次。原始文字保留在下方，可随时对照。'}
-          </p>
+          </p></details>
           <Form
             submitLabel={
               readOnlyEditor
@@ -2563,418 +2313,10 @@ export default function Imports({
               closeEditor()
             }}
           >
-            <fieldset
-              className="import-editor-fields"
-              disabled={readOnlyEditor}
-            >
-              {!readOnlyEditor && candidateLookups(['users', 'projects', 'plans', 'tasks'])}
-              {editingNew && <div className="import-editor-source-input">
-                <h3>遗漏事项的原始来源</h3>
-                <div className="import-form-grid">
-                  <Field label="来源工作表 / 资料位置">
-                    {batch?.sourceSheets.length ? <select required value={editing.sourceSheet} onChange={event => setEditing({ ...editing, sourceSheet: event.target.value })}>
-                      <option value="">请选择工作表</option>
-                      {batch.sourceSheets.map(sheet => <option value={sheet.name} key={sheet.name}>{sheet.name}</option>)}
-                    </select> : <input value={editing.sourceSheet} placeholder="例如：原始图片、第二段" onChange={event => setEditing({ ...editing, sourceSheet: event.target.value })} />}
-                  </Field>
-                  <Field label="原始行号 / 事项序号"><input required type="number" min="1" step="1" value={editing.sourceRow} onChange={event => setEditing({ ...editing, sourceRow: Number(event.target.value) })} /></Field>
-                </div>
-                <Field label="原文内容" hint="按原资料填写，不编造原文；同一源行有多事项时可分别补录。"><textarea required rows={3} maxLength={20000} value={editing.sourceText} onChange={event => setEditing({ ...editing, sourceText: event.target.value })} /></Field>
-              </div>}
-              {!editingHistory && <div className="import-editor-selection">
-                <label><input type="checkbox" checked={editing.selected} onChange={event => setEditing({ ...editing, selected: event.target.checked, exclusionReason: event.target.checked ? '' : editing.exclusionReason })} />纳入本次导入</label>
-                {!editing.selected && <>
-                  <Field label="排除类型"><select value={editing.exclusionKind || 'task'} onChange={event => setEditing({ ...editing, exclusionKind: event.target.value as ImportRow['exclusionKind'] })}>
-                    <option value="task">本次不导入的工作（仍计入原文事项数）</option><option value="duplicate">重复候选（不重复计数）</option><option value="not_task">非工作事项（如表头、说明）</option>
-                  </select></Field>
-                  <Field label="排除原因"><textarea required={!readOnlyEditor} maxLength={1000} rows={2} value={editing.exclusionReason || ''} placeholder={readOnlyEditor ? '历史未记录排除原因' : '请说明为什么不纳入本批次'} onChange={event => setEditing({ ...editing, exclusionReason: event.target.value })} /></Field>
-                </>}
-              </div>}
-              <div className="import-editor-destination">
-                <div className="import-form-grid">
-                <Field label="纳入计划" hint={editingTaskLocked ? '已关联个人任务，保持纳入每周计划。' : undefined}>
-                  <select
-                    value={editing.kind}
-                    disabled={editingTaskLocked || (dingtalkSource && !editingHistory)}
-                    onChange={(event) =>
-                      setEditing({
-                        ...editing,
-                        kind: event.target.value as ImportKind,
-                        ...(event.target.value === 'monthly' ? { taskId: '', taskCompleted: false, completionNote: '' } : {}),
-                        ...(event.target.value === 'monthly' || editingTemporary ? { monthlyPlanId: '', linkedRowId: '' } : {}),
-                      })
-                    }
-                  >
-                    <option value="monthly">月度计划</option>
-                    <option value="weekly">每周计划</option>
-                  </select>
-                </Field>
-                <Field label="任务性质" hint={editingTaskLocked ? '沿用已有任务的性质与交办说明，不在导入时修改。' : '领导交办、突发支持等工作可标记为临时交办。'}>
-                  <select
-                    value={editingTemporary ? 'temporary' : 'regular'}
-                    disabled={editingTaskLocked}
-                    onChange={(event) => {
-                      const isTemporary = event.target.value === 'temporary'
-                      setEditing({ ...editing, isTemporary, temporaryReason: isTemporary ? editing.temporaryReason || '' : '', ...(isTemporary && editing.kind === 'weekly' ? { monthlyPlanId: '', linkedRowId: '' } : {}) })
-                    }}
-                  >
-                    <option value="regular">常规工作</option>
-                    <option value="temporary">临时交办</option>
-                  </select>
-                </Field>
-                <Field label={editing.kind === 'monthly' ? '所属月份' : '所属周（选择该周的日期）'}>
-                  <input
-                    type={editing.kind === 'monthly' ? 'month' : 'date'}
-                    value={editing.kind === 'monthly' ? editing.month : editing.weekStart}
-                    disabled={dingtalkSource && !editingHistory}
-                    onChange={(event) => setEditing({ ...editing, [editing.kind === 'monthly' ? 'month' : 'weekStart']: event.target.value })}
-                  />
-                </Field>
-                </div>
-                {editingTemporary && (
-                  <Field label={batch?.mode === 'history' || editingHistory ? '交办说明' : '交办说明（入计划前必填）'} hint="说明交办来源、临时背景或要求。可以先保存校对，纳入计划前再补齐。">
-                    <textarea
-                      rows={2}
-                      maxLength={2000}
-                      value={editingTask?.temporaryReason ?? editing.temporaryReason ?? ''}
-                      disabled={editingTaskLocked}
-                      onChange={(event) => setEditing({ ...editing, temporaryReason: event.target.value })}
-                    />
-                  </Field>
-                )}
-              </div>
-              <div className="import-form-grid">
-                <Field label="工作事项">
-                  <input
-                    value={editing.title}
-                    maxLength={LIMITS.title}
-                    onChange={(event) =>
-                      setEditing({ ...editing, title: event.target.value })
-                    }
-                  />
-                </Field>
-                <Field label="原文负责人">
-                  <input
-                    value={editing.ownerName}
-                    onChange={(event) =>
-                      setEditing({ ...editing, ownerName: event.target.value })
-                    }
-                  />
-                </Field>
-                <Field label="匹配系统成员">
-                  <select
-                    value={editing.ownerId}
-                    onChange={(event) =>
-                      setEditing({ ...editing, ownerId: event.target.value })
-                    }
-                  >
-                    <option value="">暂不匹配</option>
-                    {editing.ownerId && !data.users.some(user => user.id === editing.ownerId) && <option value={editing.ownerId} disabled>已选成员（正在核对或无访问权限）</option>}
-                    {data.users
-                      .filter(
-                        (user) =>
-                          activeUsers.some((active) => active.id === user.id) ||
-                          user.id === editing.ownerId,
-                      )
-                      .map((user) => (
-                        <option key={user.id} value={user.id} disabled={!canUseAccount(user)}>
-                          {accountDisplayName(user)}
-                        </option>
-                      ))}
-                  </select>
-                </Field>
-                <Field label="原文项目名称">
-                  <input
-                    value={editing.projectName}
-                    onChange={(event) =>
-                      setEditing({
-                        ...editing,
-                        projectName: event.target.value,
-                      })
-                    }
-                  />
-                </Field>
-                <Field label="匹配系统项目">
-                  <select
-                    value={editing.projectId}
-                    onChange={(event) =>
-                      setEditing({ ...editing, projectId: event.target.value })
-                    }
-                  >
-                    <option value="">暂不匹配 / 部门工作</option>
-                    {editing.projectId && !data.projects.some(project => project.id === editing.projectId) && <option value={editing.projectId} disabled>已选项目（正在核对或无访问权限）</option>}
-                    {data.projects
-                      .filter(
-                        (project) =>
-                          project.status === 'active' ||
-                          project.id === editing.projectId,
-                      )
-                      .map((project) => (
-                        <option key={project.id} value={project.id} disabled={project.status !== 'active'}>
-                          {project.name}
-                        </option>
-                      ))}
-                  </select>
-                </Field>
-                <Field label="工作类别">
-                  <input
-                    value={editing.category}
-                    onChange={(event) =>
-                      setEditing({ ...editing, category: event.target.value })
-                    }
-                  />
-                </Field>
-                <Field label="工作来源" hint="临时工作不自动等于领导交办；按原文或明确安排选择。">
-                  <select value={editingTask ? editingTask.workSource || '' : editing.workSource || ''} disabled={editingTaskLocked} onChange={event => setEditing({ ...editing, workSource: event.target.value as ImportRow['workSource'] })}>
-                    <option value="">来源待核对</option><option value="leader">领导交办</option><option value="self">自主安排</option><option value="coordination">协同事项</option>
-                  </select>
-                </Field>
-                <Field label="交办人" hint={editingTaskLocked ? '沿用已有任务；需更正时请到原任务处理。' : undefined}><input maxLength={LIMITS.assignedBy} disabled={editingTaskLocked} value={editingTask ? editingTask.assignedBy || '' : editing.assignedBy || ''} onChange={event => setEditing({ ...editing, assignedBy: event.target.value })} /></Field>
-                <Field label="交办日期"><input type="date" disabled={editingTaskLocked} value={editingTask ? editingTask.assignedOn || '' : editing.assignedOn || ''} onChange={event => setEditing({ ...editing, assignedOn: event.target.value })} /></Field>
-                <Field label="原文协作人" hint={editing.kind === 'monthly' ? '用顿号或逗号分隔；在下方明确匹配系统成员。' : '周任务由个人负责；原文有多人协作时请分别拆项或改为月目标，名单不要直接作为个人责任。'}>
-                  <input value={(editing.collaboratorNames || []).join('、')} onChange={event => setEditing({ ...editing, collaboratorNames: event.target.value.split(/[、,，;；\n]/) })} />
-                </Field>
-                <Field
-                  label="原文状态"
-                  hint="保留原始状态；原文“完成”不自动等于管理员已验收。"
-                >
-                  <input
-                    value={editing.sourceStatus}
-                    onChange={(event) =>
-                      setEditing({
-                        ...editing,
-                        sourceStatus: event.target.value,
-                      })
-                    }
-                  />
-                </Field>
-                {batch?.mode === 'existing' &&
-                  !editingHistory &&
-                  (editing.kind === 'monthly' ? (
-                    <Field
-                      label="导入后的成果状态"
-                      hint="计划确认后直接生效。原表已有成果会一起保留；已验收仅由管理员明确选择。"
-                    >
-                      <select
-                        value={importedMonthlyResult(editing)}
-                        onChange={(event) =>
-                          setEditing({
-                            ...editing,
-                            monthlyResult: event.target
-                              .value as ImportRow['monthlyResult'],
-                          })
-                        }
-                      >
-                        {Object.entries(monthlyResultLabels)
-                          .filter(
-                            ([status]) =>
-                              manager ||
-                              status !== 'accepted' ||
-                              editing.monthlyResult === 'accepted',
-                          )
-                          .map(([status, label]) => (
-                            <option
-                              key={status}
-                              value={status}
-                              disabled={!manager && status === 'accepted'}
-                            >
-                              {label}
-                            </option>
-                          ))}
-                      </select>
-                    </Field>
-                  ) : (
-                    <Field
-                      label="导入后的执行状态"
-                      hint="按原文状态识别，可在此校正；实际成果保持原文。"
-                    >
-                      <select
-                        value={importedWeeklyStatus(editing)}
-                        onChange={(event) =>
-                          setEditing({
-                            ...editing,
-                            weeklyStatus: event.target
-                              .value as ImportRow['weeklyStatus'],
-                          })
-                        }
-                      >
-                        {Object.entries(weeklyResultLabels).map(
-                          ([status, label]) => (
-                            <option key={status} value={status}>
-                              {label}
-                            </option>
-                          ),
-                        )}
-                      </select>
-                    </Field>
-                  ))}
-                <Field
-                  label="截止日期"
-                  hint={
-                    batch?.mode === 'existing'
-                      ? '原表未注明时可留空。'
-                      : undefined
-                  }
-                >
-                  <input
-                    type="date"
-                    value={editing.dueDate}
-                    onChange={(event) =>
-                      setEditing({ ...editing, dueDate: event.target.value })
-                    }
-                  />
-                </Field>
-              </div>
-              {editing.kind === 'monthly' && <Field label="关联年度目标" hint="仅关联同年度目标；留空表示未关联。">
-                {/^(20\d\d)-\d\d$/.test(editing.month) ? <AnnualGoalPicker key={`${scope}:${editing.id}:${editing.month.slice(0, 4)}`} year={Number(editing.month.slice(0, 4))} value={editing.annualGoalId || ''} scope={scope} onChange={value => setEditing({ ...editing, annualGoalId: value || null })} /> : <p>先填写所属月份后选择年度目标。</p>}
-              </Field>}
-              {editing.kind === 'weekly' && <div className="form-grid">
-                {([['plannedEffortDays', '本周预计投入'], ['actualEffortDays', '本周实际投入'], ['remainingEffortDays', '任务剩余工作量']] as const).map(([field, label]) => <Field key={field} label={`${label}（人日）`} hint={field === 'remainingEffortDays' && editingTaskLocked ? '沿用现有任务；更正请到原任务处理。' : '按 0.5 人日填写；空白表示未知，0 表示零投入。'}>
-                  <input type="number" min="0" step="0.5" disabled={field === 'remainingEffortDays' && editingTaskLocked} value={field === 'remainingEffortDays' && editingTask ? editingTask.remainingEffortDays ?? '' : editing[field] ?? ''} onChange={event => setEditing({ ...editing, [field]: event.target.value === '' ? null : Number(event.target.value) })} />
-                </Field>)}
-              </div>}
-              {(editing.kind === 'monthly' || !!editing.collaboratorIds?.length) && <div className="import-editor-collaborators">
-                <h3>明确匹配协作成员</h3>
-                <p>协作参与与负责人分别记录；请核对同名和无法匹配的原文姓名。</p>
-                <div className="import-collaborator-options">{data.users.filter(user => canUseAccount(user) || editing.collaboratorIds?.includes(user.id)).map(user => <label key={user.id}>
-                  <input type="checkbox" checked={editing.collaboratorIds?.includes(user.id) || false} disabled={!canUseAccount(user) && !editing.collaboratorIds?.includes(user.id)}
-                    onChange={event => setEditing({ ...editing, collaboratorIds: event.target.checked ? [...(editing.collaboratorIds || []), user.id] : (editing.collaboratorIds || []).filter(id => id !== user.id) })} />
-                  {accountDisplayName(user)}
-                </label>)}</div>
-              </div>}
-              {editing.kind === 'weekly' && !editingHistory && batch?.mode === 'existing' && <div className="import-overall-completion">
-                <h3>整件任务是否完成</h3>
-                <p>本周阶段完成不会自动结束整件任务。只有全部工作已完成且无需继续推进，才确认整体完成。</p>
-                {editingTaskLocked ? <p>已关联现有个人任务，整体完成状态请到原任务核对与修改。</p> : <>
-                  <label><input type="checkbox" checked={editing.taskCompleted === true} onChange={event => setEditing({ ...editing, taskCompleted: event.target.checked, completionNote: event.target.checked ? editing.completionNote || '' : '' })} />确认整件任务已完成</label>
-                  {editing.taskCompleted && <Field label="整体完成依据"><textarea required maxLength={2000} rows={2} value={editing.completionNote || ''} onChange={event => setEditing({ ...editing, completionNote: event.target.value })} placeholder="说明整个事项已完成的依据，而非仅本周的阶段成果" /></Field>}
-                </>}
-              </div>}
-              {editing.kind === 'weekly' && (
-                <div className="import-editor-relations">
-                  <h3>周工作关联</h3>
-                  <Field
-                    label="关联已有个人任务"
-                    hint={
-                      editingTemporary
-                        ? '临时任务可直接纳入本周，无需先创建月度目标；也可匹配已有任务。'
-                        : batch?.mode === 'existing'
-                        ? '原表已有任务可直接匹配；没有月度目标关联也可导入生效。'
-                        : '可关联自己的任务，或先选择月度目标以新建任务。'
-                    }
-                  >
-                    <select
-                      value={editing.taskId}
-                      onChange={(event) => {
-                        const task = data.tasks.find(
-                          (item) => item.id === event.target.value,
-                        )
-                        if (task && !editing.taskId) detachedWorkSource.current = { rowId: editing.id, fields: importWorkFields(editing) }
-                        const previousSource = detachedWorkSource.current?.rowId === editing.id ? detachedWorkSource.current.fields : undefined
-                        setEditing(selectImportTask(editing, task, previousSource))
-                        if (!task) detachedWorkSource.current = null
-                      }}
-                    >
-                      <option value="">新建个人任务</option>
-                      {editing.taskId && !data.tasks.some(task => task.id === editing.taskId) && <option value={editing.taskId} disabled>已关联任务（正在核对或无访问权限）</option>}
-                      {data.tasks
-                        .filter(
-                          (task) => task.id === editing.taskId ||
-                            (!task.cancellation && (manager || task.ownerId === data.user.id) && activeUsers.some(user => user.id === task.ownerId)),
-                        )
-                        .map((task) => (
-                          <option key={task.id} value={task.id} disabled={!!task.cancellation || !activeUsers.some(user => user.id === task.ownerId)}>
-                            {task.title}{task.cancellation ? ' · 已作废' : task.isTemporary ? ' · 临时交办' : ''}{!activeUsers.some(user => user.id === task.ownerId) ? ' · 责任人账号不可用' : ''}
-                          </option>
-                        ))}
-                    </select>
-                  </Field>
-                  {editingTemporary ? (
-                    <p className="import-relation-hint">临时交办直接关联个人任务，无需关联月度目标。</p>
-                  ) : <>
-                  <Field
-                    label="关联系统月度目标"
-                    hint={
-                      editingTaskLocked
-                        ? '沿用已有任务的月度关联。如需新建任务，请先在上方选择“新建个人任务”。'
-                        : batch?.mode === 'existing'
-                        ? '原表没有明确关联时可留空，导入后显示“未关联月度目标”。'
-                        : undefined
-                    }
-                  >
-                    <select
-                      value={editing.monthlyPlanId}
-                      disabled={editingTaskLocked}
-                      onChange={(event) =>
-                        setEditing({
-                          ...editing,
-                          monthlyPlanId: event.target.value,
-                          linkedRowId: '',
-                          taskId: '',
-                        })
-                      }
-                    >
-                      <option value="">暂不关联</option>
-                      {editing.monthlyPlanId && !availablePlans.some(plan => plan.id === editing.monthlyPlanId) && <option value={editing.monthlyPlanId} disabled>{data.plans.find(plan => plan.id === editing.monthlyPlanId)?.title || '已关联目标'} · 正在核对或仅供历史引用</option>}
-                      {availablePlans.map((plan) => (
-                        <option key={plan.id} value={plan.id}>
-                          {plan.month} · {plan.title}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field label="或关联本批次的月度目标">
-                    <select
-                      value={editing.linkedRowId}
-                      disabled={editingTaskLocked}
-                      onChange={(event) =>
-                        setEditing({
-                          ...editing,
-                          linkedRowId: event.target.value,
-                          monthlyPlanId: '',
-                          taskId: '',
-                        })
-                      }
-                    >
-                      <option value="">不使用本批次月度目标</option>
-                      {(editingHistory ? [] : batch?.rows || [])
-                        .filter(
-                          (row) =>
-                            row.kind === 'monthly' &&
-                            row.selected &&
-                            row.id !== editing.id,
-                        )
-                        .map((row) => (
-                          <option key={row.id} value={row.id}>
-                            {row.month || '月份待确认'} ·{' '}
-                            {row.title || '未命名事项'}
-                          </option>
-                        ))}
-                    </select>
-                  </Field>
-                  </>}
-                </div>
-              )}
-              {(
-                [
-                  ['expectedOutcome', '预期成果 / 本周承诺'],
-                  ['acceptanceCriteria', '验收标准'],
-                  ['actualOutcome', '实际成果'],
-                  ['blocker', '阻塞或未完成原因'],
-                  ['nextAction', '下一步'],
-                ] as const
-              ).map(([key, label]) => (
-                <Field key={key} label={label}>
-                  <textarea
-                    rows={3}
-                    value={editing[key]}
-                    onChange={(event) =>
-                      setEditing({ ...editing, [key]: event.target.value })
-                    }
-                  />
-                </Field>
-              ))}
-            </fieldset>
+            <ImportRowFields key={editing.id} batch={batch} editing={editing} setEditing={setEditing} data={data}
+              scope={scope} activeUsers={activeUsers} availablePlans={availablePlans} manager={manager}
+              editingNew={editingNew} editingHistory={!!editingHistory} readOnlyEditor={readOnlyEditor}
+              editingTask={editingTask} editingTaskLocked={editingTaskLocked} candidateLookups={candidateLookups} />
             {editingHistory && (
               <Field
                 label="纠正原因"

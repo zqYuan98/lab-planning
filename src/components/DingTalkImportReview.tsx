@@ -155,7 +155,7 @@ export default function DingTalkImportReview({ batch, disabled, editing, run, on
             </li>)}</ul>}
             {row.resolution && <p className={confirmedReview ? 'import-valid' : 'form-hint'}>{confirmedReview ? '已记录' : '此前记录'}：{actionLabels[row.resolution.action]} · {row.resolution.reason}</p>}
             {needsReview && !row.requiresResolution && <p className="import-notice">当前勾选与来源处理结论不一致。请重新保存处理方式：新增事项须勾选，关联或排除事项不应勾选。</p>}
-            {!immutable && (needsReview || !!row.resolution) && <RowDecision row={row} disabled={locked} onSave={resolution => resolve(row.rowId, resolution)} />}
+            {!immutable && (needsReview || !!row.resolution) && <details><summary>{row.resolution ? '调整处理选择' : '处理这条来源'}</summary><RowDecision row={row} disabled={locked} onSave={resolution => resolve(row.rowId, resolution)} /></details>}
           </details>
         })}
       </div>
