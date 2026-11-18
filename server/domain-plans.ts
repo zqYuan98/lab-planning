@@ -12,6 +12,7 @@ import { notifyPublishedPlans } from './notification-events.ts'
 import { HttpError } from './store.ts'
 import { DomainBase, bool, choice, date, manager, month, own, participates, text, type Input } from './domain-common.ts'
 import { assertOperationEpoch } from './operation-context.ts'
+import { isManager } from './authorization.ts'
 import { isManager, isMember } from './authorization.ts'
 import { LIMITS, PRIORITIES, WORK_SOURCES } from '../shared/entity-rules.ts'
 import { submittedWeeklyEvidence } from './carry-workflows-history.ts'
@@ -194,7 +195,8 @@ export class MonthlyService extends DomainBase {
       const next = { ...before, ...patch }
       if (!next.projectId && !next.category && !before.importSource) throw new HttpError(400, '没有所属项目时需要填写工作类别')
       if (this.store.list<Task>('tasks').some(task => isActiveTask(task) && task.monthlyPlanId === id && !participates(next, task.ownerId))) throw new HttpError(400, '修改责任人前，请先处理仍关联此计划的个人任务，保留任务负责人为协作者')
-      const reason = before.status === 'published' ? text(input.reason, '发布后变更原因') : text(input.reason, '修改原因', false)
+      // 变更前后的内容由审计记录保存；原因只在操作人想补充时填写。
+      const reason = text(input.reason, '修改原因', false)
       if (before.status === 'published') {
         patch.publishedVersion = this.revision(before.month)
         if ((patch.expectedOutcome !== undefined && patch.expectedOutcome !== before.expectedOutcome) || (patch.acceptanceCriteria !== undefined && patch.acceptanceCriteria !== before.acceptanceCriteria)) {
@@ -217,6 +219,12 @@ export class MonthlyService extends DomainBase {
       if (!['draft', 'returned'].includes(before.status)) throw new HttpError(400, '只有草稿或退回的计划可以提交')
       if (before.projectId) this.activeProject(before.projectId)
       if (before.isTemporary) text(before.temporaryReason, '临时目标原因')
+      // 管理者就是审核人：自己提交的目标不再走一遍“提交给自己、再由自己审核”。
+      if (isManager(actor)) {
+        const approved = this.store.update<MonthlyPlan>('plans', id, before.version, { status: 'approved', reviewComment: '' })
+        this.audit(actor, 'plan', id, 'approve', before, approved, '管理者提交，无需另行审核')
+        return projectPlan(actor, approved, this.store)
+      }
       const plan = this.store.update<MonthlyPlan>('plans', id, before.version, { status: 'submitted', reviewComment: '' })
       this.audit(actor, 'plan', id, 'submit', before, plan)
       return projectPlan(actor, plan, this.store)
@@ -228,8 +236,10 @@ export class MonthlyService extends DomainBase {
     return this.store.transaction(() => {
       const before = this.current<MonthlyPlan>('plans', id, input)
       this.active(before)
-      if (before.status !== 'submitted') throw new HttpError(400, '只有已提交的月计划可以审核')
       const decision = choice(input.decision, ['approve', 'return'], '审核决定')
+      // 已通过、尚未发布的目标：再次通过不重复记录；管理者仍可退回修改。
+      if (before.status === 'approved' && decision === 'approve') return before
+      if (before.status !== 'submitted' && !(before.status === 'approved' && decision === 'return')) throw new HttpError(400, '只有已提交的月计划可以审核')
       const comment = text(input.comment, '退回原因', decision === 'return')
       const plan = this.store.update<MonthlyPlan>('plans', id, before.version, { status: decision === 'approve' ? 'approved' : 'returned', reviewComment: comment })
       this.audit(actor, 'plan', id, decision, before, plan, comment)
@@ -273,7 +283,7 @@ export class MonthlyService extends DomainBase {
     const ids = [...new Set(input.planIds as string[])]
     if (ids.length < 2 || ids.length > 50) throw new HttpError(400, '请选择 2 至 50 条提报进行合并')
     const title = text(input.title, '合并后的标题', true, LIMITS.title)
-    const reason = text(input.reason, '合并原因')
+    const reason = text(input.reason, '合并说明', false)
     return this.store.transaction(() => {
       const sources = ids.map(id => this.need<MonthlyPlan>('plans', id))
       const first = sources[0]
@@ -350,7 +360,7 @@ export class MonthlyService extends DomainBase {
       const requestId = text(input.requestId, '提交标识', true, 100)
       if (!/^[a-zA-Z0-9_-]{16,100}$/.test(requestId)) throw new HttpError(400, '提交标识须为 16 至 100 位字母、数字、短横线或下划线')
       if (!Number.isSafeInteger(input.sourceVersion) || Number(input.sourceVersion) < 1) throw new HttpError(400, '请提供有效的来源版本', undefined, { sourceVersion: '请重新打开承接表单以取得来源版本' })
-      const payload = { sourcePlanId: text(id, '来源计划'), sourceVersion: Number(input.sourceVersion), month: month(input.month), dueDate: date(input.dueDate, '截止日期'), reason: text(input.reason, '跨月承接原因') }
+      const payload = { sourcePlanId: text(id, '来源计划'), sourceVersion: Number(input.sourceVersion), month: month(input.month), dueDate: date(input.dueDate, '截止日期'), reason: text(input.reason, '跨月承接说明', false) }
       const payloadHash = createHash('sha256').update(JSON.stringify(payload)).digest('hex')
       const key = createHash('sha256').update(JSON.stringify(['monthly-carry', currentActor.id, requestId])).digest('hex')
       assertOperationEpoch(this.store, input.operationEpoch)

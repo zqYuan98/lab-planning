@@ -45,7 +45,7 @@ export function inspect(base = root) {
   const tsxFiles = walk(join(base, 'src'), name => /\.tsx?$/.test(name))
   const errors = []
   const colors = new Set()
-  const counts = { colorLiterals: 0, gradients: 0, boxShadows: 0, important: 0, customPropertyFamilies: 0, inlineStyles: 0, cssFiles: cssFiles.length, pageNarration: 0 }
+  const counts = { requiredReasons: 0, colorLiterals: 0, gradients: 0, boxShadows: 0, important: 0, customPropertyFamilies: 0, inlineStyles: 0, cssFiles: cssFiles.length, pageNarration: 0 }
   const families = new Set()
 
   for (const file of cssFiles) {
@@ -79,6 +79,8 @@ export function inspect(base = root) {
     const name = relative(base, file).replaceAll('\\', '/')
     const text = readFileSync(file, 'utf8')
     counts.inlineStyles += (text.match(/style=\{\{/g) || []).length
+    // 必填的“原因”输入框。只有否定或代替他人工作的操作才应该要求，见 CLAUDE.md“流程”。
+    counts.requiredReasons += (text.match(/label="[^"]*(?:原因|依据)[^"]*"[^>]*>\s*<(?:textarea|input)[^>]*\srequired(?![={\w])/g) || []).length
     // 直接铺在页面上的说明段落（不含折叠在 <details> 里的）是“系统在解释自己”的主要来源。
     counts.pageNarration += (text.match(/className="[^"]*(?:-intro|-explainer|-rule-note|scope-note|page-note)[^"]*"/g) || []).length
     for (const phrase of BANNED_COPY) {

@@ -92,7 +92,7 @@ test('publish requests include exactly the visible selected goal versions', t =>
 
 test('goal details expose clear submit, review and publish actions instead of an execution-only dead end', t => {
   const f = fixture(t)
-  assert.match(f.render(f.manager, f.as('draft')), />提交审核<\/button>/)
+  assert.match(f.render(f.manager, f.as('draft')), />确认目标<\/button>/)
   assert.match(f.render(f.manager, f.as('submitted')), />审核目标<\/button>/)
   assert.match(f.render(f.manager, f.as('approved')), />发布此目标<\/button>/)
   const member = f.render(f.member, f.as('draft'))

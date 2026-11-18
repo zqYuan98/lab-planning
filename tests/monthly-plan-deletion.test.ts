@@ -28,7 +28,9 @@ test('manager can delete each unpublished review state without erasing status, a
   const f = fixture(t), retained = f.plan()
   for (const status of ['draft', 'returned', 'submitted', 'approved'] as const) {
     let plan = f.plan(f.manager, { ownerId: f.member.id })
-    if (status !== 'draft') plan = f.domain.submitPlan(f.manager, plan.id, { version: plan.version })
+    // A manager's own submission is approved at once, so a waiting-for-review goal is set up directly.
+    if (status === 'submitted') plan = f.store.update<typeof plan>('plans', plan.id, plan.version, { status: 'submitted' })
+    else if (status !== 'draft') plan = f.domain.submitPlan(f.manager, plan.id, { version: plan.version })
     if (status === 'returned' || status === 'approved') plan = f.domain.reviewPlan(f.manager, plan.id, { version: plan.version, decision: status === 'returned' ? 'return' : 'approve', comment: '重复待核对' })
     const source = f.store.insert<Entity & { sourceIdentity: string; planId: string; sourceKey: string }>('dingtalkSourceItems', { sourceIdentity: `source-${status}`, planId: plan.id, sourceKey: status })
     const beforeHistory = f.domain.planHistory(f.manager, plan.id)

@@ -307,7 +307,7 @@ export class WeeklySubmissionService extends DomainBase {
         const user = this.need<User>('users', id)
         if (!isManager(user) && !isMember(user)) throw new HttpError(400, '观察者不承担周提报义务')
       }
-      const updated = this.update<WeeklyCycle>('weeklyCycles', week, cycle.version, { rosterIds: input.rosterIds as string[], needsReview: false, confirmedBy: actor.id, confirmationReason: text(input.reason, '名单核对原因') })
+      const updated = this.update<WeeklyCycle>('weeklyCycles', week, cycle.version, { rosterIds: input.rosterIds as string[], needsReview: false, confirmedBy: actor.id, confirmationReason: text(input.reason, '名单核对说明', false) })
       this.audit(actor, 'weeklyCycle', week, 'confirm_roster', cycle, updated, updated.confirmationReason)
       this.reconcile()
       return updated

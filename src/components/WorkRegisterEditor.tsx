@@ -45,9 +45,9 @@ export default function WorkRegisterEditor({ userId, task, onClose, onSaved }: E
   }, busy)
   const close = () => { if (!sending.current) onClose() }
   const [commitmentChanged, setCommitmentChanged] = useState(false)
-  /** 与服务端“承诺调整需要原因”对应；判断宁宽勿严，保存失败时也会展开。 */
+  /** 改自己的事项不需要解释。只有替别人调整承诺内容时服务端才要求原因；保存失败时也会展开。 */
   function trackCommitment(form: HTMLFormElement | null) {
-    if (!form) return
+    if (!form || task.ownerId === userId) return
     const values = new FormData(form), initial: Record<string, string> = { title: task.title, description: task.description, requestedOutcome: task.requestedOutcome || '', dueDate: task.dueDate || '' }
     setCommitmentChanged(Object.entries(initial).some(([name, value]) => String(values.get(name) ?? '') !== value) || !!String(values.get('reason') || ''))
   }
@@ -116,7 +116,7 @@ export default function WorkRegisterEditor({ userId, task, onClose, onSaved }: E
         <Field label="下一步行动"><textarea name="nextAction" defaultValue={task.nextAction || ''} rows={2} maxLength={LIMITS.text} placeholder="写清楚接下来要推进的具体一步" /></Field>
         <Field label="需要的支持"><textarea name="supportNeeded" required={status === 'blocked'} defaultValue={task.supportNeeded || ''} rows={2} maxLength={LIMITS.text} placeholder="需要谁提供什么支持；暂不需要支持时请明确说明" /></Field>
         {/* 只有改了承诺内容（名称、背景、预期交付、截止日期）才需要说明原因，平时不占位置。 */}
-        <div hidden={!commitmentChanged}><Field label="承诺变更原因" hint="事项名称、背景说明、预期交付或截止日期有改动时填写。"><textarea name="reason" rows={2} maxLength={LIMITS.text} placeholder="说明为何调整，以便历史复盘核对原承诺和变更依据" /></Field></div>
+        <div hidden={!commitmentChanged}><Field label="调整原因" hint="替他人调整事项名称、背景说明、预期交付或截止日期时填写。"><textarea name="reason" rows={2} maxLength={LIMITS.text} placeholder="说明为何调整，以便历史复盘核对原承诺和变更依据" /></Field></div>
         <details className="wr-details"><summary>交办信息与交付要求</summary>
           <div className="wr-form-grid">
             <Field label="事项来源"><select value={source} onChange={event => setSource(event.target.value as typeof source)}>

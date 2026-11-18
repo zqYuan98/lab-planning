@@ -242,7 +242,7 @@ export default function WeeklySubmissionPanel({ data: initialData, refresh, noti
           await api('/weekly-submissions/roster', json({ week, version: view.cycle!.version, rosterIds: form.getAll('rosterIds'), reason: form.get('reason') })); await saved('应交名单已确认')
         }}>
           {historicalRosterAccounts(directory.users).map(user => <label className="check-field" key={user.id}><input name="rosterIds" type="checkbox" value={user.id} defaultChecked={view.cycle!.rosterIds.includes(user.id)} />{accountDisplayName(user)}</label>)}
-          <Field label="核对依据"><textarea name="reason" rows={3} required /></Field>
+          <Field label="核对依据（选填）"><textarea name="reason" rows={2} /></Field>
         </Form>}</PeriodEditorDirectory>
       </Modal>}
 

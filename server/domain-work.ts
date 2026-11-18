@@ -169,8 +169,9 @@ export class WorkService extends DomainBase {
       if (input.description !== undefined) patch.description = text(input.description, '任务说明', false, before.importSource ? 20000 : 12000)
       if (input.dueDate !== undefined) patch.dueDate = input.dueDate === '' ? '' : date(input.dueDate, '任务截止日期')
       if (input.status !== undefined) patch.status = choice(input.status, TASK_STATUSES, '任务状态')
-      if (!isSilentImport(this.store) && (['dueDate', 'description', 'requestedOutcome', 'title'] as const).some(field => patch[field] !== undefined && patch[field] !== before[field])) {
-        text(input.reason || input.proxyReason, '承诺调整原因')
+      // 改自己的任务不需要解释；替别人调整承诺内容时才要求说明，因为对方需要知道为什么。
+      if (!isSilentImport(this.store) && actor.id !== before.ownerId && (['dueDate', 'description', 'requestedOutcome', 'title'] as const).some(field => patch[field] !== undefined && patch[field] !== before[field])) {
+        text(input.reason || input.proxyReason, '代为调整原因')
       }
       for (const field of ['completionNote', 'blockerReason', 'blockerImpact', 'supportNeeded', 'nextAction', 'evidenceUrl'] as const) if (input[field] !== undefined) patch[field] = text(input[field], field === 'completionNote' ? '完成说明' : '进展内容', false, field === 'evidenceUrl' ? 2000 : 12000)
       if (patch.evidenceUrl) {
@@ -192,7 +193,7 @@ export class WorkService extends DomainBase {
       const before = this.current<Task>('tasks', id, input)
       if (!isActiveTask(before)) throw new HttpError(409, '任务已作废，不能调整关联')
       const monthlyPlanId = text(input.monthlyPlanId, '新的月计划')
-      const reason = text(input.reason, '调整关联原因')
+      const reason = text(input.reason, '调整关联说明', false)
       const target = this.usablePlan(monthlyPlanId, before.ownerId, true)
       if (before.monthlyPlanId === monthlyPlanId) throw new HttpError(400, '任务已关联此月计划')
       const task = this.store.update<Task>('tasks', id, before.version, { monthlyPlanId, isTemporary: false })

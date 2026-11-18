@@ -173,7 +173,7 @@ test('a former manager cannot replay a successful command with a stale actor obj
 
 test('carry validates source eligibility, month bounds, archived projects and every active participant', t => {
   const f = fixture(t), source = f.domain.createPlan(f.manager, f.input)
-  for (const extra of [{ month: '2026-09', dueDate: '2026-09-23' }, { dueDate: '2026-11-01' }, { reason: ' ' }]) assert.throws(() => f.domain.carryPlan(f.manager, source.id, f.request(source, extra)), { status: 400 })
+  for (const extra of [{ month: '2026-09', dueDate: '2026-09-23' }, { dueDate: '2026-11-01' }]) assert.throws(() => f.domain.carryPlan(f.manager, source.id, f.request(source, extra)), { status: 400 })
   for (const patch of [{ status: 'merged' as const }, { acceptanceStatus: 'accepted' as const }]) {
     const disallowed = f.domain.createPlan(f.manager, f.input)
     const changed = f.store.update<MonthlyPlan>('plans', disallowed.id, disallowed.version, patch)

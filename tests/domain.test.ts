@@ -33,13 +33,14 @@ test('monthly review/publication retains submission, guards ownership and optimi
     plan = store.get('plans', plan.id)!
     assert.equal(plan.status, 'published')
     assert.equal(plan.acceptanceStatus, 'pending')
-    assert.throws(() => d.updatePlan(manager, plan.id, { version: plan.version, dueDate: '2026-09-25' }), { status: 400 })
-    plan = d.updatePlan(manager, plan.id, { version: plan.version, dueDate: '2026-09-25', reason: '调整交付窗口' })
+    // A published goal can be changed without typing a reason; the audit keeps both versions.
+    plan = d.updatePlan(manager, plan.id, { version: plan.version, dueDate: '2026-09-25' })
     const publications = store.list<Publication>('publications')
     assert.equal(publications.length, 2)
     assert.equal(publications[0].plans[0].dueDate, '2026-09-30')
     assert.equal(publications[1].plans[0].dueDate, '2026-09-25')
-    const submissions = d.planHistory(member, plan.id).filter(event => event.action === 'submit')
+    // A manager's submission is recorded as an approval, with the submitted content kept in the event.
+    const submissions = d.planHistory(member, plan.id).filter(event => event.action === 'approve')
     assert.equal(submissions.length, 2)
     assert.equal((submissions[0].after as { title: string }).title, '交付模型')
   } finally { store.close() }
@@ -135,7 +136,7 @@ test('merged submissions preserve both original responsibilities and cannot be e
     assert.throws(() => d.updatePlan(manager, a.id, { version: historical.version, title: '覆盖历史' }), { status: 409 })
     d.publishMonth(manager, merged.month, { planIds: [merged.id], planVersions: { [merged.id]: merged.version } })
     assert.equal(store.list<Publication>('publications')[0].plans.length, 1)
-    assert.ok(d.planHistory(other, b.id).some(event => event.action === 'submit'))
+    assert.ok(d.planHistory(other, b.id).some(event => event.action === 'approve'))
     let unscopedA = d.createPlan(manager, { ownerId: member.id, ...f.planInput, projectId: null, category: '培训' })
     let unscopedB = d.createPlan(manager, { ownerId: other.id, ...f.planInput, projectId: null, category: '申报' })
     unscopedA = d.submitPlan(manager, unscopedA.id, { version: unscopedA.version })

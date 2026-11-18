@@ -28,8 +28,8 @@ export function monthlyWorkflow(plan: MonthlyPlan, actor: User, archived = false
   let nextStep = ''
   if (!live) nextStep = plan.deletion ? '此目标已删除，仅保留历史，不再计入当前目标、统计和待办。' : plan.visibility ? '这是历史记录，仅供查看。' : plan.status === 'merged' ? '此目标已合并，请查看合并后的目标。' : '当前账号没有此目标的操作权限。'
   else if (editableDraft) {
-    nextStep = canEdit ? '核对目标内容后提交审核；审核通过后仍需管理员发布，才可正式排周。' : '等待管理员核对并提交审核；审核通过、发布后才能正式排周。'
-    if (canSubmit) primary = { action: 'submit', label: plan.status === 'returned' ? '重新提交审核' : '提交审核' }
+    nextStep = manager ? '核对目标内容后确认，再发布即可正式排周。' : canEdit ? '核对目标内容后提交审核；审核通过后仍需管理员发布，才可正式排周。' : '等待管理员核对并提交审核；审核通过、发布后才能正式排周。'
+    if (canSubmit) primary = { action: 'submit', label: manager ? '确认目标' : plan.status === 'returned' ? '重新提交审核' : '提交审核' }
   } else if (plan.status === 'submitted') {
     nextStep = manager ? '请审核目标。通过后还需发布，目标才会正式生效。' : '已提交，等待管理员审核并发布。'
     if (canReview) primary = { action: 'review', label: '审核目标' }

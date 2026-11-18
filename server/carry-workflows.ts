@@ -60,7 +60,7 @@ export class CarryWorkflowService extends DomainBase {
     actor = this.actor(actor)
     const payload = { action: 'create', sourcePlanId: text(input.sourcePlanId, '来源目标'), sourceVersion: version(input.sourceVersion), targetMonth: month(input.targetMonth),
       targetPlanId: input.targetPlanId ? text(input.targetPlanId, '承接目标') : null, dueDate: input.targetPlanId ? '' : date(input.dueDate, '承接截止日期'),
-      remainingWork: text(input.remainingWork, '剩余工作'), reason: text(input.reason, '承接原因'), split: input.split === true }
+      remainingWork: text(input.remainingWork, '剩余工作'), reason: text(input.reason, '承接说明', false), split: input.split === true }
     return this.store.transaction(() => {
       const request = this.request(actor, input, payload)
       if (request.receipt) return this.detail(actor, request.receipt.workflowId)
@@ -166,7 +166,7 @@ export class CarryWorkflowService extends DomainBase {
   }
   apply(actor: User, id: string, input: Input): CarryWorkflowView {
     actor = this.actor(actor)
-    const selection = this.selection(input), workflowVersion = version(input.workflowVersion), reason = text(input.reason, '关联与排周原因')
+    const selection = this.selection(input), workflowVersion = version(input.workflowVersion), reason = text(input.reason, '关联与排周说明', false)
     const payload = { action: 'apply', id, workflowVersion, selection, manifest: input.manifest, fingerprint: text(input.fingerprint, '预览指纹'), reason }
     return this.store.transaction(() => {
       const request = this.request(actor, input, payload)
@@ -194,7 +194,7 @@ export class CarryWorkflowService extends DomainBase {
   }
   cancel(actor: User, id: string, input: Input): CarryWorkflowView {
     actor = this.actor(actor)
-    const payload = { action: 'cancel', id, workflowVersion: version(input.workflowVersion), reason: text(input.reason, '取消原因') }
+    const payload = { action: 'cancel', id, workflowVersion: version(input.workflowVersion), reason: text(input.reason, '取消说明', false) }
     return this.store.transaction(() => {
       const request = this.request(actor, input, payload)
       if (request.receipt) return this.detail(actor, request.receipt.workflowId)

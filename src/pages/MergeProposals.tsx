@@ -110,12 +110,11 @@ export default function MergeProposals({
         <Field label="合并后的成果名称">
           <input name="title" required maxLength={LIMITS.title} />
         </Field>
-        <Field label="合并原因">
+        <Field label="合并说明（选填）">
           <textarea
             name="reason"
-            required
-            rows={3}
-            placeholder="说明为什么这些提报是同一成果，以及如何保留各自责任"
+            rows={2}
+            placeholder="需要告诉提报人的补充信息"
           />
         </Field>
       </Form>

@@ -784,8 +784,8 @@ export function WeeklyBody({ data, refresh, notify, intent, navigate, period }: 
                   ))}
               </select>
             </Field>
-            <Field label="调整原因">
-              <textarea name="reason" required rows={3} />
+            <Field label="调整说明（选填）">
+              <textarea name="reason" rows={2} />
             </Field>
           </Form>
         </Modal>

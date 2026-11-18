@@ -286,7 +286,7 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
             <button className="button primary" disabled={!approvedCount || action.busy} aria-describedby="monthly-publish-help" onClick={() => showModal('publish')}>
               <Send size={16} />批量发布已审核目标{approvedCount ? `（${approvedCount}）` : ''}
             </button>
-            <p id="monthly-publish-help">{approvedCount ? `将先预览 ${month} 全月 ${approvedCount} 条可发布目标；确认后才发布。` : '暂无可发布目标。草稿需先提交审核，审核通过后才能发布；归档项目需先恢复。'}</p>
+            <p id="monthly-publish-help">{approvedCount ? `将先预览 ${month} 全月 ${approvedCount} 条可发布目标；确认后才发布。` : '暂无可发布目标。草稿确认后即可发布；归档项目需先恢复。'}</p>
           </div>
         )}
       </div>
@@ -430,7 +430,7 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
                                   disabled={action.busy}
                                   onClick={() => void open('submit', plan)}
                                 >
-                                  提交审核
+                                  {manager ? '确认目标' : '提交审核'}
                                 </button>
                               )}
                             {workflow(plan).canReview && (
@@ -565,29 +565,24 @@ export function MonthlyBody({ data: pageData, refresh, notify, intent, navigate,
           >
             <Field
               label="发布说明"
-              hint={
-                publications.length
-                  ? '补充发布请说明新增范围。'
-                  : '可选，记录本次月度安排的重点。'
-              }
+              hint="选填。发布范围和版本由系统记录。"
             >
               <textarea
                 name="reason"
-                rows={3}
-                required={publications.length > 0}
+                rows={2}
               />
             </Field>
           </Form>
         </Modal>
       )}
       {modal === 'submit' && selected && workflow(selected).canSubmit && (
-        <Modal title="提交月度目标审核" onClose={close}>
+        <Modal title={manager ? '确认月度目标' : '提交月度目标审核'} onClose={close}>
           <p className="modal-intro"><strong>{selected.title}</strong> · {selected.month}</p>
-          <p>提交后状态变为“待审核”。{manager ? '你可继续审核该目标；审核通过后还需单独确认发布。' : '管理员审核通过并发布后，才能提交正式周计划。'}</p>
+          <p>{manager ? '确认后进入待发布，发布后成员即可据此排周。' : '提交后状态变为“待审核”。管理员审核通过并发布后，才能提交正式周计划。'}</p>
           {selected.reviewComment && <p className="context-box">上次退回意见：{selected.reviewComment}</p>}
-          <Form onCancel={close} submitLabel="确认提交审核" onSubmit={async () => {
+          <Form onCancel={close} submitLabel={manager ? '确认，进入待发布' : '确认提交审核'} onSubmit={async () => {
             const updated = await api<MonthlyPlan>(`/plans/${selected.id}/submit`, json({ version: selected.version }))
-            await finishSaved(async () => { await refresh(); setSelected(updated); showModal('detail'); notify('目标已提交审核，尚未发布') })
+            await finishSaved(async () => { await refresh(); setSelected(updated); showModal('detail'); notify(manager ? '目标已确认，待发布' : '目标已提交审核，尚未发布') })
           }}><div className="detail-grid"><div><span>预期成果</span><p>{selected.expectedOutcome || '未填写'}</p></div><div><span>验收标准</span><p>{selected.acceptanceCriteria || '未填写'}</p></div><div><span>负责人</span><p>{nameOf(data, selected.ownerId)}</p></div><div><span>截止日期</span><p>{selected.dueDate || '未填写'}</p></div></div></Form>
         </Modal>
       )}
@@ -832,7 +827,7 @@ function PublishMonth({ data, month, publicationCount, onClose, onSaved }: { dat
     {candidates.error ? <div role="alert" className="error">{candidates.error}<button onClick={candidates.retry}>重新读取完整清单</button></div> : !candidates.value ? <p role="status">正在核对整月可发布目标…</p> : <>
       <p className="modal-intro">将 {month} 已审核通过的 {approved.length} 项成果发布为部门承诺。以下为完整可发布清单。</p>
       <div className="compact-list">{approved.map(plan => <div key={plan.id}><CheckCircle2 size={16} /><span>{plan.title}</span><small>{nameOf(candidates.value!, plan.ownerId)}</small></div>)}</div>
-      <Form onCancel={onClose} submitLabel={`确认发布以上 ${approved.length} 条目标`} onSubmit={async event => { await api(`/months/${month}/publish`, json(monthlyPublishInput(approved, new FormData(event.currentTarget).get('reason')))); await onSaved('部门月度目标已发布') }}><Field label="发布说明"><textarea name="reason" rows={3} required={publicationCount > 0} /></Field></Form>
+      <Form onCancel={onClose} submitLabel={`确认发布以上 ${approved.length} 条目标`} onSubmit={async event => { await api(`/months/${month}/publish`, json(monthlyPublishInput(approved, new FormData(event.currentTarget).get('reason')))); await onSaved('部门月度目标已发布') }}><Field label="发布说明（选填）"><textarea name="reason" rows={2} /></Field></Form>
     </>}
   </Modal>
 }
@@ -843,7 +838,7 @@ function PublishPlan({ data, plan, publicationCount, onClose, onSaved }: { data:
     <Form onCancel={onClose} submitLabel="确认发布这 1 条目标" onSubmit={async event => {
       await api(`/months/${plan.month}/publish`, json(monthlyPublishInput([plan], new FormData(event.currentTarget).get('reason'))))
       await onSaved('此月度目标已发布')
-    }}><Field label={publicationCount ? '补充发布说明' : '发布说明（选填）'} hint={publicationCount ? '请说明本次补充发布的范围。' : '本次只影响上方目标。'}><textarea name="reason" rows={3} required={publicationCount > 0} /></Field></Form>
+    }}><Field label="发布说明（选填）" hint="本次只影响上方目标。"><textarea name="reason" rows={2} /></Field></Form>
   </Modal>
 }
 function MonthPublications({ data, month, onClose }: { data: PageProps['data']; month: string; onClose: () => void }) {
@@ -1068,10 +1063,10 @@ function PlanEditor({
         </div>
         {plan?.status === 'published' && (
           <Field
-            label="本次调整原因"
+            label="调整说明（选填）"
             hint="系统会保留修改前后的承诺，形成新的发布版本。"
           >
-            <textarea name="reason" required rows={3} />
+            <textarea name="reason" rows={2} />
           </Field>
         )}
       </Form>
