@@ -338,7 +338,7 @@ export class ImportService {
     }
     try { date(row.dueDate) } catch { issues.push('缺少有效截止日期') }
     if (row.kind === 'monthly') {
-      issues.push(...temporaryImportIssues(row))
+      issues.push(...temporaryImportIssues(actor, row))
       if (!isManager(actor) && row.isTemporary !== true) issues.push('普通月度目标须由管理者创建；本人临时事项可加入月度草稿')
       if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(row.month)) issues.push('缺少所属月份')
       else if (!row.dueDate.startsWith(row.month)) issues.push('截止日期须在所属月份内')
@@ -350,7 +350,7 @@ export class ImportService {
       if (!row.expectedOutcome) issues.push('缺少本周承诺')
       const candidate = row.taskId ? this.store.get<Task>('tasks', row.taskId) : undefined
       const task = candidate && (isManager(actor) || candidate.ownerId === actor.id) ? candidate : undefined
-      issues.push(...temporaryImportIssues(row, task))
+      issues.push(...temporaryImportIssues(actor, row, task))
       if (row.taskId && (!task || task.cancellation || task.ownerId !== row.ownerId)) issues.push('关联任务无效、已作废或负责人不一致')
       const planId = task?.monthlyPlanId || row.monthlyPlanId
       const candidatePlan = planId ? this.store.get<MonthlyPlan>('plans', planId) : undefined
@@ -359,7 +359,7 @@ export class ImportService {
       if (plan && !isActiveMonthlyPlan(plan)) issues.push('原目标已删除，请排除此来源并核对保留的目标')
       if (plan?.visibility === 'reference') issues.push('历史目标引用不能用于新增任务')
       const linked = rows.find(r => r.id === row.linkedRowId && r.kind === 'monthly' && r.selected)
-      if (!task && !plan && !linked && row.isTemporary !== true) issues.push('请选择月计划、关联本批次月计划行，或标为独立临时周任务并填写原因')
+      if (!task && !plan && !linked && row.isTemporary !== true) issues.push('请选择月计划、关联本批次月计划行，或标为独立临时周任务')
       if (plan && (plan.status === 'merged' || ![plan.ownerId, ...plan.collaboratorIds].includes(row.ownerId))) issues.push('负责人未参与所选月计划')
       if (linked && linked.ownerId !== row.ownerId) issues.push('关联月计划行的负责人不一致')
       const month = plan?.month || linked?.month

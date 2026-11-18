@@ -140,7 +140,7 @@ export default function ImportRowFields({ batch, editing, setEditing, data, scop
           </Field>
           </div>
           {editingTemporary && (
-            <Field label={batch?.mode === 'history' || editingHistory ? '交办说明' : '交办说明（入计划前必填）'} hint="说明交办来源、临时背景或要求。可以先保存校对，纳入计划前再补齐。">
+            <Field label={batch?.mode === 'history' || editingHistory || editingTaskLocked || editing.ownerId === data.user.id ? '交办说明（选填）' : '交办说明（代录必填）'} hint="可填写原文中的交办来源或要求。代他人新建临时事项时，请在纳入计划前补齐。">
               <textarea
                 rows={2}
                 maxLength={2000}

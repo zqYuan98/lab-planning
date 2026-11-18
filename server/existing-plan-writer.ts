@@ -63,12 +63,12 @@ export function importMetadataIssues(store: Store, row: ImportRow): string[] {
 }
 
 /** Imported classifications may describe new work, but never reclassify an existing task. */
-export function temporaryImportIssues(row: ImportRow, task?: Task): string[] {
+export function temporaryImportIssues(actor: User, row: ImportRow, task?: Task): string[] {
   const issues: string[] = []
   const check = (operation: () => unknown) => { try { operation() } catch (error) { issues.push(error instanceof Error ? error.message : '临时事项字段无效') } }
   if (row.isTemporary !== undefined) check(() => bool(row.isTemporary, '临时事项标记'))
   if (row.temporaryReason !== undefined) check(() => text(row.temporaryReason, '临时事项原因', false))
-  if (row.isTemporary === true) {
+  if (row.isTemporary === true && row.ownerId !== actor.id && !task) {
     if (row.temporaryReason === undefined || row.temporaryReason === null || (typeof row.temporaryReason === 'string' && !row.temporaryReason.trim())) issues.push('请填写临时交办说明')
     else check(() => text(row.temporaryReason, '临时事项原因'))
   }
@@ -101,7 +101,7 @@ export function validateExistingRow(store: Store, actor: User, row: ImportRow, r
   let dueDate = ''
   check(() => { dueDate = optionalDate(row.dueDate, '截止日期') })
   if (row.kind === 'monthly') {
-    issues.push(...temporaryImportIssues(row))
+    issues.push(...temporaryImportIssues(actor, row))
     check(() => { const period = month(row.month); if (dueDate && !dueDate.startsWith(period)) throw new HttpError(400, '截止日期必须在所属月份内') })
     check(() => {
       const result = choice(importedMonthlyResult(row), ['pending', 'submitted', 'accepted', 'not_completed'], '成果状态')
@@ -113,7 +113,7 @@ export function validateExistingRow(store: Store, actor: User, row: ImportRow, r
     check(() => choice(importedWeeklyStatus(row), WEEKLY_STATUSES, '周状态'))
     const candidate = typeof row.taskId === 'string' && row.taskId ? store.get<Task>('tasks', row.taskId) : undefined
     const task = candidate && (isManager(actor) || candidate.ownerId === actor.id) ? candidate : undefined
-    issues.push(...temporaryImportIssues(row, task))
+    issues.push(...temporaryImportIssues(actor, row, task))
     if (row.taskId && (!task || !isActiveTask(task) || task.ownerId !== row.ownerId)) issues.push('关联任务不存在、已作废或负责人不一致')
     const linked = row.linkedRowId ? rows.find(item => item.id === row.linkedRowId && item.kind === 'monthly' && item.selected) : undefined
     if (row.linkedRowId && !linked && !row.monthlyPlanId) issues.push('请选择本批次中有效的月计划行')
@@ -187,7 +187,7 @@ export class ExistingPlanWriter {
         expectedOutcome: text(row.expectedOutcome, '预期成果', false), acceptanceCriteria: text(row.acceptanceCriteria, '验收标准', false), dueDate: optionalDate(row.dueDate, '截止日期'),
         priority: before?.priority ?? 'medium', status: 'published', reviewComment: before?.reviewComment ?? '', publishedVersion: revision, sourcePlanId: before?.sourcePlanId ?? null,
         actualOutcome: text(row.actualOutcome, '实际成果', false), acceptanceStatus: importedMonthlyResult(row), acceptanceNote: text(row.blocker, '成果说明', false), importSource: this.provenance(row),
-        isTemporary: row.isTemporary === true, temporaryReason: row.isTemporary === true ? text(row.temporaryReason, '临时事项原因') : '',
+        isTemporary: row.isTemporary === true, temporaryReason: row.isTemporary === true ? text(row.temporaryReason, '临时事项原因', false) || '临时新增' : '',
         ...(before?.mergedFromIds ? { mergedFromIds: before.mergedFromIds } : {}),
       }
       const result = before ? this.store.update<MonthlyPlan>('plans', before.id, before.version, fields) : this.store.insert<MonthlyPlan>('plans', fields)
@@ -217,7 +217,7 @@ export class ExistingPlanWriter {
       if (!task) {
         const taskStatus = { planned: 'todo', doing: 'doing', blocked: 'blocked', done: 'doing', not_done: 'todo' } as const
         task = this.store.insert<Task>('tasks', { ...(row.remainingEffortDays !== undefined ? { remainingEffortDays: row.remainingEffortDays } : {}), title: text(row.title, '任务标题', true, LIMITS.title), monthlyPlanId: planId || null, ownerId: row.ownerId,
-          description: text(row.sourceText, '来源原文', false, 20000), dueDate: optionalDate(row.dueDate, '任务截止日期'), status: row.taskCompleted ? 'done' : taskStatus[status], isTemporary: row.isTemporary === true, temporaryReason: row.isTemporary === true ? text(row.temporaryReason, '临时事项原因') : '', importSource, ...importWorkMetadata(row), ...(row.taskCompleted ? { completionNote: text(row.completionNote, '整体完成说明') } : {}) })
+          description: text(row.sourceText, '来源原文', false, 20000), dueDate: optionalDate(row.dueDate, '任务截止日期'), status: row.taskCompleted ? 'done' : taskStatus[status], isTemporary: row.isTemporary === true, temporaryReason: row.isTemporary === true ? text(row.temporaryReason, '临时事项原因', false) || '临时安排' : '', importSource, ...importWorkMetadata(row), ...(row.taskCompleted ? { completionNote: text(row.completionNote, '整体完成说明') } : {}) })
         this.audit('task', task.id, null, task)
       }
       const fields: Omit<WeeklyRecord, keyof import('../shared/types.ts').Entity> = { ...(row.plannedEffortDays !== undefined ? { plannedEffortDays: row.plannedEffortDays } : {}), ...(row.actualEffortDays !== undefined ? { actualEffortDays: row.actualEffortDays } : {}), taskId: task.id, monthlyPlanId: planId || null, ownerId: row.ownerId, weekStart,

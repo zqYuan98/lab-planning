@@ -64,7 +64,7 @@ R3 保留 `/context` 的完整集成协议，内部已使用独立读取，不�
 
 **临时工作属性**：`kind` 仍选择 `monthly`（纳入月度目标）或 `weekly`（纳入周计划），用独立可选字段 `isTemporary:true` 和 `temporaryReason` 标明领导临时交办等来源；不要把 `kind` 改为 `temporary`。缺省 `isTemporary` 兼容旧数据，不会把所有未关联月目标的导入记录判为临时工作。该字段必须是真正的 JSON 布尔值，不能传 `"true"`、`1` 等替代值。
 
-`history` 可以保留临时原因缺项，供后续核对；纳入 `draft` 或 `existing` 时，临时事项必须填写非空 `temporaryReason`。临时周任务不可同时填写 `monthlyPlanId` 或 `linkedRowId` 关联月目标。成员可以导入本人临时月目标草稿，再按月度审核发布流程提报；普通月目标草稿仍由管理者创建。所有 `existing` 导入（含临时事项）仍需管理者确认，成员可调用 `request-confirmation`。
+`history` 可以保留临时原因缺项，供后续核对；纳入 `draft` 或 `existing` 时，为他人新建临时事项时须填写非空 `temporaryReason`，本人事项可省略，关联已有任务时沿用其说明。临时周任务不可同时填写 `monthlyPlanId` 或 `linkedRowId` 关联月目标。成员可以导入本人临时月目标草稿，再按月度审核发布流程提报；普通月目标草稿仍由管理者创建。所有 `existing` 导入（含临时事项）仍需管理者确认，成员可调用 `request-confirmation`。
 
 例如将领导临时交办加入周计划草稿：
 

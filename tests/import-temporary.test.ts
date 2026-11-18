@@ -149,7 +149,22 @@ test('manager activation preserves both temporary classifications and original o
   assert.equal(f.store.list('tasks').length, 1)
 })
 
-test('missing temporary reasons remain editable and archivable but block both operational import modes atomically', t => {
+test('own temporary imports accept missing context without inventing a source note in the batch', t => {
+  for (const mode of ['draft', 'existing'] as const) {
+    const f = fixture(t)
+    const actor = mode === 'draft' ? f.member : f.manager
+    const batch = f.service.structured(actor, { sourceKey: 'own-' + mode, mode, rows: [
+      monthly(actor.id, { temporaryReason: '' }), weekly(actor.id, { temporaryReason: '' }),
+    ] })
+    const result = f.service.commit(actor, batch.id, { version: batch.version })
+    assert.equal(result.committedCount, 2)
+    assert.ok(result.rows.every(row => !row.temporaryReason))
+    assert.equal(f.store.list<MonthlyPlan>('plans')[0].temporaryReason, '临时新增')
+    assert.equal(f.store.list<Task>('tasks')[0].temporaryReason, '临时安排')
+  }
+})
+
+test('missing context for another owner remains archivable but blocks new operational records atomically', t => {
   const f = fixture(t)
   for (const mode of ['draft', 'existing'] as const) {
     let batch = f.service.structured(f.manager, { sourceKey: `missing-reason-${mode}`, mode, rows: [monthly(f.member.id), weekly(f.member.id, { temporaryReason: '' })] })

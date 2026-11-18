@@ -992,7 +992,7 @@ export default function Imports({
                         )}
                         {bulk.nature === 'temporary' && (
                           <div className="import-bulk-reason">
-                            <Field label="交办说明（入计划前必填）" hint="例如：领导临时交办客户演示，下周三前完成。留空时保留各条原说明，也可逐条补充。">
+                            <Field label="交办说明（代录新事项时必填）" hint="例如：领导临时交办客户演示，下周三前完成。留空时保留各条原说明，也可逐条补充。">
                               <textarea
                                 aria-label="批量交办说明"
                                 rows={2}
@@ -1380,7 +1380,7 @@ export default function Imports({
                             ? `${manager ? '本次确认会直接写入对应月份与周，并保留实际成果及核对后的状态。' : '校对后交管理员确认一次，确认后直接进入对应月份与周，无需成员再次提报。'} 原表未注明的验收标准、预期成果与截止日期可留空；原文“完成”不自动等于已验收。同来源的既有草稿会沿用原编号转为生效计划。`
                             : batch.mode === 'history'
                               ? '勾选记录将与来源一起归档。缺失字段可保留为空，历史状态不自动算作当前成果。'
-                              : manager ? '导入后仍需审核发布：新月度目标会保留为草稿，请前往“月度目标”核对并发布。周任务草稿需继续提报，临时交办需填写说明。' : '导入后仍需审核发布。成员可导入自己的周任务草稿及临时月度草稿，再按对应流程提报；常规团队月度目标由管理员创建。'}{' '}
+                              : manager ? '导入后仍需审核发布：新月度目标会保留为草稿，请前往“月度目标”核对并发布。周任务草稿需继续提报，代他人新增临时事项需填写说明。' : '导入后仍需审核发布。成员可导入自己的周任务草稿及临时月度草稿，再按对应流程提报；常规团队月度目标由管理员创建。'}{' '}
                           每次校对保存后，可随时离开再继续。
                         </p>
                         {commitBlockers.length > 0 && <ul className="import-commit-blockers" aria-label="确认导入前的待办">{commitBlockers.map(blocker => <li key={`${blocker.section}:${blocker.action}`}>
