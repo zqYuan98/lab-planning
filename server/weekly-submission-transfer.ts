@@ -107,7 +107,7 @@ export function weeklyTransferIssues(rows: BusinessCollections, available: Recor
     if (rule && !rule.windows.some(w => w.fromWeek <= cycle.week && (!w.toWeek || cycle.week < w.toWeek))) issue(`weeklyCycles/${cycle.id}：周期不在规则生效窗口内`)
     if (new Set(cycle.rosterIds).size !== cycle.rosterIds.length) issue(`weeklyCycles/${cycle.id}：名单映射后重复`)
     if (time(cycle.frozenAt) < time(mondayInstant(cycle.week))) issue(`weeklyCycles/${cycle.id}：冻结时间早于周期开始`)
-    if (cycle.confirmedBy && (cycle.needsReview || !cycle.confirmationReason.trim()) || !cycle.confirmedBy && cycle.confirmationReason) issue(`weeklyCycles/${cycle.id}：名单确认状态不一致`)
+    if (cycle.confirmedBy ? cycle.needsReview : !!cycle.confirmationReason) issue(`weeklyCycles/${cycle.id}：名单确认状态不一致`)
   }
   for (const duty of rows.weeklyDuties) {
     const cycle = cycles.get(duty.cycleWeek)

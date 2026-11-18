@@ -9,7 +9,7 @@ import { addWeekDays, shanghaiWeek } from '../server/weekly-submission-clock.ts'
 import type { User, Task, WeeklyRecord, Report, MonthlyPlan, AuditEvent } from '../shared/types.ts'
 import type { WeeklyCycle, WeeklyDuty, WeeklySubmission, WeeklyRule, WeeklyDeadlineSnapshot } from '../shared/weekly-submissions.ts'
 
-function fixture(t: TestContext, suffix: string, populate = false) {
+function fixture(t: TestContext, suffix: string, populate = false, confirmationReason = '核对历史名单') {
   const store = new Store(':memory:')
   t.after(() => store.close())
   const user = (name: string, role: User['role'] = 'member') => store.restoreEntity<User>('users', {
@@ -38,7 +38,7 @@ function fixture(t: TestContext, suffix: string, populate = false) {
     service.adjust(manager, { dutyId: otherDuty.id, version: otherDuty.version, action: 'exempt', reason: '出差' })
     const cycle = store.get<WeeklyCycle>('weeklyCycles', '2026-09-07')!
     store.update<WeeklyCycle>('weeklyCycles', cycle.id, cycle.version, { needsReview: true })
-    service.confirmRoster(manager, { week: cycle.week, version: cycle.version + 1, rosterIds: cycle.rosterIds, reason: '核对历史名单' })
+    service.confirmRoster(manager, { week: cycle.week, version: cycle.version + 1, rosterIds: cycle.rosterIds, reason: confirmationReason })
     const rule = service.getRule()
     service.updateRule(manager, { version: rule.version, enabled: false })
     store.insert<Report>('reports', { type: 'weekly', period: '2026-09-07', title: '冻结报告', status: 'finalized', revision: 1, narrative: '历史成果', authorId: manager.id, finalizedAt: now.toISOString(),
@@ -226,6 +226,23 @@ test('holiday missing facts use the duty deadline and reject a mismatched cutoff
   assert.equal(previewRestore(target.store, target.manager, packet).canRestore, true)
   packet.collections.weeklyMissing[0].deadlineAt = '2026-09-25T08:00:00.000Z'
   assert.equal(previewRestore(target.store, target.manager, packet).canRestore, false)
+})
+
+test('confirmed roster with no optional note restores; unconfirmed notes and contradictory status are rejected', t => {
+  const source = fixture(t, 'source', true, ''), target = fixture(t, 'target')
+  const packet = exportBusinessData(source.store, source.manager)
+  const preview = previewRestore(target.store, target.manager, packet)
+  assert.ok(preview.canRestore, preview.issues.join('\n'))
+  restoreBusinessData(target.store, target.manager, packet, {}, preview.fingerprint)
+  const cycle = packet.collections.weeklyCycles.find(row => row.confirmedBy === source.manager.id)!
+  const restored = target.store.get<WeeklyCycle>('weeklyCycles', cycle.id)!
+  assert.equal(restored.confirmedBy, target.manager.id)
+  assert.equal(restored.confirmationReason, '')
+  for (const patch of [{ needsReview: true }, { confirmedBy: null, confirmationReason: '孤立说明' }]) {
+    const broken = structuredClone(packet)
+    Object.assign(broken.collections.weeklyCycles.find(row => row.id === cycle.id)!, patch)
+    assert.match(previewRestore(target.store, target.manager, broken).issues.join('\n'), /名单确认状态不一致/)
+  }
 })
 
 test('v2 roundtrip remaps nested users and retains UUID duties, immutable timestamps, drafts and report summaries', t => {

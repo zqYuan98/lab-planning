@@ -36,6 +36,24 @@ function populated(t: TestContext) {
   return { ...f, task, submitted, revised, episode, decision }
 }
 
+test('support assignment without a note survives export and restore, other action notes remain required', t => {
+  const source = populated(t), target = accounts(t, 'target-')
+  const episode = source.store.get<BlockerEpisode>('blockerEpisodes', source.episode.id)!
+  const { action } = new TaskSupportService(source.store).assignBlocker(source.manager, episode.id, {
+    requestId: 'new-coordinator-no-note', version: episode.version, coordinatorId: source.member.id, responseDueAt: futureResponseDueAt,
+  })
+  const packet = exportBusinessData(source.store, source.manager)
+  const preview = previewRestore(target.store, target.manager, packet)
+  assert.ok(preview.canRestore, preview.issues.join('\n'))
+  restoreBusinessData(target.store, target.manager, packet, {}, preview.fingerprint)
+  assert.equal(target.store.get<typeof action>('blockerActions', action.id)?.note, '')
+  const assigned = packet.collections.blockerActions.find(row => row.id === action.id)!
+  for (const other of ['record', 'defer', 'close', 'respond', 'resolve'] as const) {
+    assigned.action = other
+    assert.throws(() => parsePacket(packet), { status: 400 })
+  }
+})
+
 test('v5 roundtrip maps all responsibility references, retains immutable revisions and skips operational sharing', t => {
   const source = populated(t), target = accounts(t, 'target-')
   source.store.insert<Entity & { subjectId: string; secret: string }>('objectGrants', { subjectId: source.observer.id, secret: 'operational-sharing-secret' })
