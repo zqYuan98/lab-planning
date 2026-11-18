@@ -8,21 +8,21 @@
 }
 .workspace-shell .notifications-page .notification-deliveries p {
   color: var(--tech-muted);
-  font-size: 13px;
+  font-size: var(--font-small);
 }
 .workspace-shell .notifications-page .notification-deliveries .notification-delivery-error {
   color: #8a591d;
 }
 .workspace-shell .notifications-page .notification-deliveries small {
   color: var(--text-metadata);
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 .workspace-shell .notifications-page .notification-pilots small {
   color: var(--tech-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 .workspace-shell .notifications-page .notification-pilots .badge {
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 .workspace-shell .notifications-page .collaboration-native-status p {
   color: var(--tech-muted);

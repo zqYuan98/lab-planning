@@ -14,7 +14,7 @@
   min-width: 0;
   max-width: 100%;
   color: var(--ow-title);
-  font-size: 13px;
+  font-size: var(--font-small);
   line-height: 1.5;
 }
 
@@ -24,17 +24,11 @@
   font: inherit;
 }
 
-.ow-scope-note {
-  margin: 0 0 16px;
-  padding: 12px 16px;
-  border: 1px solid var(--ow-line);
-  border-radius: 8px;
-  background: var(--ow-soft);
-  color: var(--ow-muted);
-}
-.ow-scope-note p { margin: 0 0 8px; }
-.ow-scope-note .checkbox-label { flex-wrap: wrap; }
-.ow-goal-coverage { margin-top: 10px; }
+.ow-scope-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; margin: 0 0 16px; color: var(--ow-muted); font-size: var(--font-small); }
+.ow-scope-bar:empty { display: none; }
+.ow-scope-bar p { margin: 0; }
+.ow-scope-bar .checkbox-label { flex-wrap: wrap; }
+.ow-goal-coverage { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .ow-goal-coverage .ow-button { white-space: normal; text-align: left; overflow-wrap: anywhere; }
 
 .ow-page :is(button, input, select, a):focus-visible {
@@ -63,8 +57,8 @@
 .ow-heading h1 {
   margin: 0 0 4px;
   color: var(--ow-title);
-  font-size: 25px;
-  font-weight: 650;
+  font-size: var(--font-title-l);
+  font-weight: var(--weight-strong);
   line-height: 1.4;
   letter-spacing: -0.5px;
 }
@@ -76,7 +70,7 @@
 .ow-heading-copy > p {
   margin: 0;
   color: var(--ow-muted);
-  font-size: 13px;
+  font-size: var(--font-small);
   line-height: 1.7;
 }
 
@@ -95,12 +89,12 @@
   min-height: 36px;
   padding: 7px 12px;
   border: 1px solid var(--ow-control);
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   background: #fff;
   color: var(--ow-text);
   white-space: nowrap;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: var(--font-small);
+  font-weight: var(--weight-medium);
   line-height: 1.5;
   transition:
     background-color 150ms ease,
@@ -137,12 +131,12 @@
   gap: 10px 16px;
   margin-bottom: 14px;
   color: var(--ow-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 
 .ow-period-bar > strong {
   color: var(--ow-text);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 .ow-period-bar > label {
@@ -156,10 +150,10 @@
   min-height: 34px;
   padding: 5px 8px;
   border: 1px solid #dce1e9;
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   background: #fff;
   color: var(--ow-text);
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 
 .ow-segmented {
@@ -169,17 +163,17 @@
   max-width: 100%;
   padding: 3px;
   border: 1px solid var(--ow-line);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   background: #f0f2f6;
 }
 
 .ow-segmented button {
   min-height: 29px;
   padding: 4px 13px;
-  border-radius: 4px;
+  border-radius: var(--radius-tag);
   color: var(--ow-muted);
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 
 .ow-segmented button:hover {
@@ -190,7 +184,7 @@
   background: #fff;
   color: var(--primary, #3b5bff);
   box-shadow: 0 1px 3px #17254014;
-  font-weight: 600;
+  font-weight: var(--weight-strong);
 }
 
 .ow-metrics {
@@ -211,7 +205,7 @@
   gap: 1px;
   padding: 11px 14px 10px;
   border: 1px solid #e2e7ee;
-  border-radius: 12px;
+  border-radius: var(--radius-panel);
   background: #fff;
   box-shadow: 0 2px 8px #1d293904;
   text-align: left;
@@ -242,13 +236,13 @@
 
 .ow-metric > span {
   color: var(--ow-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 
 .ow-metric > strong {
   color: var(--ow-title);
-  font-size: 32px;
-  font-weight: 600;
+  font-size: var(--font-display);
+  font-weight: var(--weight-strong);
   font-variant-numeric: tabular-nums;
   line-height: 1.2;
   letter-spacing: -0.9px;
@@ -257,14 +251,14 @@
 .ow-metric > strong > small {
   margin-left: 5px;
   color: var(--ow-muted);
-  font-size: 12px;
-  font-weight: 400;
+  font-size: var(--font-caption);
+  font-weight: var(--weight-regular);
   letter-spacing: 0;
 }
 
 .ow-metric > small {
   color: var(--ow-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
   line-height: 1.5;
 }
 
@@ -273,7 +267,7 @@
   max-width: 100%;
   overflow: hidden;
   border: 1px solid #e0e6ee;
-  border-radius: 12px;
+  border-radius: var(--radius-panel);
   background: #fff;
   box-shadow: 0 2px 8px #1d293904;
 }
@@ -298,7 +292,7 @@
   padding: 0 14px;
   color: var(--ow-muted);
   white-space: nowrap;
-  font-size: 13px;
+  font-size: var(--font-small);
 }
 
 .ow-tab:hover {
@@ -308,7 +302,7 @@
 
 .ow-tab[aria-selected="true"] {
   color: var(--primary, #3b5bff);
-  font-weight: 600;
+  font-weight: var(--weight-strong);
 }
 
 .ow-tab[aria-selected="true"]::after {
@@ -343,7 +337,7 @@
   min-height: 36px;
   padding: 0 10px;
   border: 1px solid var(--ow-control);
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   background: #fff;
   color: var(--ow-muted);
 }
@@ -364,7 +358,7 @@
   color: var(--ow-text);
   box-shadow: none;
   outline: none;
-  font-size: 13px;
+  font-size: var(--font-small);
 }
 
 .ow-search input::placeholder {
@@ -377,7 +371,7 @@
   gap: 6px;
   min-width: 0;
   color: var(--ow-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 
 .ow-select > :is(label, span) {
@@ -391,10 +385,10 @@
   min-height: 36px;
   padding: 6px 26px 6px 9px;
   border: 1px solid var(--ow-control);
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   background-color: #fff;
   color: var(--ow-text);
-  font-size: 13px;
+  font-size: var(--font-small);
 }
 
 .ow-toolbar-end {
@@ -414,7 +408,7 @@
   padding: 0 0 12px;
   border-bottom: 1px solid var(--ow-line);
   color: var(--ow-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 
 .ow-saved-bar > label {
@@ -432,15 +426,15 @@
   min-height: 32px;
   padding: 4px 24px 4px 8px;
   border: 1px solid #dce1e9;
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   background: #fff;
   color: var(--ow-text);
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 
 .ow-saved-bar > .ow-muted {
   margin-left: auto;
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 
 .ow-config {
@@ -451,11 +445,11 @@
   padding: 14px 16px;
   border-bottom: 1px solid var(--ow-line);
   background: #fafbfc;
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 
 .ow-config > strong {
-  font-weight: 600;
+  font-weight: var(--weight-strong);
 }
 
 .ow-columns {
@@ -473,7 +467,7 @@
   margin-bottom: 7px;
   padding: 0;
   color: var(--ow-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 
 .ow-columns label {
@@ -499,7 +493,7 @@
   border-bottom: 1px solid var(--ow-line);
   background: #fff;
   color: var(--ow-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 
 .ow-filter-note > .ow-select {
@@ -519,7 +513,7 @@
 .ow-filter-note button {
   padding: 0;
   color: var(--primary, #3b5bff);
-  font-size: 12px;
+  font-size: var(--font-caption);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
@@ -540,7 +534,7 @@
   border-collapse: separate;
   white-space: nowrap;
   color: var(--ow-text);
-  font-size: 13px;
+  font-size: var(--font-small);
   text-align: left;
 }
 
@@ -553,8 +547,8 @@
   border-bottom: 1px solid #e3e8ef;
   background: #f6f8fa;
   color: #606d80;
-  font-size: 12px;
-  font-weight: 500;
+  font-size: var(--font-caption);
+  font-weight: var(--weight-medium);
   letter-spacing: 0;
   text-align: left;
 }
@@ -571,7 +565,7 @@
   background: #fff;
   vertical-align: middle;
   color: var(--ow-text);
-  font-weight: 400;
+  font-weight: var(--weight-regular);
   line-height: 1.55;
 }
 
@@ -623,11 +617,11 @@ button.ow-person:hover strong {
   width: 34px;
   height: 34px;
   border: 1px solid #e6eaf5;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   background: #edf1fd;
   color: #5063a0;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--font-caption);
+  font-weight: var(--weight-strong);
 }
 
 .ow-person-meta {
@@ -635,20 +629,20 @@ button.ow-person:hover strong {
   min-width: 0;
   gap: 2px;
   color: var(--ow-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 
 .ow-person strong,
 .ow-person-meta strong {
   color: var(--ow-title);
-  font-size: 13px;
-  font-weight: 550;
+  font-size: var(--font-small);
+  font-weight: var(--weight-medium);
 }
 
 .ow-person-meta :is(small, span) {
   overflow: hidden;
   color: var(--ow-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
   text-overflow: ellipsis;
 }
 
@@ -662,9 +656,9 @@ button.ow-count,
   min-width: 28px;
   min-height: 28px;
   padding: 3px 7px;
-  border-radius: 4px;
+  border-radius: var(--radius-tag);
   color: var(--primary, #3b5bff);
-  font-weight: 550;
+  font-weight: var(--weight-medium);
 }
 
 button.ow-count:hover,
@@ -686,7 +680,7 @@ button.ow-count:hover,
   min-width: 60px;
   height: 5px;
   overflow: hidden;
-  border-radius: 3px;
+  border-radius: var(--radius-tag);
   background: #e9edf3;
 }
 
@@ -700,7 +694,7 @@ button.ow-count:hover,
 .ow-progress > small {
   min-width: 30px;
   color: var(--ow-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
   font-variant-numeric: tabular-nums;
 }
 
@@ -742,12 +736,12 @@ button.ow-count:hover,
 
 .ow-task-preview > button > small {
   flex-shrink: 0;
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 
 .ow-muted {
   color: var(--ow-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 
 .ow-pill {
@@ -758,12 +752,12 @@ button.ow-count:hover,
   max-width: 100%;
   min-height: 23px;
   padding: 2px 7px;
-  border-radius: 4px;
+  border-radius: var(--radius-tag);
   background: #eff1f5;
   color: #596476;
   white-space: nowrap;
-  font-size: 12px;
-  font-weight: 500;
+  font-size: var(--font-caption);
+  font-weight: var(--weight-medium);
   line-height: 1.5;
 }
 
@@ -820,7 +814,7 @@ button.ow-count:hover,
 
 .ow-overdue {
   color: #b63e36;
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 .ow-page .ow-table .ow-title-cell {
@@ -836,7 +830,7 @@ button.ow-count:hover,
   background: transparent;
   color: var(--ow-text);
   text-align: left;
-  font-size: 13px;
+  font-size: var(--font-small);
   line-height: 1.65;
   overflow-wrap: anywhere;
 }
@@ -867,7 +861,7 @@ button.ow-count:hover,
   padding: 9px 16px;
   border-top: 1px solid var(--ow-line);
   color: var(--ow-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 
 .ow-board {
@@ -887,7 +881,7 @@ button.ow-count:hover,
   min-width: 260px;
   padding: 10px;
   border: 1px solid #e9edf3;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   background: #f7f9fb;
 }
 
@@ -898,13 +892,13 @@ button.ow-count:hover,
   gap: 8px;
   margin-bottom: 10px;
   padding: 2px 2px 6px;
-  font-weight: 600;
+  font-weight: var(--weight-strong);
 }
 
 .ow-lane-heading > :is(span, small):last-child {
   color: var(--ow-muted);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: var(--font-caption);
+  font-weight: var(--weight-medium);
 }
 
 .ow-task-card {
@@ -913,7 +907,7 @@ button.ow-count:hover,
   margin-bottom: 9px;
   padding: 13px;
   border: 1px solid #e0e6ee;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: #fff;
   box-shadow: 0 1px 2px #27344904;
   color: var(--ow-text);
@@ -937,14 +931,14 @@ button.ow-count:hover,
   display: block;
   margin-bottom: 9px;
   color: var(--ow-title);
-  font-size: 14px;
-  font-weight: 550;
+  font-size: var(--font-body);
+  font-weight: var(--weight-medium);
   overflow-wrap: anywhere;
 }
 
 .ow-task-card > small {
   color: var(--ow-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 
 .ow-task-card > .ow-card-meta:first-child {
@@ -959,7 +953,7 @@ button.ow-count:hover,
   gap: 6px 9px;
   margin-top: 8px;
   color: var(--ow-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 
 .ow-card-meta > span {
@@ -978,7 +972,7 @@ button.ow-count:hover,
   min-width: 0;
   padding: 16px;
   border: 1px solid #e1e7ef;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   background: #fff;
   box-shadow: 0 2px 8px #1d293904;
 }
@@ -994,8 +988,8 @@ button.ow-count:hover,
 .ow-project-card :is(h2, h3) {
   margin: 0;
   color: var(--ow-title);
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--font-body);
+  font-weight: var(--weight-strong);
   line-height: 1.55;
   overflow-wrap: anywhere;
 }
@@ -1003,7 +997,7 @@ button.ow-count:hover,
 .ow-project-card > p {
   margin: 10px 0 0;
   color: var(--ow-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
   line-height: 1.7;
 }
 
@@ -1015,13 +1009,13 @@ button.ow-count:hover,
   gap: 9px 14px;
   margin: 11px 0;
   color: var(--ow-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 
 .ow-project-stats strong {
   color: var(--ow-title);
-  font-size: 17px;
-  font-weight: 600;
+  font-size: var(--font-title-s);
+  font-weight: var(--weight-strong);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1030,9 +1024,9 @@ button.ow-count:hover,
   align-items: center;
   gap: 6px;
   padding: 3px 0;
-  border-radius: 3px;
+  border-radius: var(--radius-tag);
   color: var(--ow-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 
 .ow-project-stats > button:hover {
@@ -1044,7 +1038,7 @@ button.ow-count:hover,
   width: 100%;
   height: 6px;
   overflow: hidden;
-  border-radius: 3px;
+  border-radius: var(--radius-tag);
   background: #edf0f4;
 }
 
@@ -1100,7 +1094,7 @@ button.ow-count:hover,
   border-right: 1px solid var(--ow-line);
   background: #fff;
   color: var(--ow-text);
-  font-size: 13px;
+  font-size: var(--font-small);
   line-height: 1.5;
   text-align: left;
 }
@@ -1111,13 +1105,13 @@ button.ow-count:hover,
   white-space: nowrap;
   text-overflow: ellipsis;
   text-align: left;
-  font-size: 12px;
-  font-weight: 500;
+  font-size: var(--font-caption);
+  font-weight: var(--weight-medium);
 }
 
 .ow-timeline-label > small {
   color: var(--ow-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 
 .ow-timeline-track {
@@ -1136,13 +1130,13 @@ button.ow-count:hover,
   overflow: hidden;
   padding: 4px 7px;
   border: 1px solid #c3d0f9;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   background: #edf2ff;
   color: #3556bc;
   white-space: nowrap;
   text-align: left;
   text-overflow: ellipsis;
-  font-size: 12px;
+  font-size: var(--font-caption);
   line-height: 18px;
 }
 
@@ -1183,7 +1177,7 @@ button.ow-count:hover,
   min-height: 48px;
   height: 100%;
   color: var(--ow-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
   background: #f7f8fa;
 }
 
@@ -1225,15 +1219,15 @@ button.ow-count:hover,
   border-top: 1px solid var(--ow-line);
   background: #fafbfc;
   color: var(--ow-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
   line-height: 1.7;
 }
 
 .ow-timeline-undated > h3 {
   margin: 0;
   color: var(--ow-text);
-  font-size: 13px;
-  font-weight: 550;
+  font-size: var(--font-small);
+  font-weight: var(--weight-medium);
 }
 
 .ow-timeline-undated .ow-detail-list > button {
@@ -1254,7 +1248,7 @@ button.ow-count:hover,
   padding: 32px 20px;
   color: var(--ow-muted);
   text-align: center;
-  font-size: 13px;
+  font-size: var(--font-small);
   line-height: 1.7;
 }
 
@@ -1286,8 +1280,8 @@ button.ow-count:hover,
 
 .ow-detail-list strong {
   display: block;
-  font-size: 13px;
-  font-weight: 550;
+  font-size: var(--font-small);
+  font-weight: var(--weight-medium);
   line-height: 1.65;
   overflow-wrap: anywhere;
 }
@@ -1295,7 +1289,7 @@ button.ow-count:hover,
 .ow-detail-list > article > p {
   margin: 8px 0;
   color: var(--ow-text);
-  font-size: 13px;
+  font-size: var(--font-small);
   line-height: 1.75;
   overflow-wrap: anywhere;
 }
@@ -1314,7 +1308,7 @@ button.ow-count:hover,
 
 .modal .ow-page > p {
   margin-top: 12px;
-  font-size: 13px;
+  font-size: var(--font-small);
   line-height: 1.75;
   overflow-wrap: anywhere;
 }
@@ -1332,13 +1326,13 @@ button.ow-count:hover,
   gap: 6px 12px;
   margin-top: 7px;
   color: var(--ow-muted, #626c7c);
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 
 .ow-fact-note {
   margin: 11px 0 0;
   color: var(--ow-muted, #626c7c);
-  font-size: 12px;
+  font-size: var(--font-caption);
   line-height: 1.8;
 }
 
@@ -1355,9 +1349,9 @@ button.ow-count:hover,
   min-height: 34px;
   padding: 5px 9px;
   border-color: #dce1e9;
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   background: #fff;
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 
 /* New workspace structure and semantic status treatments. */
@@ -1381,7 +1375,7 @@ button.ow-count:hover,
   justify-content: space-between;
   gap: 8px;
   color: #586579;
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 .ow-metric-top .ow-metric-icon {
   box-sizing: content-box;
@@ -1389,7 +1383,7 @@ button.ow-count:hover,
   height: 16px;
   padding: 4px;
   margin: -2px -2px -2px 0;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   background: var(--ow-metric-bg);
   color: var(--ow-metric-color);
 }
@@ -1428,10 +1422,10 @@ button.ow-count:hover,
   min-width: 19px;
   min-height: 19px;
   padding: 1px 5px;
-  border-radius: 5px;
+  border-radius: var(--radius-tag);
   background: #e8eeff;
   color: #3556c6;
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 .ow-density {
   display: inline-flex;
@@ -1439,7 +1433,7 @@ button.ow-count:hover,
   flex-wrap: wrap;
   gap: 8px;
   color: var(--ow-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 .ow-density > span {
   white-space: nowrap;
@@ -1448,7 +1442,7 @@ button.ow-count:hover,
   min-height: 30px;
   padding: 4px 10px;
   border: 1px solid var(--ow-control);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   background: #fff;
   color: var(--ow-muted);
 }
@@ -1468,11 +1462,11 @@ button.ow-count:hover,
   padding-bottom: 2px;
   border-color: transparent;
   background-color: #fff;
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 .ow-filter-note strong {
   color: var(--ow-text);
-  font-weight: 600;
+  font-weight: var(--weight-strong);
 }
 .ow-filter-chips {
   display: flex;
@@ -1491,10 +1485,10 @@ button.ow-count:hover,
   max-width: 100%;
   padding: 4px 8px;
   border: 1px solid #dbe4fb;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   background: #f3f6ff;
   color: #3558bc;
-  font-size: 12px;
+  font-size: var(--font-caption);
   text-align: left;
   overflow-wrap: anywhere;
 }
@@ -1546,8 +1540,8 @@ button.ow-count:hover,
 .ow-page .ow-person strong,
 .ow-page .ow-person-meta strong {
   color: var(--ow-title);
-  font-size: 14px;
-  font-weight: 550;
+  font-size: var(--font-body);
+  font-weight: var(--weight-medium);
 }
 .ow-avatar[data-color="1"] {
   border-color: #dfebe7;
@@ -1575,11 +1569,11 @@ button.ow-count:hover,
   min-height: 28px;
   padding: 3px 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   background: #f0f3f8;
   color: #465b7c;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--font-small);
+  font-weight: var(--weight-strong);
 }
 .ow-page :is(.ow-col-doing, .ow-member-total) .ow-count {
   background: #edf2ff;
@@ -1622,7 +1616,7 @@ button.ow-count:hover,
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 .ow-task-preview > button:hover {
   text-decoration: none;
@@ -1651,10 +1645,10 @@ button.ow-count:hover,
   min-width: 25px;
   min-height: 24px;
   padding: 2px 6px;
-  border-radius: 5px;
+  border-radius: var(--radius-tag);
   background: #e9eef4;
   color: #627087;
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 .ow-card-owner,
 .ow-card-meta > span {
@@ -1665,12 +1659,12 @@ button.ow-count:hover,
 .ow-card-owner .ow-avatar {
   width: 24px;
   height: 24px;
-  border-radius: 7px;
-  font-size: 12px;
+  border-radius: var(--radius-control);
+  font-size: var(--font-caption);
 }
 .ow-timeline-label :is(strong, button) {
   min-height: 24px;
-  font-size: 13px;
+  font-size: var(--font-small);
 }
 .ow-fact-note summary {
   width: fit-content;
@@ -1709,7 +1703,7 @@ button.ow-count:hover,
     flex-wrap: wrap;
   }
   .ow-heading h1 {
-    font-size: 23px;
+    font-size: var(--font-title-l);
   }
   .ow-metrics {
     grid-template-columns: repeat(6, 140px);
@@ -1745,10 +1739,10 @@ button.ow-count:hover,
     gap: 8px;
   }
   .ow-heading h1 {
-    font-size: 22px;
+    font-size: var(--font-title-l);
   }
   .ow-heading-copy > p {
-    font-size: 12px;
+    font-size: var(--font-caption);
   }
   .ow-heading .ow-actions {
     gap: 8px;
@@ -1763,7 +1757,7 @@ button.ow-count:hover,
   }
   .ow-page .ow-period-bar input {
     min-height: 44px;
-    font-size: 16px;
+    font-size: var(--font-title-s);
   }
   .ow-segmented button {
     min-height: 38px;
@@ -1780,7 +1774,7 @@ button.ow-count:hover,
     display: none;
   }
   .ow-metric > strong {
-    font-size: 30px;
+    font-size: var(--font-display);
   }
   .ow-viewbar {
     display: none;
@@ -1792,7 +1786,7 @@ button.ow-count:hover,
     padding: 10px 12px;
     border-bottom: 1px solid var(--ow-line);
     color: var(--ow-muted);
-    font-size: 12px;
+    font-size: var(--font-caption);
   }
   .ow-page .ow-mobile-view select {
     flex: 1;
@@ -1800,11 +1794,11 @@ button.ow-count:hover,
     min-height: 44px;
     padding: 8px 30px 8px 10px;
     border: 1px solid var(--ow-control);
-    border-radius: 7px;
+    border-radius: var(--radius-control);
     background-color: #fff;
     color: var(--ow-title);
-    font-size: 16px;
-    font-weight: 500;
+    font-size: var(--font-title-s);
+    font-weight: var(--weight-medium);
   }
   .ow-toolbar {
     gap: 8px;
@@ -1817,7 +1811,7 @@ button.ow-count:hover,
   }
   .ow-page .ow-search input {
     min-height: 42px;
-    font-size: 16px;
+    font-size: var(--font-title-s);
   }
   .ow-filter-toggle {
     display: inline-flex;
@@ -1842,7 +1836,7 @@ button.ow-count:hover,
     min-width: 0;
     max-width: none;
     min-height: 44px;
-    font-size: 16px;
+    font-size: var(--font-title-s);
   }
   .ow-toolbar-end {
     width: 100%;
@@ -1872,7 +1866,7 @@ button.ow-count:hover,
     min-width: 0;
     max-width: none;
     min-height: 44px;
-    font-size: 16px;
+    font-size: var(--font-title-s);
   }
   .ow-saved-bar > .ow-muted {
     margin-left: 0;
@@ -1888,7 +1882,7 @@ button.ow-count:hover,
   .ow-page .ow-filter-note select {
     max-width: 160px;
     min-height: 44px;
-    font-size: 16px;
+    font-size: var(--font-title-s);
   }
   .ow-filter-note button,
   .ow-filter-chips button {
@@ -1939,7 +1933,7 @@ button.ow-count:hover,
     gap: 6px;
     flex-shrink: 0;
     color: var(--ow-muted);
-    font-size: 12px;
+    font-size: var(--font-caption);
   }
   .ow-member-card-meta {
     display: flex;
@@ -1948,11 +1942,11 @@ button.ow-count:hover,
     gap: 5px 12px;
     margin: 10px 0 8px;
     color: var(--ow-muted);
-    font-size: 12px;
+    font-size: var(--font-caption);
   }
   .ow-member-card-meta strong {
     color: var(--ow-text);
-    font-weight: 600;
+    font-weight: var(--weight-strong);
   }
   .ow-member-card-meta .ow-overdue {
     color: #b4453d;
@@ -1964,7 +1958,7 @@ button.ow-count:hover,
     min-height: 44px;
     padding: 8px 0;
     border-top: 1px solid #f0f2f6;
-    font-size: 14px;
+    font-size: var(--font-body);
   }
   .ow-page .ow-member-card .ow-task-preview > button > .ow-pill {
     margin-top: 1px;
@@ -1972,10 +1966,10 @@ button.ow-count:hover,
   .ow-empty-member {
     margin: 10px 0 0;
     padding: 10px 12px;
-    border-radius: 7px;
+    border-radius: var(--radius-control);
     background: #f7f9fb;
     color: var(--ow-muted);
-    font-size: 12px;
+    font-size: var(--font-caption);
   }
   .ow-page button.ow-count,
   .ow-page .ow-count button {
@@ -2045,7 +2039,7 @@ button.ow-count:hover,
   .ow-page .ow-save-form input {
     flex: 1 1 150px;
     min-height: 44px;
-    font-size: 16px;
+    font-size: var(--font-title-s);
   }
 }
 @media (max-width: 420px) {
@@ -2085,7 +2079,7 @@ button.ow-count:hover,
   --ow-blocked: #df4c5a;
   --ow-planned: #697d96;
   color: var(--ow-title);
-  font-size: 14px;
+  font-size: var(--font-body);
 }
 
 .workspace-shell .workspace-main > .ow-page .ow-heading {
@@ -2110,8 +2104,8 @@ button.ow-count:hover,
   align-items: center;
   justify-content: center;
   border: 1px solid #d8eaff;
-  border-radius: 15px;
-  background: linear-gradient(145deg, #f2f8ff 8%, #e6f2ff 100%);
+  border-radius: var(--radius-panel);
+  background: #e6f2ff;
   color: #0c6ef3;
   box-shadow: 0 8px 22px rgb(18 105 232 / 13%);
 }
@@ -2123,8 +2117,8 @@ button.ow-count:hover,
 .workspace-shell .workspace-main > .ow-page .ow-heading h1 {
   margin: 0 0 6px;
   color: #0b2140;
-  font-size: clamp(28px, 2.2vw, 34px);
-  font-weight: 760;
+  font-size: var(--font-display);
+  font-weight: var(--weight-strong);
   line-height: 1.15;
   letter-spacing: -1.1px;
 }
@@ -2132,7 +2126,7 @@ button.ow-count:hover,
 .workspace-shell .workspace-main > .ow-page .ow-heading-copy > p {
   margin: 0;
   color: #506886;
-  font-size: 14px;
+  font-size: var(--font-body);
   line-height: 1.6;
 }
 
@@ -2151,24 +2145,24 @@ button.ow-count:hover,
   gap: 2px;
   padding: 3px;
   border: 1px solid #e0e7f0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: #f8fafc;
 }
 
 .workspace-shell .workspace-main > .ow-page .ow-segmented button {
   min-height: 36px;
   padding: 7px 16px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   color: #365170;
-  font-size: 13px;
-  font-weight: 550;
+  font-size: var(--font-small);
+  font-weight: var(--weight-medium);
 }
 
 .workspace-shell .workspace-main > .ow-page .ow-segmented button[aria-pressed="true"] {
   background: #fff;
   color: #0969e8;
   box-shadow: 0 2px 8px rgb(25 70 125 / 10%), inset 0 0 0 1px #c7ddfb;
-  font-weight: 700;
+  font-weight: var(--weight-strong);
 }
 
 .workspace-shell .workspace-main > .ow-page .ow-period-label {
@@ -2178,20 +2172,20 @@ button.ow-count:hover,
   gap: 7px;
   padding: 0 10px;
   color: #243e5f;
-  font-size: 13px;
-  font-weight: 550;
+  font-size: var(--font-small);
+  font-weight: var(--weight-medium);
 }
 
 .workspace-shell .workspace-main > .ow-page .ow-button {
   min-height: 40px;
   padding: 8px 14px;
   border-color: #d8e3f0;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   background: #fff;
   color: #193757;
   box-shadow: 0 2px 7px rgb(21 54 91 / 4%);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--font-small);
+  font-weight: var(--weight-strong);
   transition: transform 180ms ease, border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
 }
 
@@ -2205,14 +2199,14 @@ button.ow-count:hover,
 .workspace-shell .workspace-main > .ow-page .ow-button.is-primary {
   min-width: 120px;
   border-color: #1269e7;
-  background: linear-gradient(135deg, #2478ed 0%, #0964e5 100%);
+  background: #0964e5;
   color: #fff;
   box-shadow: 0 8px 18px rgb(18 105 231 / 22%);
 }
 
 .workspace-shell .workspace-main > .ow-page .ow-button.is-primary:hover:not(:disabled) {
   border-color: #075bcc;
-  background: linear-gradient(135deg, #1a70e4 0%, #075ccc 100%);
+  background: #075ccc;
   box-shadow: 0 10px 22px rgb(18 105 231 / 28%);
 }
 
@@ -2238,8 +2232,8 @@ button.ow-count:hover,
   overflow: hidden;
   padding: 19px 20px 17px;
   border: 1px solid var(--ow-metric-border);
-  border-radius: 16px;
-  background: linear-gradient(135deg, #fff 18%, var(--ow-metric-bg) 145%);
+  border-radius: var(--radius-panel);
+  background: #fff;
   box-shadow: 0 7px 20px rgb(28 63 104 / 7%);
   transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
 }
@@ -2280,18 +2274,6 @@ button.ow-count:hover,
   --ow-metric-bg: #fff8eb;
 }
 
-.workspace-shell .workspace-main > .ow-page .ow-metric::after {
-  position: absolute;
-  right: -30px;
-  bottom: -39px;
-  z-index: -1;
-  width: 86px;
-  height: 86px;
-  border: 13px solid color-mix(in srgb, var(--ow-metric-color) 10%, transparent);
-  border-radius: 50%;
-  content: "";
-  pointer-events: none;
-}
 
 .workspace-shell .workspace-main > .ow-page .ow-metric:hover {
   border-color: color-mix(in srgb, var(--ow-metric-color) 32%, white);
@@ -2301,7 +2283,7 @@ button.ow-count:hover,
 
 .workspace-shell .workspace-main > .ow-page .ow-metric.is-active {
   border-color: color-mix(in srgb, var(--ow-metric-color) 45%, white);
-  background: linear-gradient(135deg, #fff 8%, var(--ow-metric-bg) 118%);
+  background: #fff;
   box-shadow: 0 9px 24px color-mix(in srgb, var(--ow-metric-color) 14%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--ow-metric-color) 12%, transparent);
 }
 
@@ -2313,8 +2295,8 @@ button.ow-count:hover,
   justify-content: space-between;
   gap: 8px;
   color: #294360;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--font-small);
+  font-weight: var(--weight-strong);
 }
 
 .workspace-shell .workspace-main > .ow-page .ow-metric-label {
@@ -2347,8 +2329,8 @@ button.ow-count:hover,
   position: relative;
   margin: 13px 0 5px;
   color: #0c2342;
-  font-size: clamp(33px, 2.8vw, 42px);
-  font-weight: 730;
+  font-size: var(--font-display);
+  font-weight: var(--weight-strong);
   line-height: 1;
   letter-spacing: -1.5px;
 }
@@ -2356,8 +2338,8 @@ button.ow-count:hover,
 .workspace-shell .workspace-main > .ow-page .ow-metric > strong > small {
   margin-left: 6px;
   color: #425c7a;
-  font-size: 12px;
-  font-weight: 500;
+  font-size: var(--font-caption);
+  font-weight: var(--weight-medium);
   letter-spacing: 0;
 }
 
@@ -2365,7 +2347,7 @@ button.ow-count:hover,
   position: relative;
   max-width: calc(100% - 18px);
   color: #516b89;
-  font-size: 12px;
+  font-size: var(--font-caption);
   line-height: 1.55;
 }
 
@@ -2379,13 +2361,13 @@ button.ow-count:hover,
 
 .workspace-shell .workspace-main > .ow-page > .task-legend summary {
   color: #36516f;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--font-caption);
+  font-weight: var(--weight-strong);
 }
 
 .workspace-shell .workspace-main > .ow-page > .task-legend .context-help-content {
   border-color: #dce7f4;
-  border-radius: 12px;
+  border-radius: var(--radius-panel);
   background: #fff;
   box-shadow: 0 9px 24px rgb(21 54 91 / 8%);
   color: #425d7a;
@@ -2393,7 +2375,7 @@ button.ow-count:hover,
 
 .workspace-shell .workspace-main > .ow-page .ow-workspace {
   border: 1px solid #dce6f2;
-  border-radius: 18px;
+  border-radius: var(--radius-panel);
   background: #fff;
   box-shadow: 0 10px 30px rgb(26 61 105 / 7%);
 }
@@ -2410,10 +2392,10 @@ button.ow-count:hover,
   min-height: 57px;
   gap: 8px;
   padding: 0 16px;
-  border-radius: 10px 10px 0 0;
+  border-radius: var(--radius-control) var(--radius-control) 0 0;
   color: #455e7c;
-  font-size: 14px;
-  font-weight: 550;
+  font-size: var(--font-body);
+  font-weight: var(--weight-medium);
   transition: background-color 160ms ease, color 160ms ease;
 }
 
@@ -2423,16 +2405,16 @@ button.ow-count:hover,
 }
 
 .workspace-shell .workspace-main > .ow-page .ow-tab[aria-selected="true"] {
-  background: linear-gradient(180deg, #fff 0%, #f5f9ff 100%);
+  background: #fff;
   color: #0869e8;
-  font-weight: 700;
+  font-weight: var(--weight-strong);
 }
 
 .workspace-shell .workspace-main > .ow-page .ow-tab[aria-selected="true"]::after {
   right: 14px;
   left: 14px;
   height: 3px;
-  border-radius: 3px 3px 0 0;
+  border-radius: var(--radius-tag) var(--radius-tag) 0 0;
   background: #1670e9;
 }
 
@@ -2448,7 +2430,7 @@ button.ow-count:hover,
   min-height: 40px;
   padding: 0 12px;
   border-color: #d8e3f0;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   background: #fff;
   color: #58708c;
 }
@@ -2469,18 +2451,18 @@ button.ow-count:hover,
 
 .workspace-shell .workspace-main > .ow-page .ow-select {
   color: #405b79;
-  font-size: 12px;
-  font-weight: 550;
+  font-size: var(--font-caption);
+  font-weight: var(--weight-medium);
 }
 
 .workspace-shell .workspace-main > .ow-page .ow-select select,
 .workspace-shell .workspace-main > .ow-page .ow-period-bar input {
   min-height: 40px;
   border-color: #d8e3f0;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   background-color: #fff;
   color: #173453;
-  font-size: 13px;
+  font-size: var(--font-small);
 }
 
 .workspace-shell .workspace-main > .ow-page .ow-filter-fields {
@@ -2489,7 +2471,7 @@ button.ow-count:hover,
 
 .workspace-shell .workspace-main > .ow-page .checkbox-label {
   color: #314d6c;
-  font-weight: 550;
+  font-weight: var(--weight-medium);
 }
 
 .workspace-shell .workspace-main > .ow-page .ow-filter-note {
@@ -2498,12 +2480,12 @@ button.ow-count:hover,
   border-bottom-color: #e5ebf3;
   background: #fff;
   color: #496380;
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 
 .workspace-shell .workspace-main > .ow-page .ow-filter-note strong {
   color: #122f50;
-  font-weight: 700;
+  font-weight: var(--weight-strong);
 }
 
 .workspace-shell .workspace-main > .ow-page .ow-meta-divider {
@@ -2521,10 +2503,10 @@ button.ow-count:hover,
   min-height: 30px;
   padding: 5px 9px;
   border-color: #d3e2f5;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: #f0f6ff;
   color: #195ba9;
-  font-weight: 550;
+  font-weight: var(--weight-medium);
 }
 
 .workspace-shell .workspace-main > .ow-page .ow-config {
@@ -2537,7 +2519,7 @@ button.ow-count:hover,
 .workspace-shell .workspace-main > .ow-page .ow-page .ow-table,
 .workspace-shell .workspace-main > .ow-page .ow-table {
   color: #1c3857;
-  font-size: 13px;
+  font-size: var(--font-small);
 }
 
 .workspace-shell .workspace-main > .ow-page .ow-table thead th {
@@ -2546,8 +2528,8 @@ button.ow-count:hover,
   border-bottom: 1px solid #e2e9f2;
   background: #f6f9fd;
   color: #203d5e;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--font-caption);
+  font-weight: var(--weight-strong);
 }
 
 .workspace-shell .workspace-main > .ow-page .ow-table tbody :is(td, th) {
@@ -2585,15 +2567,15 @@ button.ow-count:hover,
   border-radius: 50%;
   background: #eaf3ff;
   color: #1768cd;
-  font-size: 13px;
-  font-weight: 700;
+  font-size: var(--font-small);
+  font-weight: var(--weight-strong);
 }
 
 .workspace-shell .workspace-main > .ow-page .ow-person strong,
 .workspace-shell .workspace-main > .ow-page .ow-person-meta strong {
   color: #102c4d;
-  font-size: 14px;
-  font-weight: 700;
+  font-size: var(--font-body);
+  font-weight: var(--weight-strong);
 }
 
 .workspace-shell .workspace-main > .ow-page .ow-person-meta,
@@ -2612,7 +2594,7 @@ button.ow-count:hover,
   padding-top: 4px;
   padding-bottom: 4px;
   color: #243f5e;
-  font-size: 13px;
+  font-size: var(--font-small);
   line-height: 1.6;
 }
 
@@ -2625,10 +2607,10 @@ button.ow-count:hover,
 .workspace-shell .workspace-main > .ow-page .ow-count button {
   min-width: 32px;
   min-height: 30px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: #f0f4f9;
   color: #2b4d72;
-  font-weight: 700;
+  font-weight: var(--weight-strong);
 }
 
 .workspace-shell .workspace-main > .ow-page .ow-progress > span {
@@ -2637,7 +2619,7 @@ button.ow-count:hover,
 }
 
 .workspace-shell .workspace-main > .ow-page .ow-progress i {
-  background: linear-gradient(90deg, #2380ef, #0964df);
+  background: #0964df;
 }
 
 .workspace-shell .workspace-main > .ow-page .ow-board,
@@ -2649,7 +2631,7 @@ button.ow-count:hover,
 .workspace-shell .workspace-main > .ow-page .ow-project-card,
 .workspace-shell .workspace-main > .ow-page .ow-member-card {
   border-color: #dfe8f3;
-  border-radius: 13px;
+  border-radius: var(--radius-panel);
   background: #fff;
   box-shadow: 0 4px 14px rgb(25 61 105 / 6%);
 }
@@ -2669,7 +2651,7 @@ button.ow-count:hover,
 
 .workspace-shell .workspace-main > .ow-page .ow-fact-note summary {
   color: #334f6e;
-  font-weight: 600;
+  font-weight: var(--weight-strong);
 }
 
 @media (max-width: 1180px) {
@@ -2708,11 +2690,11 @@ button.ow-count:hover,
     width: 46px;
     height: 46px;
     flex-basis: 46px;
-    border-radius: 13px;
+    border-radius: var(--radius-panel);
   }
 
   .workspace-shell .workspace-main > .ow-page .ow-heading h1 {
-    font-size: 26px;
+    font-size: var(--font-title-l);
   }
 
   .workspace-shell .workspace-main > .ow-page .ow-heading-controls {
@@ -2750,12 +2732,12 @@ button.ow-count:hover,
 
   .workspace-shell .workspace-main > .ow-page .ow-metric > strong {
     margin-top: 11px;
-    font-size: 34px;
+    font-size: var(--font-display);
   }
 
   .workspace-shell .workspace-main > .ow-page .ow-metric > small {
     display: block;
-    font-size: 12px;
+    font-size: var(--font-caption);
   }
 
   .workspace-shell .workspace-main > .ow-page .ow-mobile-view {
@@ -2800,7 +2782,7 @@ button.ow-count:hover,
 
 @media (max-width: 390px) {
   .workspace-shell .workspace-main > .ow-page .ow-heading-copy > p {
-    font-size: 13px;
+    font-size: var(--font-small);
   }
 
   .workspace-shell .workspace-main > .ow-page .ow-segmented {
@@ -2820,7 +2802,7 @@ button.ow-count:hover,
 
   .workspace-shell .workspace-main > .ow-page .ow-metric-label {
     gap: 7px;
-    font-size: 12px;
+    font-size: var(--font-caption);
   }
 
   .workspace-shell .workspace-main > .ow-page .ow-metric-arrow {
@@ -2828,7 +2810,7 @@ button.ow-count:hover,
   }
 
   .workspace-shell .workspace-main > .ow-page .ow-metric > strong {
-    font-size: 31px;
+    font-size: var(--font-display);
   }
 
   .workspace-shell .workspace-main > .ow-page .ow-metric > small {

@@ -125,7 +125,7 @@ export default function WorkFollowups(props: PageProps & { navigate: Navigate })
   }
   const rows = view?.tasks || []
   return <div className="collaboration-page">
-    <PageHeader eyebrow="WORK / FOLLOW-UP" title={manager ? '进展与催办' : '我的进展与回应'} description={manager ? '聚焦关键任务，及时回应风险与阻塞。' : '更新任务进展，集中处理待回应事项。'} actions={<><button className="button secondary" aria-busy={loading} onClick={() => { void reloadFirst().catch(() => {}) }}><RefreshCw size={16} />刷新</button>{manager && <button className="button secondary" onClick={() => navigate('notification-settings')}>协作设置</button>}</>} />
+    <PageHeader eyebrow="WORK / FOLLOW-UP" title={manager ? '进展与催办' : '我的进展与回应'} description={manager ? '查看任务进展，回应风险和阻塞。' : '更新任务进展，集中处理待回应事项。'} actions={<><button className="button secondary" aria-busy={loading} onClick={() => { void reloadFirst().catch(() => {}) }}><RefreshCw size={16} />刷新</button>{manager && <button className="button secondary" onClick={() => navigate('notification-settings')}>协作设置</button>}</>} />
     {saveState !== 'idle' && <div className="note" role="status"><p>{saveState === 'saving' ? '正在保存，请稍候。' : saveState === 'failed' ? '内容已经保存，但刷新失败。无需重复提交，请重新加载已保存结果。' : '内容已保存，正在重新读取结果。'}</p>{saveState === 'failed' && <button className="button primary" type="button" onClick={() => { void savedRefresh.current!.retry().catch(() => {}) }}>重新加载已保存结果</button>}</div>}
     <fieldset className="form-fields" disabled={saveState !== 'idle'}>
     {error && <div className="error" role="alert">{error}</div>}

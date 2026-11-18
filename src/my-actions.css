@@ -1,4 +1,4 @@
-.my-actions .action-kind-filters button { min-height: 40px; font-size: 14px; }
+.my-actions .action-kind-filters button { min-height: 40px; font-size: var(--font-body); }
 .my-actions .action-item > div { min-width: 0; overflow-wrap: anywhere; }
 .my-actions .action-item > .button { min-height: 40px; white-space: normal; text-align: center; }
 @media (max-width: 680px) {

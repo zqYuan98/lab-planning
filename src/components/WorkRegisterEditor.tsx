@@ -44,6 +44,13 @@ export default function WorkRegisterEditor({ userId, task, onClose, onSaved }: E
     setWaiting(draftText(values, '__waiting') === 'yes')
   }, busy)
   const close = () => { if (!sending.current) onClose() }
+  const [commitmentChanged, setCommitmentChanged] = useState(false)
+  /** 与服务端“承诺调整需要原因”对应；判断宁宽勿严，保存失败时也会展开。 */
+  function trackCommitment(form: HTMLFormElement | null) {
+    if (!form) return
+    const values = new FormData(form), initial: Record<string, string> = { title: task.title, description: task.description, requestedOutcome: task.requestedOutcome || '', dueDate: task.dueDate || '' }
+    setCommitmentChanged(Object.entries(initial).some(([name, value]) => String(values.get(name) ?? '') !== value) || !!String(values.get('reason') || ''))
+  }
   const completionReview = workRegisterNeedsCompletionReview(task)
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -75,6 +82,7 @@ export default function WorkRegisterEditor({ userId, task, onClose, onSaved }: E
       onSaved(result)
     } catch (e) {
       if(editingUnavailable(e)){setWriteUnavailable(true);setComparison(null);draft.dismissRecovery()}
+      if (!saved.current) setCommitmentChanged(true)
       setError(saved.current ? '修改已经保存，请关闭窗口后刷新清单。' : e instanceof Error ? e.message : '保存失败，已保留填写内容。')
       if(e instanceof ApiError && e.status===409 && e.code==='VERSION_CONFLICT') {
         try {const current=await readEditableObject(`/tasks/${encodeURIComponent(task.id)}/editable`);const local=draft.snapshot();setComparison({base:draft.baseValues(),server:editableDraftValues(current.values,local),local,version:current.version})}
@@ -87,7 +95,7 @@ export default function WorkRegisterEditor({ userId, task, onClose, onSaved }: E
   }
 
   return <Modal wide title="编辑工作事项" onClose={close}>
-    <form ref={draft.formRef} className="wr-editor" onSubmit={submit} onInput={draft.rememberDraft} onChange={draft.rememberDraft}>
+    <form ref={draft.formRef} className="wr-editor" onSubmit={submit} onInput={event => { draft.rememberDraft(); trackCommitment(event.currentTarget) }} onChange={event => { draft.rememberDraft(); trackCommitment(event.currentTarget) }}>
       {draft.notice && <p className="form-hint" role="status">{draft.notice}</p>}
       {(comparison || draft.recovery) && <DraftComparison base={comparison?.base ?? draft.recovery?.baseValues ?? null} server={comparison?.server ?? draft.baseValues()} local={comparison?.local ?? draft.recovery!.values} onCancel={()=>{setComparison(null);draft.dismissRecovery()}} onMerge={values=>{if(comparison)setVersion(comparison.version);draft.applyValues(values,comparison?.server ?? draft.baseValues(),comparison?.version);setComparison(null);attempt.current=null;setError('已合并，请核对后重新保存。')}} />}
       <p className="wr-modal-intro">维护整件工作的交付与进展。每周的具体承诺在周计划中安排。</p>
@@ -95,34 +103,39 @@ export default function WorkRegisterEditor({ userId, task, onClose, onSaved }: E
       <fieldset className="form-fields" disabled={busy || saved.current || writeUnavailable || !!comparison}>
         <Field label="事项名称"><input name="title" defaultValue={task.title} required maxLength={LIMITS.title} /></Field>
         <div className="wr-form-grid">
-          <Field label="事项来源"><select value={source} onChange={event => setSource(event.target.value as typeof source)}>
-            {!task.workSource && <option value="">未注明</option>}
-            <option value="leader">领导交办</option><option value="self">自主安排</option><option value="coordination">协同事项</option>
-          </select></Field>
-          <Field label="交办人 / 对接人"><input name="assignedBy" defaultValue={task.assignedBy || ''} maxLength={LIMITS.assignedBy} /></Field>
-          <Field label="交办日期"><input type="date" name="assignedOn" defaultValue={task.assignedOn || ''} /></Field>
-          <Field label="截止日期" hint="尚未明确时留空，清单显示待确认。"><input type="date" name="dueDate" defaultValue={task.dueDate} /></Field>
-        </div>
-        <Field label="预期交付"><textarea name="requestedOutcome" defaultValue={task.requestedOutcome || ''} rows={2} maxLength={LIMITS.text} placeholder="例如：一份可供评审的三年规划初稿，含方向、预算与实施步骤" /></Field>
-        <Field label="承诺变更原因" hint="修改事项名称、背景说明、预期交付或截止日期时填写。只更新执行进展时可留空。"><textarea name="reason" rows={2} maxLength={LIMITS.text} placeholder="说明为何调整，以便历史复盘核对原承诺和变更依据" /></Field>
-        <details className="wr-details"><summary>补充背景与原始要求</summary><Field label="背景说明"><textarea name="description" defaultValue={task.description} rows={3} maxLength={task.importSource ? 20000 : 12000} /></Field></details>
-        <div className="wr-form-grid">
           <Field label="总体状态"><select value={status} onChange={event => setStatus(event.target.value as Task['status'])}>
             <option value="todo">未开始</option><option value="doing">进行中</option><option value="blocked">受阻</option><option value="done">已完成</option>
           </select></Field>
           <Field label="优先级"><select value={priority} onChange={event => setPriority(event.target.value as typeof priority)}>
             {!task.priority && <option value="">未注明</option>}<option value="high">高</option><option value="medium">中</option><option value="low">低</option>
           </select></Field>
+          <Field label="截止日期" hint="尚未明确时留空，清单显示待确认。"><input type="date" name="dueDate" defaultValue={task.dueDate} /></Field>
+          {status !== 'done' && <label className="checkbox-label wr-waiting-toggle"><input type="checkbox" checked={waiting} onChange={event => setWaiting(event.target.checked)} />正在等待反馈或确认</label>}
         </div>
-        {status !== 'done' && <label className="checkbox-label wr-waiting-toggle"><input type="checkbox" checked={waiting} onChange={event => setWaiting(event.target.checked)} />正在等待反馈或确认</label>}
         <Field label="当前进展"><textarea name="currentProgress" defaultValue={task.currentProgress || ''} rows={3} maxLength={LIMITS.text} placeholder="已经完成什么，现在推进到哪一步" /></Field>
         <Field label="下一步行动"><textarea name="nextAction" defaultValue={task.nextAction || ''} rows={2} maxLength={LIMITS.text} placeholder="写清楚接下来要推进的具体一步" /></Field>
-        <div className="wr-form-grid">
-          <Field label="预计剩余投入（人日）" hint="0.5 人日为一步，空值表示未估算，不会复制到每周。"><input type="number" name="remainingEffortDays" min="0" step="0.5" defaultValue={task.remainingEffortDays ?? ''} /></Field>
-          <Field label="投入备注" hint="原预计投入文本作为补充说明保留。"><input name="estimatedEffort" defaultValue={task.estimatedEffort || ''} maxLength={300} placeholder="例如：约 2 个工作日，或还需 3 次讨论" /></Field>
-          <Field label="需领导决策 / 协调"><textarea name="decisionNeeded" defaultValue={task.decisionNeeded || ''} rows={2} maxLength={LIMITS.text} placeholder="例如：确认 A 与 B 的先后顺序，或确定预算范围" /></Field>
-        </div>
         <Field label="需要的支持"><textarea name="supportNeeded" required={status === 'blocked'} defaultValue={task.supportNeeded || ''} rows={2} maxLength={LIMITS.text} placeholder="需要谁提供什么支持；暂不需要支持时请明确说明" /></Field>
+        {/* 只有改了承诺内容（名称、背景、预期交付、截止日期）才需要说明原因，平时不占位置。 */}
+        <div hidden={!commitmentChanged}><Field label="承诺变更原因" hint="事项名称、背景说明、预期交付或截止日期有改动时填写。"><textarea name="reason" rows={2} maxLength={LIMITS.text} placeholder="说明为何调整，以便历史复盘核对原承诺和变更依据" /></Field></div>
+        <details className="wr-details"><summary>交办信息与交付要求</summary>
+          <div className="wr-form-grid">
+            <Field label="事项来源"><select value={source} onChange={event => setSource(event.target.value as typeof source)}>
+              {!task.workSource && <option value="">未注明</option>}
+              <option value="leader">领导交办</option><option value="self">自主安排</option><option value="coordination">协同事项</option>
+            </select></Field>
+            <Field label="交办人 / 对接人"><input name="assignedBy" defaultValue={task.assignedBy || ''} maxLength={LIMITS.assignedBy} /></Field>
+            <Field label="交办日期"><input type="date" name="assignedOn" defaultValue={task.assignedOn || ''} /></Field>
+          </div>
+          <Field label="预期交付"><textarea name="requestedOutcome" defaultValue={task.requestedOutcome || ''} rows={2} maxLength={LIMITS.text} placeholder="例如：一份可供评审的三年规划初稿，含方向、预算与实施步骤" /></Field>
+          <Field label="背景说明"><textarea name="description" defaultValue={task.description} rows={3} maxLength={task.importSource ? 20000 : 12000} /></Field>
+        </details>
+        <details className="wr-details"><summary>投入估算与待决策事项</summary>
+          <div className="wr-form-grid">
+            <Field label="预计剩余投入（人日）" hint="0.5 人日为一步，留空表示未估算。"><input type="number" name="remainingEffortDays" min="0" step="0.5" defaultValue={task.remainingEffortDays ?? ''} /></Field>
+            <Field label="投入备注"><input name="estimatedEffort" defaultValue={task.estimatedEffort || ''} maxLength={300} placeholder="例如：约 2 个工作日，或还需 3 次讨论" /></Field>
+          </div>
+          <Field label="需领导决策 / 协调"><textarea name="decisionNeeded" defaultValue={task.decisionNeeded || ''} rows={2} maxLength={LIMITS.text} placeholder="例如：确认 A 与 B 的先后顺序，或确定预算范围" /></Field>
+        </details>
         {status === 'done' && <section className="wr-editor-state"><h3>记录完成结果</h3><Field label="完成说明"><textarea required name="completionNote" defaultValue={task.completionNote || ''} rows={3} maxLength={LIMITS.text} /></Field><Field label="成果链接（选填）"><input type="url" name="evidenceUrl" defaultValue={task.evidenceUrl || ''} maxLength={LIMITS.url} placeholder="https://" /></Field></section>}
         {status === 'blocked' && <section className="wr-editor-state"><h3>说明受阻情况</h3><Field label="受阻原因"><textarea required name="blockerReason" defaultValue={task.blockerReason || ''} rows={2} maxLength={LIMITS.text} /></Field><Field label="影响范围"><textarea required name="blockerImpact" defaultValue={task.blockerImpact || ''} rows={2} maxLength={LIMITS.text} /></Field><p className="form-hint">报告受阻时，请填写原因、影响范围和需要的支持；这些要求不受协作开关影响。</p></section>}
       </fieldset>

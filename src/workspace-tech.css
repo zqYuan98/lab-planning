@@ -54,9 +54,7 @@ body:has(.workspace-shell) {
 
 .workspace-shell,
 .workspace-shell .workspace-body {
-  background:
-    radial-gradient(circle at 72% 4%, #eaf3ff 0, transparent 30%),
-    linear-gradient(180deg, #f7faff 0, var(--tech-canvas) 260px);
+  background: var(--tech-canvas);
 }
 
 /* Use an opaque navy base at every Arco layer, including the mobile portal. */
@@ -82,9 +80,7 @@ body:has(.workspace-shell) {
 }
 
 .workspace-sider .arco-layout-sider-children {
-  background:
-    radial-gradient(circle at 18% 0, #123e6f 0, transparent 32%),
-    linear-gradient(180deg, #0b2a4d 0, var(--tech-nav) 320px);
+  background: var(--tech-nav);
 }
 
 .workspace-brand-row .brand,
@@ -109,7 +105,7 @@ body:has(.workspace-shell) {
 .workspace-navigation .arco-menu-item-group-title {
   color: var(--tech-nav-muted);
   background: transparent;
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 
 .workspace-navigation .arco-menu-item {
@@ -134,7 +130,7 @@ body:has(.workspace-shell) {
 .workspace-navigation .arco-menu-item.arco-menu-selected,
 .workspace-navigation .arco-menu-item.arco-menu-selected:hover {
   color: #fff;
-  background: linear-gradient(135deg, #2780ff 0, var(--tech-nav-selected) 72%);
+  background: #2780ff;
   box-shadow: 0 8px 20px #0758c43d, inset 0 1px 0 #ffffff2e;
 }
 
@@ -198,7 +194,7 @@ body:has(.workspace-shell) {
 }
 
 .workspace-header .workspace-primary-action {
-  background: linear-gradient(135deg, #247aff, #1162e5);
+  background: #1162e5;
   border-color: #1769ee;
   box-shadow: 0 8px 18px #1769e82b, inset 0 1px 0 #ffffff38;
 }

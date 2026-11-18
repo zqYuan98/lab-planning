@@ -14,6 +14,8 @@ jobs:
           node-version: '24.20.0'
           cache: npm
       - run: npm ci
+      - name: Design scale and copy rules
+        run: npm run lint:design
       - run: npm test
       - run: npm run build
       - run: npm run perf

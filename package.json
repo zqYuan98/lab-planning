@@ -13,6 +13,7 @@
     "test": "tsx --test tests/*.test.ts",
     "perf": "tsx scripts/r2-performance.ts",
     "typecheck": "tsc --noEmit",
+    "lint:design": "node scripts/design-lint.mjs",
     "backup": "tsx scripts/backup.ts",
     "reset-operation-context": "tsx scripts/reset-operation-context.ts"
   },

@@ -151,8 +151,10 @@ export default function WeeklySubmissionPanel({ data: initialData, refresh, noti
       {loading && !currentView && <p role="status">正在读取提报状态…</p>}
       {currentView && view && <>
         <WeeklyDeadlineBanner view={view} />
-        {view.deadlineAt !== null && <p className="submission-explanation">已保存周记录与整份提报分开显示：先填写，再核对整份内容并提交；下周计划按上方日期统计。</p>}
-        {view.deadlineAt !== null && view.rule.planReviewEffectiveWeek && <p className="submission-explanation">周计划审核从 {view.rule.planReviewEffectiveWeek} 提报周期开始，覆盖 {advanceWeek(view.rule.planReviewEffectiveWeek, 7)} 起的下周计划。提交时效与审核结果分别记录，日常进展更新不重审。</p>}
+        {view.deadlineAt !== null && <details className="submission-rules"><summary>提报与审核规则</summary>
+          <p className="submission-explanation">已保存周记录与整份提报分开显示：先填写，再核对整份内容并提交；下周计划按上方日期统计。</p>
+          {view.rule.planReviewEffectiveWeek && <p className="submission-explanation">周计划审核从 {view.rule.planReviewEffectiveWeek} 提报周期开始，覆盖 {advanceWeek(view.rule.planReviewEffectiveWeek, 7)} 起的下周计划。提交时效与审核结果分别记录，日常进展更新不重审。</p>}
+        </details>}
         {!view.cycle && view.deadlineAt !== null && <p className="submission-notice">{week < view.rule.effectiveWeek ? `规则自 ${view.rule.effectiveWeek} 当周起生效，历史周期不记缺交。` : week > view.serverNow.slice(0,10) ? '此截止周期尚未开始，可以先填写周任务草稿。' : '此周期已暂停提报，不计缺交。'}</p>}
         {view.deadlineAt !== null && view.cycle?.needsReview && <div className="submission-notice"><p>本周期应交名单待管理员核对，暂不认定缺交。</p>{manager && <button className="button secondary" onClick={() => { selectedAction.current++; setMode('roster') }}>核对应交名单</button>}</div>}
         {view.deadlineAt !== null && view.cycle && !view.cycle.needsReview && !ownDuties.length && <p className="submission-notice">你不在本周期应交名单中，无须补交。周中加入的成员从下一完整周开始计入。{manager && view.rule.managerSubmissionEffectiveWeek && `管理员个人提报自 ${view.rule.managerSubmissionEffectiveWeek} 当周起计入；此前已截止的历史周期不追补。`}</p>}

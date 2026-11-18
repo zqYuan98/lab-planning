@@ -25,8 +25,8 @@
 }
 .workspace-shell .goal-body .label-text {
   color: var(--tech-body);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--font-small);
+  font-weight: var(--weight-strong);
 }
 .workspace-shell .goal-heading > div {
   min-width: 0;
@@ -43,7 +43,7 @@
     align-items: start;
   }
   .workspace-shell .goal-heading h2 {
-    font-size: 16px;
+    font-size: var(--font-title-s);
     line-height: 1.6;
   }
   .workspace-shell .goal-heading .button {

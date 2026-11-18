@@ -1,0 +1,25 @@
+/*
+ * 设计刻度的唯一来源。字号、字重、圆角只能取这里的值；
+ * scripts/design-lint.mjs 会拦住其他写法。新增刻度需要先改 design-system/lab-workspace/MASTER.md。
+ */
+:root {
+  /* 字号：7 级。正文 14，说明 13，12 只用于标签、表头和时间戳。 */
+  --font-caption: 12px;
+  --font-small: 13px;
+  --font-body: 14px;
+  --font-title-s: 16px;
+  --font-title-m: 20px;
+  --font-title-l: 24px;
+  --font-display: 32px;
+
+  /* 字重：3 级。中文字体没有可靠的 550/650 等中间字重。 */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-strong: 600;
+
+  /* 圆角：标签 4，控件 8，面板 12，胶囊 999。 */
+  --radius-tag: 4px;
+  --radius-control: 8px;
+  --radius-panel: 12px;
+  --radius-pill: 999px;
+}

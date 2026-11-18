@@ -400,16 +400,13 @@ export default function DepartmentOverview({
           </div>
         </div>
       </header>
-      <section className="ow-scope-note" aria-label="概览统计范围">
-        <p>{config.period === 'all'
-          ? '全部周期展示个人任务总台账，包含历史未完成和已完成任务；按任务编号去重，完成以整个任务状态为准。'
-          : '按所选周期展示周安排、所属月目标的个人任务和到期任务；阶段完成与整个任务完成分别显示。'} 默认隐藏停用成员与已作废任务。</p>
+      <section className="ow-scope-bar" aria-label="概览统计范围">
         {config.period !== 'all' && <label className="checkbox-label">
           <input type="checkbox" checked={!!config.includeCarryover} onChange={event => change({ includeCarryover: event.target.checked })} />
           包含往期未完成任务（无本期周安排的标为未排周）
         </label>}
         {workspace?.goalCoverage && <div className="ow-goal-coverage">
-          <p>全部门 · {workspace.goalCoverage.month} 月度目标 {workspace.goalCoverage.total} 项，已发布 {workspace.goalCoverage.published} 项，其中 {workspace.goalCoverage.withoutTasks} 项尚未拆解任务。目标独立统计，不计入下方任务总数。</p>
+          <p>{workspace.goalCoverage.month} 月度目标 {workspace.goalCoverage.total} 项 · 已发布 {workspace.goalCoverage.published} 项{workspace.goalCoverage.withoutTasks > 0 && <> · <strong>{workspace.goalCoverage.withoutTasks} 项尚未拆解任务</strong></>}</p>
           <div className="ow-actions">
             {workspace.goalCoverage.preview.map(goal => <button key={goal.id} className="ow-button" onClick={() => navigate('monthly', { month: workspace.goalCoverage.month, id: goal.id })}>待拆解：{goal.title}</button>)}
             <button className="ow-button" onClick={() => navigate('monthly', { month: workspace.goalCoverage.month })}>查看该月全部目标</button>
@@ -848,6 +845,7 @@ export default function DepartmentOverview({
       </section>
       <details className="ow-fact-note">
         <summary>统计口径与说明</summary>
+        <p>“全部”展示个人任务总台账，包含历史未完成和已完成任务；按月、按周展示所选周期的周安排、所属月目标的个人任务和到期任务。默认隐藏停用成员与已作废任务。月度目标独立统计，不计入任务总数。</p>
         <p>
           任务按编号去重。“全部”按整个任务是否完成统计，结合最近有效周记录展示进展；未来安排不覆盖当前执行。按月、按周显示所选周期的阶段状态，未排周表示该周期没有周记录。勾选“包含往期未完成”后补入旧任务并标记来源，不会复制任务或自动承接目标。逾期按整个任务是否结束、当前截止日期与今天比较；历史周期不还原历史截止日期，需要期末快照时请使用历史周期复盘。未拆解月度目标独立提示，月度成果仍需验收。单条周记录纳入统计不代表整份周提报已提交。
         </p>

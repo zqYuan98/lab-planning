@@ -9,7 +9,7 @@
   gap: 4px;
   padding: 4px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: var(--white);
 }
 .team-status-filter button {
@@ -20,7 +20,7 @@
   min-height: 36px;
   padding: 6px 14px;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-tag);
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
@@ -31,11 +31,11 @@
 .team-status-filter button.is-selected {
   background: var(--primary-soft);
   color: var(--primary);
-  font-weight: 600;
+  font-weight: var(--weight-strong);
 }
 .team-status-filter button span {
   font-variant-numeric: tabular-nums;
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 .team-account-actions {
   display: flex;
@@ -52,7 +52,7 @@
 .team-account-hint {
   margin: 8px 0 20px;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--font-small);
   line-height: 1.6;
 }
 .team-delete-entry {
@@ -69,7 +69,7 @@
 .team-delete-entry p {
   margin: 4px 0 0;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--font-small);
   line-height: 1.6;
 }
 .team-delete-entry .button {
@@ -84,7 +84,7 @@
   gap: 12px;
   padding: 16px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: var(--paper);
   margin-bottom: 20px;
 }
@@ -99,7 +99,7 @@
 .account-delete-person p {
   margin: 4px 0 0;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--font-small);
 }
 .account-delete-person .avatar {
   flex-shrink: 0;

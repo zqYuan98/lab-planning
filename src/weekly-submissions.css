@@ -1,47 +1,47 @@
-.weekly-submission-panel { margin: 0 0 28px; padding: 24px; border: 1px solid var(--border, #e2e7e5); border-radius: 6px; background: var(--surface, #fff); }
+.weekly-submission-panel { margin: 0 0 28px; padding: 24px; border: 1px solid var(--border, #e2e7e5); border-radius: var(--radius-control); background: var(--surface, #fff); }
 .submission-heading, .submission-tools, .submission-card-top, .submission-actions, .submission-deadline, .submission-summary { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .submission-heading { justify-content: space-between; align-items: flex-start; }
-.submission-heading h2 { margin: 7px 0; font-size: 16px; font-weight: 600; }
+.submission-heading h2 { margin: 7px 0; font-size: var(--font-title-s); font-weight: var(--weight-strong); }
 .submission-heading p, .submission-card p, .submission-facts, .submission-cell small { color: var(--text-secondary); }
 .submission-tools { align-items: flex-end; }
 .submission-tools .field { margin: 0; }
-.submission-deadline { margin: 18px 0; padding: 12px 16px; border-radius: 4px; background: #f7f8fa; font-size: 13px; }
-.submission-work-calendar { margin: -6px 0 18px; font-size: 13px; }
+.submission-deadline { margin: 18px 0; padding: 12px 16px; border-radius: var(--radius-tag); background: #f7f8fa; font-size: var(--font-small); }
+.submission-work-calendar { margin: -6px 0 18px; font-size: var(--font-small); }
 .work-week-calendar p { margin: 6px 0; line-height: 1.6; overflow-wrap: anywhere; }
 .submission-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
-.submission-card { padding: 20px; border: 1px solid var(--border, #e2e7e5); border-radius: 6px; }
+.submission-card { padding: 20px; border: 1px solid var(--border, #e2e7e5); border-radius: var(--radius-control); }
 .submission-card-top { justify-content: space-between; }
-.submission-card h3 { margin: 0; font-size: 17px; }
-.submission-card p { font-size: 14px; line-height: 1.65; }
-.submission-facts { display: flex; flex-direction: column; gap: 6px; font-size: 13px; margin: 14px 0; }
+.submission-card h3 { margin: 0; font-size: var(--font-title-s); }
+.submission-card p { font-size: var(--font-body); line-height: 1.65; }
+.submission-facts { display: flex; flex-direction: column; gap: 6px; font-size: var(--font-small); margin: 14px 0; }
 .submission-card > small { display: block; margin: 6px 0; }
 .submission-actions { margin-top: 18px; }
-.submission-actions .button { min-height: 36px; font-size: 12px; padding: 8px 12px; }
-.submission-notice { padding: 12px 14px; background: #fff8e9; border-radius: 4px; font-size: 13px; line-height: 1.6; }
-.submission-summary { font-size: 13px; margin: 18px 0; }
+.submission-actions .button { min-height: 36px; font-size: var(--font-caption); padding: 8px 12px; }
+.submission-notice { padding: 12px 14px; background: #fff8e9; border-radius: var(--radius-tag); font-size: var(--font-small); line-height: 1.6; }
+.submission-summary { font-size: var(--font-small); margin: 18px 0; }
 .submission-cell { display: flex; align-items: flex-start; flex-direction: column; gap: 6px; }
 .submission-preview { max-height: 320px; overflow: auto; margin: 14px 0; }
 .submission-preview article { padding: 14px; border-bottom: 1px solid var(--border, #e2e7e5); }
 .submission-preview .badge { margin-left: 8px; }
 .submission-preview p { white-space: pre-wrap; }
-.submission-explanation { font-size: 13px; color: var(--text-secondary); line-height: 1.6; }
-.submission-column-week { display: block; margin-top: 6px; font-weight: 400; }
-.submission-cell > span { font-size: 13px; }
+.submission-explanation { font-size: var(--font-small); color: var(--text-secondary); line-height: 1.6; }
+.submission-column-week { display: block; margin-top: 6px; font-weight: var(--weight-regular); }
+.submission-cell > span { font-size: var(--font-small); }
 .weekly-record-context { scroll-margin-top: 80px; margin: 22px 0 16px; }
-.weekly-record-context h2 { font-size: 16px; }
-.weekly-record-context > p { color: var(--text-secondary); font-size: 13px; }
+.weekly-record-context h2 { font-size: var(--font-title-s); }
+.weekly-record-context > p { color: var(--text-secondary); font-size: var(--font-small); }
 @media (max-width: 800px) { .weekly-submission-panel { padding: 16px; } .submission-cards { grid-template-columns: 1fr; } .submission-tools { width: 100%; } }
 
-.work-origin { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; overflow-wrap: anywhere; font-size: 12px; }
-.submission-review-state { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin: 8px 0; font-size: 13px; }
+.work-origin { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; overflow-wrap: anywhere; font-size: var(--font-caption); }
+.submission-review-state { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin: 8px 0; font-size: var(--font-small); }
 .submission-review-state .badge { margin-left: 4px; }
 .submission-return-reason { margin: 0; color: var(--text-primary); white-space: pre-wrap; overflow-wrap: anywhere; }
-.submission-plan-link, .submission-review-history p { font-size: 13px; color: var(--text-secondary); }
+.submission-plan-link, .submission-review-history p { font-size: var(--font-small); color: var(--text-secondary); }
 .submission-review-history { margin: 10px 0; }
-.submission-frozen-preview { max-height: 400px; border: 1px solid var(--border, #e2e7e5); border-radius: 4px; }
+.submission-frozen-preview { max-height: 400px; border: 1px solid var(--border, #e2e7e5); border-radius: var(--radius-tag); }
 .submission-frozen-preview article:last-child { border-bottom: 0; }
 .submission-deadline-settings > section { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--border, #e2e7e5); }
-.submission-deadline-settings h3 { margin: 0 0 12px; font-size: 16px; }
+.submission-deadline-settings h3 { margin: 0 0 12px; font-size: var(--font-title-s); }
 .submission-deadline-settings .submission-notice { overflow-wrap: anywhere; }
 .submission-deadline-settings .submission-notice p { margin: 6px 0; }
 .submission-frozen-preview p { overflow-wrap: anywhere; }
@@ -49,3 +49,6 @@
 .weekly-deletion-result { align-items: center; flex-wrap: wrap; }
 .weekly-deletion-result p { margin: 6px 0 0; }
 @media (max-width: 800px) { .submission-frozen-preview { max-height: 45vh; } .weekly-deletion-result > div { width: 100%; } }
+.submission-rules { margin: 8px 0; }
+.submission-rules > summary { cursor: pointer; font-size: var(--font-small); color: var(--text-secondary); }
+.submission-rules[open] > summary { margin-bottom: 4px; }
